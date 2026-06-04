@@ -1,0 +1,99 @@
+"""Central configuration for NoLifeChatter.
+
+All user-specific settings (which channels to join, who the admins are, where
+data lives) come from ``config.toml``.  All secrets (API keys, client secret)
+come from the environment / ``.env``.  Nothing personal is hard-coded anywhere
+else in the project, so the bot is safe to publish and easy for someone else to
+run against their own Twitch account.
+
+Copy ``config.example.toml`` -> ``config.toml`` and ``.env.example`` -> ``.env``
+and fill them in before running the bot.
+"""
+
+from __future__ import annotations
+
+import os
+import tomllib
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent
+
+# Load secrets from .env (if present) so os.getenv works everywhere.
+load_dotenv(BASE_DIR / ".env")
+
+CONFIG_PATH = Path(os.getenv("NLC_CONFIG", BASE_DIR / "config.toml"))
+
+
+def _load_config() -> dict:
+    if not CONFIG_PATH.exists():
+        raise FileNotFoundError(
+            f"Config file not found at '{CONFIG_PATH}'.\n"
+            "Copy 'config.example.toml' to 'config.toml' and edit it before "
+            "running the bot."
+        )
+    with open(CONFIG_PATH, "rb") as fh:
+        return tomllib.load(fh)
+
+
+_cfg = _load_config()
+
+
+def _resolve(path_str: str) -> str:
+    """Resolve a path from config relative to the project root."""
+    path = Path(path_str)
+    if not path.is_absolute():
+        path = BASE_DIR / path
+    return str(path)
+
+
+# ----------------------------- bot identity -----------------------------
+_bot = _cfg.get("bot", {})
+PREFIX: str = _bot.get("prefix", "~")
+CHANNELS: list[str] = [c.lower() for c in _bot.get("channels", [])]
+# Optional message posted to each joined channel on connect ("" disables it).
+READY_MESSAGE: str = (_bot.get("ready_message") or "").strip()
+
+if not CHANNELS:
+    raise ValueError(
+        "No channels configured. Set bot.channels in config.toml to at least "
+        "one Twitch channel for the bot to join."
+    )
+
+# ------------------------------- authorization ---------------------------
+_auth = _cfg.get("auth", {})
+# Admins: may toggle their own translation, language and output mode.
+ADMINS: list[str] = [u.lower() for u in _auth.get("admins", [])]
+# Super admins: may also flip global / per-channel translation switches.
+SUPER_ADMINS: list[str] = [u.lower() for u in _auth.get("super_admins", [])]
+
+# ---------------------------------- paths --------------------------------
+_paths = _cfg.get("paths", {})
+DB_PATH: str = _resolve(_paths.get("database", "data/synced/bot_settings.db"))
+TOKEN_FILE: str = _resolve(_paths.get("token_file", "data/unsynced/token_data.json"))
+# GOOGLE_APPLICATION_CREDENTIALS env var wins if set; otherwise use config.
+GOOGLE_CREDENTIALS: str = _resolve(
+    os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    or _paths.get("google_credentials", "data/unsynced/google-service-account.json")
+)
+
+# ------------------------------- translation -----------------------------
+_tr = _cfg.get("translation", {})
+DEFAULT_TARGET: str = _tr.get("default_target", "EN").upper()
+MIN_CONFIDENCE: float = float(_tr.get("min_confidence", 0.7))
+SUPPORTED_LANGS: set[str] = {
+    lang.upper()
+    for lang in _tr.get(
+        "supported",
+        [
+            "EL", "ZH-CN", "ES", "FR", "AR", "RU", "HU", "TR", "KO", "JA",
+            "VI", "DE", "IT", "PT", "PL", "CS", "SK", "UK", "LA", "EN",
+        ],
+    )
+}
+
+# --------------------------------- secrets --------------------------------
+# Read straight from the environment so they never live in tracked files.
+TWITCH_CLIENT_ID: str | None = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_CLIENT_SECRET: str | None = os.getenv("TWITCH_CLIENT_SECRET")

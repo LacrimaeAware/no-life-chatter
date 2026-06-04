@@ -1,0 +1,73 @@
+# ---------------------------------------------------------------------------
+# Privacy / secrets — NEVER commit these.
+# ---------------------------------------------------------------------------
+# Quarantined original server backup and any private material.
+_private/
+
+# Local user configuration (channel names, admins).
+config.toml
+
+# Environment / secrets.
+.env
+.env.local
+.env.*.local
+
+# Credentials & tokens.
+*.json.key
+**/google-service-account.json
+**/token_data.json
+**/auto-translate-*.json
+
+# Runtime data: the settings DB contains real usernames (PII).
+data/synced/*
+data/unsynced/*
+!data/synced/.gitkeep
+!data/unsynced/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+
+# TLS / certificate material.
+*.pem
+*.crt
+*.key
+*.csr
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.python-version
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
