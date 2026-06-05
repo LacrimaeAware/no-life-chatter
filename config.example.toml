@@ -12,9 +12,11 @@ prefix = "~"
 # Add your own channel here.
 channels = ["your_channel"]
 
-# Optional message the bot posts to each joined channel when it connects.
+# Optional message the bot posts when it connects.
 # Leave it as an empty string to stay silent on connect.
 ready_message = ""
+# If set, only post the ready message to this one channel (leave "" for all).
+ready_channel = ""
 
 [auth]
 # Twitch usernames allowed to change their own translation settings

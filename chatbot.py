@@ -74,7 +74,8 @@ class Bot(commands.Bot):
     async def event_ready(self):
         logging.info(f"Ready | Logged in as {self.nick}")
         if config.READY_MESSAGE:
-            for channel_name in config.CHANNELS:
+            targets = [config.READY_CHANNEL] if config.READY_CHANNEL else config.CHANNELS
+            for channel_name in targets:
                 channel = self.get_channel(channel_name)
                 if channel:
                     await channel.send(config.READY_MESSAGE)

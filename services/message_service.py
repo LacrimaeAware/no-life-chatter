@@ -7,6 +7,7 @@ from google.cloud import translate_v2 as translate
 from utils.user_settings import get_user_settings
 from utils.romanize import romanize, is_supported, thai_segment
 from utils.language_detect import detect_language
+from services.translators import deepl_translate
 import re
 import sqlite3
 import html
@@ -71,10 +72,26 @@ def is_translation_enabled_for_channel(channel_name):
 class MessageService:
     def __init__(self, bot):
         self.bot = bot
-        credentials = service_account.Credentials.from_service_account_file(
-            config.GOOGLE_CREDENTIALS
-        )
-        self.translator = translate.Client(credentials=credentials)
+        # Translation backends are optional. DeepL (a key in .env) is tried
+        # first; Google (a service-account file) is an optional fallback. The
+        # bot still runs with neither — translation features just stay quiet.
+        self.deepl_enabled = bool(config.DEEPL_API_KEY)
+        self.translator = None
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                config.GOOGLE_CREDENTIALS
+            )
+            self.translator = translate.Client(credentials=credentials)
+        except Exception as e:
+            logging.info(f"Google translation not configured ({e}).")
+
+        self.can_translate = self.deepl_enabled or (self.translator is not None)
+        if self.deepl_enabled:
+            logging.info("Translation: DeepL enabled.")
+        elif self.translator is not None:
+            logging.info("Translation: Google enabled.")
+        else:
+            logging.warning("Translation disabled — no DeepL key or Google credentials.")
 
     # lang utilities
     def detect_lang(self, text):
@@ -82,8 +99,14 @@ class MessageService:
         return detect_language(text)
 
     def gtranslate(self, text, target):
-        out = self.translator.translate(text, target_language=target.upper())
-        return decode_html_entities(out.get('translatedText', '') or '')
+        # DeepL first (free tier), Google as fallback.
+        out = deepl_translate(text, target)
+        if out:
+            return decode_html_entities(out)
+        if self.translator is not None:
+            g = self.translator.translate(text, target_language=target.upper())
+            return decode_html_entities(g.get('translatedText', '') or '')
+        return None
 
     async def handle_regular_message(self, message):
         logging.info(f"Handling regular message from {message.author.name}: {message.content}")
@@ -215,14 +238,19 @@ class MessageService:
             await message.channel.send(content)
 
     async def handle_translation_if_needed(self, message, target_language):
-        lang, conf = self.detect_lang(message.content)
-        if conf < config.MIN_CONFIDENCE or lang not in config.SUPPORTED_LANGS:
+        if not self.can_translate:
             return
-        if lang != target_language.upper():
-            t = self.translator.translate(message.content, target_language=target_language.upper())
-            txt = decode_html_entities(t.get('translatedText', '') or '')
-            if txt and txt != message.content:
-                await message.channel.send(txt)
+        # Local detection is only used as a cheap gate: is this already in the
+        # target language? If so, skip (no wasted translate call). For anything
+        # else we hand the raw text to DeepL, which re-detects the source
+        # language itself — accurately — so a wrong local guess (e.g. Spanish
+        # read as Portuguese) still translates correctly.
+        lang, conf = self.detect_lang(message.content)
+        if conf >= config.MIN_CONFIDENCE and lang == target_language.upper():
+            return
+        txt = self.gtranslate(message.content, target_language)
+        if txt and txt != message.content:
+            await message.channel.send(txt)
 
     async def send_whisper(self, token, user_id, message):
         url = "https://api.twitch.tv/helix/whispers"

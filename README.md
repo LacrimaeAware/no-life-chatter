@@ -11,9 +11,10 @@ study tool.
 
 ## What it does
 
-- **Auto-translation** — detects the language of chat messages and translates
-  them (e.g. into English) using Google Cloud Translation. Can run per-user,
-  per-channel, or globally.
+- **Auto-translation** — flags messages that aren't already in the target
+  language and translates them (e.g. into English) via DeepL (or Google). Runs
+  per-user, per-channel, or globally. Detection is local/free, so messages
+  already in the target language never hit a translation API.
 - **Practice mode** — for language learners. When you write in your native
   language, the bot privately *whispers* you the translation in the language(s)
   you're studying. When you write in a language you're learning, it posts the
@@ -84,9 +85,11 @@ Requires **Python 3.12+**.
    - Create a Twitch application at <https://dev.twitch.tv/console/apps> to get
      a **client ID** and **client secret**. Add `http://localhost:3000` to its
      *OAuth Redirect URLs*.
-   - For translation, create a Google Cloud service account with the Cloud
-     Translation API enabled, download its JSON key, and point
-     `paths.google_credentials` (or `GOOGLE_APPLICATION_CREDENTIALS`) at it.
+   - For translation, get a free **DeepL API key**
+     (<https://www.deepl.com/pro-api>) and set `DEEPL_API_KEY` in `.env`.
+     That's the easy path. (Optionally, you can also/instead use Google Cloud
+     Translation by pointing `GOOGLE_APPLICATION_CREDENTIALS` at a
+     service-account JSON; it's used as a fallback.)
 
 3. **Initialise the database:**
 
@@ -114,17 +117,20 @@ Twitch directly over IRC/Helix.
 
 ## A note on cost
 
-- **Language detection is free** — it runs locally via `langdetect`
-  (`utils/language_detect.py`), no API and no per-message charge.
-- **Translation** still uses the **Google Cloud Translation API**, which is
-  paid (it has a monthly free tier, but heavy chat traffic can exceed it).
+- **Detection is free** — it runs locally via `langdetect`
+  (`utils/language_detect.py`), with no API and no per-message charge. It's used
+  only as a gate: messages already in the target language are skipped, so they
+  never get sent to a translation API. Detection doesn't need to be precise
+  about *which* foreign language a message is — only that it isn't the target —
+  because the translator re-detects the source itself.
+- **Translation** uses **DeepL** by default (`DEEPL_API_KEY`), which has a free
+  tier (~500k characters/month). **Google Cloud Translation** (also free up to a
+  monthly limit) can be used as a fallback via a service-account key.
 
-If you want to drop the paid part too, the translation call is isolated in
-`services/message_service.py`, so swapping providers is a small change:
-
-- **DeepL API Free** — free tier; also auto-detects the source language.
-- **LibreTranslate** — open source; self-host for free.
-- **Argos Translate** — fully offline, on-device translation (no API at all).
+Both providers sit behind `services/translators.py`, so adding another — or
+rotating between them to stretch multiple free tiers — is a contained change.
+Other options if you'd rather self-host: **LibreTranslate** (open source) or
+**Argos Translate** (fully offline, no API).
 
 ## Known issues & notes
 
@@ -137,9 +143,10 @@ If you want to drop the paid part too, the translation call is isolated in
   underlying libraries and won't always match a textbook; Korean uses a
   straight Hangul-to-Latin mapping. It's "good enough to read along," not
   authoritative. This part could still use work.
-- **Language codes differ between services.** `langdetect`, Google, and what
-  users type don't all use the same codes. The bot normalizes to one uppercase
-  scheme with a small alias map, but uncommon languages can still slip through.
+- **Language codes differ between services.** `langdetect`, DeepL, Google, and
+  what users type don't all use the same codes (e.g. DeepL wants `EN-US` and
+  `ZH`). The bot normalizes to one uppercase scheme with small alias maps, but
+  uncommon languages can still slip through.
 - **Emotes can skew detection.** Twitch and third-party emotes are just words
   inside a message, so a mostly-German line with one English emote can confuse
   the detector. The bot already strips @mentions, URLs and known chatters'

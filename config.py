@@ -52,8 +52,10 @@ def _resolve(path_str: str) -> str:
 _bot = _cfg.get("bot", {})
 PREFIX: str = _bot.get("prefix", "~")
 CHANNELS: list[str] = [c.lower() for c in _bot.get("channels", [])]
-# Optional message posted to each joined channel on connect ("" disables it).
+# Optional message posted on connect ("" disables it).
 READY_MESSAGE: str = (_bot.get("ready_message") or "").strip()
+# If set, only post the ready message to this one channel; "" = all channels.
+READY_CHANNEL: str = (_bot.get("ready_channel") or "").strip().lower()
 
 if not CHANNELS:
     raise ValueError(
@@ -97,3 +99,4 @@ SUPPORTED_LANGS: set[str] = {
 # Read straight from the environment so they never live in tracked files.
 TWITCH_CLIENT_ID: str | None = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET: str | None = os.getenv("TWITCH_CLIENT_SECRET")
+DEEPL_API_KEY: str | None = os.getenv("DEEPL_API_KEY")

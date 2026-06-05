@@ -1,0 +1,9 @@
+twitchio>=2.9,<3
+python-dotenv
+requests
+aiohttp
+google-cloud-translate
+psutil
+langdetect
+pykakasi
+pythainlp
