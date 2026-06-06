@@ -53,10 +53,10 @@ min_confidence = 0.4
 min_words = 4
 
 [speaker]
-# The bot learns which languages each user writes in, to translate them more
-# reliably and to avoid translating users who only ever speak English.
-min_count = 3          # confident messages in a language -> treated as a speaker
-english_only_min = 8   # English messages before a user is treated as English-only (0 disables)
+# Write a language this many times (confidently) and the bot treats you as a
+# speaker of it — translating even your short messages. A simple count
+# threshold that flips the language on; no percentages/ratios.
+min_count = 3
 
 # Languages the passive (channel-wide) auto-translate will react to.
 supported = [

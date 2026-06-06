@@ -95,10 +95,8 @@ MIN_WORDS: int = int(_tr.get("min_words", 4))
 # reliably (and to avoid translating users who only ever write English).
 _sp = _cfg.get("speaker", {})
 # Confident messages in a language before a user is a "known speaker" of it.
+# A simple count threshold — once it's reached, the language flips on for them.
 SPEAKER_MIN_COUNT: int = int(_sp.get("min_count", 3))
-# Total English messages before a user is treated as "English-only" (so a stray
-# misdetection of their message is ignored). 0 disables this suppression.
-SPEAKER_ENGLISH_ONLY_MIN: int = int(_sp.get("english_only_min", 8))
 SUPPORTED_LANGS: set[str] = {
     lang.upper()
     for lang in _tr.get(

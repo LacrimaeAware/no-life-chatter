@@ -9,7 +9,7 @@ from utils.romanize import romanize, is_supported, thai_segment
 from utils.language_detect import detect_language
 from services.translators import deepl_translate
 from services.emotes import ensure_channel_emotes, strip_emotes
-from utils.speaker_profile import record_language, get_profile, known_speaker, english_only
+from utils.speaker_profile import record_language, get_profile, known_speaker
 import re
 import sqlite3
 import html
@@ -262,13 +262,11 @@ class MessageService:
         confident = conf >= config.MIN_CONFIDENCE
         supported = lang in config.SUPPORTED_LANGS
 
-        # Read the user's history ONCE, before recording this message (so a
-        # message can't lift its own English-only suppression).
-        profile = get_profile(user_id)
-        known = supported and known_speaker(profile, lang)
-        is_english_only = english_only(profile)
+        # Has this user written this language enough times (or been flagged) to
+        # count as a speaker of it? Pure count threshold — no percentages.
+        known = supported and known_speaker(get_profile(user_id), lang)
 
-        # Record confident detections to build the profile going forward.
+        # Record confident detections so the count builds up over time.
         if confident and supported:
             record_language(user_id, lang)
 
@@ -283,11 +281,7 @@ class MessageService:
         if not has_non_latin and len(text.split()) < config.MIN_WORDS and not known:
             return
 
-        # Skip users known to write only English (this detection is a misread),
-        # unless they're explicitly flagged as a speaker of this language.
-        if is_english_only and not known:
-            return
-        # Otherwise require either a confident detection or known-speaker history.
+        # Translate when detection is confident OR this is a known speaker.
         if not confident and not known:
             return
 
