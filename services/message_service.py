@@ -8,6 +8,8 @@ from utils.user_settings import get_user_settings
 from utils.romanize import romanize, is_supported, thai_segment
 from utils.language_detect import detect_language
 from services.translators import deepl_translate
+from services.emotes import ensure_channel_emotes, strip_emotes
+from utils.speaker_profile import record_language, get_profile, known_speaker, english_only
 import re
 import sqlite3
 import html
@@ -28,9 +30,13 @@ def fetch_usernames(channel_name):
         return []
 
 def filter_usernames_from_message(message, usernames):
-    if not usernames:
+    # Only strip bare usernames that are long enough to be unambiguous — short
+    # ones (<= 3 chars) collide with real words and would mangle messages.
+    # (@mentions are already handled separately by remove_at_words.)
+    names = [n for n in usernames if len(n) >= 4]
+    if not names:
         return message
-    pattern = r'\b(' + '|'.join(re.escape(n) for n in usernames) + r')\b'
+    pattern = r'\b(' + '|'.join(re.escape(n) for n in names) + r')\b'
     return re.sub(pattern, '', message, flags=re.IGNORECASE).strip()
 
 def log_user_activity(channel_name, user_name):
@@ -114,9 +120,15 @@ class MessageService:
         user_settings = get_user_settings(message.author.id)
         log_user_activity(message.channel.name, message.author.name)
 
-        # cleaning
+        # ---- cleaning: strip @mentions, known chatters' names, and emotes ----
         usernames = fetch_usernames(message.channel.name)
-        msg = filter_usernames_from_message(remove_at_words(message.content), usernames)
+        room_id = (getattr(message, 'tags', None) or {}).get('room-id')
+        emote_names = ensure_channel_emotes(room_id)
+
+        msg = remove_at_words(message.content)
+        msg = filter_usernames_from_message(msg, usernames)
+        msg = strip_emotes(msg, emote_names)
+        msg = msg.strip()
 
         # nothing meaningful left after cleaning
         if not msg:
@@ -126,7 +138,7 @@ class MessageService:
         if not msg[0].isalpha():
             return
 
-        # scrub URLs
+        # scrub URLs so links are never reposted
         msg = re.sub(r'\b(?:https?://)?\S+\.\S+\b', '***', msg)
 
         # ===== PRACTICE MODE (CSV in learn_lang, separate whispers) =====
@@ -212,14 +224,17 @@ class MessageService:
             if user_settings.get('translation_enabled'):
                 target = user_settings.get('translation_language', 'EN')
                 t = self.gtranslate(msg, target)
-                mode = user_settings.get('output_mode', 'default')
-                await self.output_message(message, t or "Failed to translate message.", mode, user_settings)
+                # Only output a real, changed translation — never echo the
+                # original or post an error string into chat.
+                if t and t != msg:
+                    mode = user_settings.get('output_mode', 'default')
+                    await self.output_message(message, t, mode, user_settings)
             else:
-                if ' ' in msg and is_translation_enabled_globally() and is_translation_enabled_for_channel(message.channel.name):
-                    await self.handle_translation_if_needed(message, 'EN')
+                if is_translation_enabled_globally() and is_translation_enabled_for_channel(message.channel.name):
+                    await self.handle_translation_if_needed(message, msg, 'EN')
         else:
-            if ' ' in msg and is_translation_enabled_globally() and is_translation_enabled_for_channel(message.channel.name):
-                await self.handle_translation_if_needed(message, 'EN')
+            if is_translation_enabled_globally() and is_translation_enabled_for_channel(message.channel.name):
+                await self.handle_translation_if_needed(message, msg, 'EN')
 
     async def output_message(self, message, content, mode, user_settings):
         if mode == 'whisper':
@@ -237,19 +252,47 @@ class MessageService:
         else:
             await message.channel.send(content)
 
-    async def handle_translation_if_needed(self, message, target_language):
-        if not self.can_translate:
+    async def handle_translation_if_needed(self, message, text, target_language):
+        if not self.can_translate or not text:
             return
-        # Local detection is only used as a cheap gate: is this already in the
-        # target language? If so, skip (no wasted translate call). For anything
-        # else we hand the raw text to DeepL, which re-detects the source
-        # language itself — accurately — so a wrong local guess (e.g. Spanish
-        # read as Portuguese) still translates correctly.
-        lang, conf = self.detect_lang(message.content)
-        if conf >= config.MIN_CONFIDENCE and lang == target_language.upper():
+
+        target = target_language.upper()
+        user_id = message.author.id
+        lang, conf = self.detect_lang(text)
+        confident = conf >= config.MIN_CONFIDENCE
+        supported = lang in config.SUPPORTED_LANGS
+
+        # Read the user's history ONCE, before recording this message (so a
+        # message can't lift its own English-only suppression).
+        profile = get_profile(user_id)
+        known = supported and known_speaker(profile, lang)
+        is_english_only = english_only(profile)
+
+        # Record confident detections to build the profile going forward.
+        if confident and supported:
+            record_language(user_id, lang)
+
+        # Not a usable foreign-language detection -> nothing to translate.
+        if not supported or lang == target:
             return
-        txt = self.gtranslate(message.content, target_language)
-        if txt and txt != message.content:
+
+        # Length gate: short Latin-script messages misdetect badly, so skip them
+        # UNLESS this user is a known speaker of the detected language (trust the
+        # history) or the message uses a non-Latin script (clearly foreign).
+        has_non_latin = bool(re.search(r'[^\x00-\x7FÀ-ɏ]', text))
+        if not has_non_latin and len(text.split()) < config.MIN_WORDS and not known:
+            return
+
+        # Skip users known to write only English (this detection is a misread),
+        # unless they're explicitly flagged as a speaker of this language.
+        if is_english_only and not known:
+            return
+        # Otherwise require either a confident detection or known-speaker history.
+        if not confident and not known:
+            return
+
+        txt = self.gtranslate(text, target_language)
+        if txt and txt != text:
             await message.channel.send(txt)
 
     async def send_whisper(self, token, user_id, message):

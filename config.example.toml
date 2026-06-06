@@ -44,10 +44,19 @@ google_credentials = "data/unsynced/google-service-account.json"
 default_target = "EN"
 
 # Minimum language-detection confidence (0–1) before the bot acts on a message.
-# Detection is done locally by langdetect. Short text (emotes, 1–2 words) gets
-# unreliable scores, so 0.7 filters most of that while letting real sentences
-# (which score ~0.85+) through. Lower it if too much is being skipped.
-min_confidence = 0.7
+# Detection is local (lingua). ~0.40 separates real foreign sentences from short
+# English/emote junk. Lower it to catch more, raise it to skip more.
+min_confidence = 0.4
+
+# Minimum word count before channel-wide auto-translate considers a message
+# (short messages misdetect). Messages in non-Latin scripts bypass this.
+min_words = 4
+
+[speaker]
+# The bot learns which languages each user writes in, to translate them more
+# reliably and to avoid translating users who only ever speak English.
+min_count = 3          # confident messages in a language -> treated as a speaker
+english_only_min = 8   # English messages before a user is treated as English-only (0 disables)
 
 # Languages the passive (channel-wide) auto-translate will react to.
 supported = [

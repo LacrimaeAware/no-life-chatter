@@ -83,7 +83,22 @@ GOOGLE_CREDENTIALS: str = _resolve(
 # ------------------------------- translation -----------------------------
 _tr = _cfg.get("translation", {})
 DEFAULT_TARGET: str = _tr.get("default_target", "EN").upper()
-MIN_CONFIDENCE: float = float(_tr.get("min_confidence", 0.7))
+# lingua confidence scale (0..1). ~0.40 separates real foreign sentences from
+# short English/junk. (This is a different scale than the old langdetect 0.7.)
+MIN_CONFIDENCE: float = float(_tr.get("min_confidence", 0.4))
+# Minimum word count before channel auto-translate considers a message (short
+# messages misdetect). Non-Latin-script messages bypass this.
+MIN_WORDS: int = int(_tr.get("min_words", 4))
+
+# ------------------------------ speaker profiles -------------------------
+# The bot learns which languages each user writes in, to translate them more
+# reliably (and to avoid translating users who only ever write English).
+_sp = _cfg.get("speaker", {})
+# Confident messages in a language before a user is a "known speaker" of it.
+SPEAKER_MIN_COUNT: int = int(_sp.get("min_count", 3))
+# Total English messages before a user is treated as "English-only" (so a stray
+# misdetection of their message is ignored). 0 disables this suppression.
+SPEAKER_ENGLISH_ONLY_MIN: int = int(_sp.get("english_only_min", 8))
 SUPPORTED_LANGS: set[str] = {
     lang.upper()
     for lang in _tr.get(

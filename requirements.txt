@@ -4,6 +4,6 @@ requests
 aiohttp
 google-cloud-translate
 psutil
-langdetect
+lingua-language-detector
 pykakasi
 pythainlp

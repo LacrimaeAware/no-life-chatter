@@ -15,7 +15,7 @@ requests = "^2.32.3"
 aiohttp = "^3.9.5"
 google-cloud-translate = "^3.15.3"
 psutil = "^6.0.0"
-langdetect = "^1.0.9"    # free, local language detection (no API cost)
+lingua-language-detector = "^2.0.0"   # free, local language detection (no API cost)
 # Romanization engines (practice mode)
 pykakasi = "^2.2.1"      # Japanese
 pythainlp = "^5.0.0"     # Thai

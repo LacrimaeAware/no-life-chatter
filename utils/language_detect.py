@@ -1,39 +1,47 @@
-"""Free, local language detection — no API, no per-message cost.
+"""Local language detection via lingua — free, no API.
 
-Uses `langdetect`, which runs in-process (like the romanizers) wherever the bot
-runs. This removes the paid Google "detect language" call; only the actual
-translation still uses a paid API.
+lingua is far more accurate than the old langdetect on short text, and crucially
+its confidence scores are *calibrated*: junk/emotes/short-English score low, real
+foreign sentences score high. That makes a confidence threshold actually work.
 
-It returns codes in the same uppercase scheme the rest of the bot uses
-(e.g. "EN", "JA", "ZH-CN"), so detection and translation agree on codes.
+Detection is restricted to the languages the bot supports (config.SUPPORTED_LANGS),
+which keeps it from guessing obscure languages. Codes are returned in the bot's
+uppercase scheme (e.g. "EN", "ES", "ZH-CN").
 """
 
-from langdetect import DetectorFactory, LangDetectException, detect_langs
+from lingua import Language, LanguageDetectorBuilder
 
-# Make detection deterministic (langdetect is randomized by default).
-DetectorFactory.seed = 0
+import config
 
-# langdetect emits ISO 639-1 codes (plus zh-cn / zh-tw). Uppercasing them lines
-# them up with the bot's code scheme; this table covers the few special cases.
-_ALIASES = {
-    "ZH": "ZH-CN",
+# bot code -> lingua Language
+_CODE_TO_LANG = {
+    "EN": Language.ENGLISH, "ES": Language.SPANISH, "FR": Language.FRENCH,
+    "DE": Language.GERMAN, "PT": Language.PORTUGUESE, "IT": Language.ITALIAN,
+    "RU": Language.RUSSIAN, "PL": Language.POLISH, "CS": Language.CZECH,
+    "SK": Language.SLOVAK, "UK": Language.UKRAINIAN, "EL": Language.GREEK,
+    "TR": Language.TURKISH, "HU": Language.HUNGARIAN, "VI": Language.VIETNAMESE,
+    "AR": Language.ARABIC, "JA": Language.JAPANESE, "KO": Language.KOREAN,
+    "ZH-CN": Language.CHINESE, "LA": Language.LATIN,
 }
+
+# lingua iso code -> bot code (only the ones that differ)
+_ISO_TO_CODE = {"ZH": "ZH-CN"}
+
+# Build a detector restricted to the configured supported languages. Always keep
+# English in the set so English is a candidate (and gets correctly identified
+# rather than forced into a foreign language).
+_langs = {_CODE_TO_LANG[c] for c in config.SUPPORTED_LANGS if c in _CODE_TO_LANG}
+_langs.add(Language.ENGLISH)
+_detector = LanguageDetectorBuilder.from_languages(*_langs).build()
 
 
 def detect_language(text: str) -> tuple[str, float]:
-    """Detect the language of ``text``.
-
-    Returns ``(LANG_CODE_UPPER, confidence)`` where confidence is 0..1, or
-    ``("", 0.0)`` if the language can't be determined.
-    """
+    """Return (LANG_CODE_UPPER, confidence 0..1), or ("", 0.0) if undetectable."""
     if not text or not text.strip():
         return "", 0.0
-    try:
-        results = detect_langs(text)  # already sorted, highest probability first
-    except LangDetectException:
+    values = _detector.compute_language_confidence_values(text)
+    if not values:
         return "", 0.0
-    if not results:
-        return "", 0.0
-    top = results[0]
-    code = top.lang.upper()
-    return _ALIASES.get(code, code), float(top.prob)
+    top = values[0]
+    code = top.language.iso_code_639_1.name  # e.g. "EN", "ZH"
+    return _ISO_TO_CODE.get(code, code), float(top.value)

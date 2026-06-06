@@ -82,6 +82,21 @@ def init_db(db_path: str) -> None:
             """
         )
 
+        # Per-user language profiles: how often each user is detected writing
+        # in each language (+ a manual "flagged" override). Used to translate
+        # known speakers reliably and skip English-only users.
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_languages (
+                user_id TEXT,
+                lang TEXT,
+                count INTEGER DEFAULT 0,
+                flagged INTEGER DEFAULT 0,
+                PRIMARY KEY (user_id, lang)
+            )
+            """
+        )
+
         # Seed the global translation switch OFF so a fresh install never
         # translates anything until you explicitly enable it.
         c.execute(
