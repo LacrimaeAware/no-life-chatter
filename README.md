@@ -120,6 +120,22 @@ Requires **Python 3.12+**.
 The bot runs anywhere Python does and doesn't need a web server — it talks to
 Twitch directly over IRC/Helix.
 
+### Windows quickstart & background running
+
+If you're on Windows, double-click these instead of using the terminal:
+
+| Script | Does |
+| --- | --- |
+| `1-setup.bat` | Create the venv, install deps, build the DB (run once). |
+| `2-login.bat` | Authorize the bot account (one-time). |
+| `3-run.bat` | Run the bot in a visible window. |
+| `run-background.vbs` | Run the bot **hidden** (no window), restarting it if it crashes, logging to `data/bot.log`. |
+| `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
+| `stop-bot.bat` | Stop the background bot. |
+
+To start the bot automatically at login, put a shortcut to `run-background.vbs`
+in your Startup folder (`shell:startup`).
+
 ## A note on cost
 
 - **Detection is free** — it runs locally via `lingua`
