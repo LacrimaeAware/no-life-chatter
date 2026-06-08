@@ -52,6 +52,12 @@ min_confidence = 0.4
 # (short messages misdetect). Messages in non-Latin scripts bypass this.
 min_words = 4
 
+# How far the best foreign-language score must beat the target language's own
+# score for a message to count as "confidently not the target language". This
+# handles ambiguous messages where several languages score close together
+# (including the Spanish-vs-Portuguese near-tie). Raise = stricter.
+min_margin = 0.15
+
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count

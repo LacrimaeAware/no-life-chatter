@@ -45,3 +45,20 @@ def detect_language(text: str) -> tuple[str, float]:
     top = values[0]
     code = top.language.iso_code_639_1.name  # e.g. "EN", "ZH"
     return _ISO_TO_CODE.get(code, code), float(top.value)
+
+
+def detect_confidences(text: str) -> dict[str, float]:
+    """Return {LANG_CODE_UPPER: confidence} across the supported languages.
+
+    Used to ask "is this confidently NOT the target language?" — comparing the
+    best foreign score against the target's own score, rather than trusting a
+    single top guess (which is unreliable when several languages are close, e.g.
+    Spanish vs Portuguese).
+    """
+    if not text or not text.strip():
+        return {}
+    out: dict[str, float] = {}
+    for v in _detector.compute_language_confidence_values(text):
+        code = v.language.iso_code_639_1.name
+        out[_ISO_TO_CODE.get(code, code)] = float(v.value)
+    return out

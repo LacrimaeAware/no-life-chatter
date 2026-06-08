@@ -89,6 +89,10 @@ MIN_CONFIDENCE: float = float(_tr.get("min_confidence", 0.4))
 # Minimum word count before channel auto-translate considers a message (short
 # messages misdetect). Non-Latin-script messages bypass this.
 MIN_WORDS: int = int(_tr.get("min_words", 4))
+# How far the best foreign-language score must beat the target language's own
+# score for a message to count as "confidently not the target language". Guards
+# against ambiguous messages where several languages (incl. English) are close.
+MIN_MARGIN: float = float(_tr.get("min_margin", 0.15))
 
 # ------------------------------ speaker profiles -------------------------
 # The bot learns which languages each user writes in, to translate them more

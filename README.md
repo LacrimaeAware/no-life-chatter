@@ -24,6 +24,10 @@ study tool.
   (via `pythainlp`, with word segmentation).
 - **Flexible output** — send translations to the same channel, to another
   channel, or as a whisper.
+- **Speaker profiles** — the bot learns which languages each user actually
+  writes in (a simple count, no ratios). Once you've written a language enough
+  times, even your short messages in it get translated; everyone else needs a
+  longer, clearly-foreign message. `~speak <lang>` flags it instantly.
 - **Per-user / per-channel / global settings** persisted in SQLite.
 
 ## How it works
@@ -56,6 +60,7 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~practice on <langs> [native]` | anyone | Start practice mode. e.g. `~practice on es,ja en` |
 | `~practice off` / `~practice show` | anyone | Stop / inspect practice mode. |
 | `~romanize on\|off\|show` | anyone | Toggle romanized readings in practice mode. |
+| `~speak <lang>` / `~speak show` | anyone | Flag your language so even your short messages translate. |
 | `~autotl` | admin | Toggle auto-translate for yourself. |
 | `~setlang <LANG>` | admin | Set your translation target language (e.g. `EN`). |
 | `~tloutput local\|whisper\|channel <name>` | admin | Where your translations are sent. |
@@ -117,12 +122,14 @@ Twitch directly over IRC/Helix.
 
 ## A note on cost
 
-- **Detection is free** — it runs locally via `langdetect`
+- **Detection is free** — it runs locally via `lingua`
   (`utils/language_detect.py`), with no API and no per-message charge. It's used
-  only as a gate: messages already in the target language are skipped, so they
-  never get sent to a translation API. Detection doesn't need to be precise
-  about *which* foreign language a message is — only that it isn't the target —
-  because the translator re-detects the source itself.
+  only as a gate: a message is sent to the translator only if it's *confidently
+  not the target language* (the best foreign score must clearly beat the
+  target's own score). Detection doesn't need to pick the exact foreign language
+  — only rule out the target — because the translator re-detects the source
+  itself. Short messages also require a minimum length unless the author is a
+  known speaker of the language (see speaker profiles below).
 - **Translation** uses **DeepL** by default (`DEEPL_API_KEY`), which has a free
   tier (~500k characters/month). **Google Cloud Translation** (also free up to a
   monthly limit) can be used as a fallback via a service-account key.
@@ -143,10 +150,10 @@ Other options if you'd rather self-host: **LibreTranslate** (open source) or
   underlying libraries and won't always match a textbook; Korean uses a
   straight Hangul-to-Latin mapping. It's "good enough to read along," not
   authoritative. This part could still use work.
-- **Language codes differ between services.** `langdetect`, DeepL, Google, and
-  what users type don't all use the same codes (e.g. DeepL wants `EN-US` and
-  `ZH`). The bot normalizes to one uppercase scheme with small alias maps, but
-  uncommon languages can still slip through.
+- **Language codes differ between services.** `lingua`, DeepL, Google, and what
+  users type don't all use the same codes (e.g. DeepL wants `EN-US` and `ZH`).
+  The bot normalizes to one uppercase scheme with small alias maps, but uncommon
+  languages can still slip through.
 - **Emotes can skew detection.** Twitch and third-party emotes are just words
   inside a message, so a mostly-German line with one English emote can confuse
   the detector. The bot already strips @mentions, URLs and known chatters'

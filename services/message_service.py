@@ -6,7 +6,7 @@ from google.oauth2 import service_account
 from google.cloud import translate_v2 as translate
 from utils.user_settings import get_user_settings
 from utils.romanize import romanize, is_supported, thai_segment
-from utils.language_detect import detect_language
+from utils.language_detect import detect_language, detect_confidences
 from services.translators import deepl_translate
 from services.emotes import ensure_channel_emotes, strip_emotes
 from utils.speaker_profile import record_language, get_profile, known_speaker
@@ -258,31 +258,51 @@ class MessageService:
 
         target = target_language.upper()
         user_id = message.author.id
-        lang, conf = self.detect_lang(text)
-        confident = conf >= config.MIN_CONFIDENCE
-        supported = lang in config.SUPPORTED_LANGS
 
-        # Has this user written this language enough times (or been flagged) to
-        # count as a speaker of it? Pure count threshold — no percentages.
-        known = supported and known_speaker(get_profile(user_id), lang)
-
-        # Record confident detections so the count builds up over time.
-        if confident and supported:
-            record_language(user_id, lang)
-
-        # Not a usable foreign-language detection -> nothing to translate.
-        if not supported or lang == target:
+        # Confidence across all supported languages. The decision isn't "what's
+        # the single top guess" (unreliable when languages are close) but "is
+        # this confidently NOT the target language" — i.e. does the best foreign
+        # guess clearly beat the target's own score.
+        confs = detect_confidences(text)
+        if not confs:
+            return
+        target_conf = confs.get(target, 0.0)
+        best_lang, best_conf = None, 0.0
+        for code, c in confs.items():
+            if code != target and code in config.SUPPORTED_LANGS and c > best_conf:
+                best_lang, best_conf = code, c
+        if not best_lang:
             return
 
+        # If the target language is the best (or tied) guess, it's the target /
+        # too ambiguous -> never translate (this is what stops English & emotes).
+        if target_conf >= best_conf:
+            return
+
+        # Has this user written this language enough times (or been flagged)?
+        # Per-language: only their flagged language gets the lenient treatment.
+        known = known_speaker(get_profile(user_id), best_lang)
+
+        # "Confidently foreign": the best foreign guess clears the bar AND beats
+        # the target by a clear margin (handles Spanish-vs-Portuguese ties too).
+        confidently_foreign = (
+            best_conf >= config.MIN_CONFIDENCE
+            and (best_conf - target_conf) >= config.MIN_MARGIN
+        )
+
+        # Build the speaker profile from confident foreign detections.
+        if confidently_foreign:
+            record_language(user_id, best_lang)
+
         # Length gate: short Latin-script messages misdetect badly, so skip them
-        # UNLESS this user is a known speaker of the detected language (trust the
-        # history) or the message uses a non-Latin script (clearly foreign).
+        # unless this is a known speaker of the language or the text is non-Latin
+        # (a clearly foreign script even when short).
         has_non_latin = bool(re.search(r'[^\x00-\x7FÀ-ɏ]', text))
         if not has_non_latin and len(text.split()) < config.MIN_WORDS and not known:
             return
 
-        # Translate when detection is confident OR this is a known speaker.
-        if not confident and not known:
+        # Translate when confidently foreign, or for a known speaker of it.
+        if not confidently_foreign and not known:
             return
 
         txt = self.gtranslate(text, target_language)
