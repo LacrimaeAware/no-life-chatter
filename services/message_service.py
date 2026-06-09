@@ -9,7 +9,7 @@ from utils.romanize import romanize, is_supported, thai_segment
 from utils.language_detect import detect_language, detect_confidences
 from services.translators import deepl_translate
 from services.emotes import ensure_channel_emotes, strip_emotes
-from utils.speaker_profile import record_language, get_profile, known_speaker
+from utils.speaker_profile import record_language
 import re
 import sqlite3
 import html
@@ -56,6 +56,30 @@ def decode_html_entities(text):
 
 def remove_at_words(text):
     return re.sub(r"@\S+", "", text).lstrip()
+
+def strip_emote_like_tokens(text):
+    """Drop tokens that look like emote names rather than words.
+
+    Emotes not in the fetched 7TV/BTTV/FFZ lists (and native Twitch emotes,
+    which the bot doesn't enumerate) reach detection as plain text, and both
+    lingua and DeepL treat them as foreign words — e.g. "CuldBeWorthIt" detects
+    as German 0.63 and DeepL turns it into "Is It Worth It?". Such names are
+    structurally distinct from real words: an internal capital (CamelCase, like
+    "CuldBeWorthIt" / "hesRight") or a long all-caps run with no spaces (like
+    "TELLMEHEDIDNTJUSTSAYTHAT"). Ordinary chat words — including Title Case and
+    short shouting — don't look like that, so dropping these before detection is
+    safe and keeps any real words around them.
+    """
+    kept = []
+    for tok in text.split():
+        core = tok.strip('.,!?;:()[]')
+        if re.search(r'[a-z][A-Z]', core):           # CamelCase emote name
+            continue
+        letters = [c for c in core if c.isalpha()]
+        if len(letters) >= 12 and core.isupper():    # long all-caps mash-emote
+            continue
+        kept.append(tok)
+    return ' '.join(kept)
 
 def is_translation_enabled_globally():
     db_path = config.DB_PATH
@@ -128,6 +152,7 @@ class MessageService:
         msg = remove_at_words(message.content)
         msg = filter_usernames_from_message(msg, usernames)
         msg = strip_emotes(msg, emote_names)
+        msg = strip_emote_like_tokens(msg)
         msg = msg.strip()
 
         # nothing meaningful left after cleaning
@@ -279,10 +304,6 @@ class MessageService:
         if target_conf >= best_conf:
             return
 
-        # Has this user written this language enough times (or been flagged)?
-        # Per-language: only their flagged language gets the lenient treatment.
-        known = known_speaker(get_profile(user_id), best_lang)
-
         # "Confidently foreign" is a question about the *distribution*, not an
         # absolute score: does the best foreign language clearly win the
         # head-to-head against the target? Lingua's confidences are miscalibrated
@@ -300,26 +321,27 @@ class MessageService:
             and foreign_share >= config.MIN_FOREIGN_SHARE
         )
 
-        # Build the speaker profile from confident foreign detections.
+        # Build the speaker profile from confident foreign detections (kept for
+        # the ~speak command and future use; it no longer affects this gate).
         if confidently_foreign:
             record_language(user_id, best_lang)
 
-        # Length gate: short Latin-script messages misdetect badly, so skip them
-        # unless this is a known speaker of the language or the text is non-Latin
-        # (a clearly foreign script even when short). Being a known speaker only
-        # relaxes the *length* requirement — it does NOT switch off the
-        # "is this actually foreign" test below.
-        has_non_latin = bool(re.search(r'[^\x00-\x7FÀ-ɏ]', text))
-        if not has_non_latin and len(text.split()) < config.MIN_WORDS and not known:
+        if not confidently_foreign:
             return
 
-        # The message must be confidently in the foreign language — ALWAYS, even
-        # for a known speaker. A known German speaker still writes English ("im
-        # not rich" detects as weak German, barely beating English); translating
-        # that is exactly the bug. The speaker profile lowers the length bar; it
-        # never overrides detection. Real foreign text (even short, e.g. "danke
-        # schön") clears this easily; English/junk does not.
-        if not confidently_foreign:
+        # Short-phrase rule: 1-3 word Latin-script messages are unreliable — both
+        # lingua and DeepL hallucinate on fragments and on emote names that slip
+        # past cleaning ("ge" -> "give", "nah fam" -> "Nah, I'm not hungry"). Only
+        # translate a short message when a *single* language is strongly detected
+        # (high absolute confidence, e.g. "danke schön" 0.68, "buongiorno" 0.95);
+        # ambiguous short text (real or not) is skipped. Non-Latin scripts are
+        # exempt — the script itself is a strong signal. This applies to everyone:
+        # known-speaker status no longer forces short messages through, which was
+        # translating fragments and emote leftovers from established chatters.
+        has_non_latin = bool(re.search(r'[^\x00-\x7FÀ-ɏ]', text))
+        if (not has_non_latin
+                and len(text.split()) < config.MIN_WORDS
+                and best_conf < config.MIN_SHORT_CONFIDENCE):
             return
 
         txt = self.gtranslate(text, target_language)

@@ -100,6 +100,13 @@ MIN_WORDS: int = int(_tr.get("min_words", 4))
 # so near-uniform noise (everything ~0.05, share meaningless) is still skipped.
 MIN_FOREIGN_SHARE: float = float(_tr.get("min_foreign_share", 0.63))
 MIN_FOREIGN_SIGNAL: float = float(_tr.get("min_foreign_signal", 0.10))
+# Short Latin-script messages (< MIN_WORDS words) are unreliable to detect AND
+# to translate — fragments and leftover emote names get "translated" into
+# nonsense. So a short message is only translated when a single language is
+# detected with at least this absolute confidence ("avoid short phrases unless
+# very sure"). Real short foreign like "danke schön" (0.68) or "buongiorno"
+# (0.95) clears it; "nah fam"/"ge"/emote junk (~0.25) does not.
+MIN_SHORT_CONFIDENCE: float = float(_tr.get("min_short_confidence", 0.55))
 
 # ------------------------------ speaker profiles -------------------------
 # The bot learns which languages each user writes in, to translate them more

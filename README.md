@@ -149,8 +149,12 @@ in your Startup folder (`shell:startup`).
   absolute floor under-fires for some languages while letting English-ish junk
   through for others. Detection doesn't need to pick the exact foreign language —
   only rule out the target — because the translator re-detects the source
-  itself. Short messages also require a minimum length unless the author is a
-  known speaker of the language (see speaker profiles below).
+  itself. **Short messages are held to a stricter bar**: a one-to-three-word
+  message is only translated when a *single* language is detected with high
+  absolute confidence (`min_short_confidence`). Both the detector and the
+  translator tend to invent a "translation" for tiny fragments and for emote
+  names, so unless something like "danke schön" or "buongiorno" is clearly
+  there, short text is left alone.
 - **Translation** uses **DeepL** by default (`DEEPL_API_KEY`), which has a free
   tier (~500k characters/month). **Google Cloud Translation** (also free up to a
   monthly limit) can be used as a fallback via a service-account key.
@@ -176,12 +180,15 @@ Other options if you'd rather self-host: **LibreTranslate** (open source) or
   The bot normalizes to one uppercase scheme with small alias maps, but uncommon
   languages can still slip through.
 - **Emotes can skew detection.** Twitch and third-party emotes are just words
-  inside a message, so a mostly-German line with one English emote can confuse
-  the detector. The bot already strips @mentions, URLs and known chatters'
-  names and uses heuristics that work reasonably well. A fuller fix — fetching
-  the channel's emote list and stripping emotes before detecting — was left out
-  on purpose to avoid the extra computation, since this is aimed at translating
-  slower / offline-style chat rather than fast live spam.
+  inside a message, so a line with an emote in it can confuse the detector. The
+  bot strips @mentions, URLs, known chatters' names, and the channel's 7TV /
+  BTTV / FFZ emotes before detecting. Emotes that aren't in those lists (e.g.
+  native Twitch emotes, which the bot doesn't enumerate) are caught by a
+  structural heuristic — tokens with internal capitals (`CuldBeWorthIt`,
+  `hesRight`) or long all-caps mashes (`TELLMEHEDIDNTJUSTSAYTHAT`) are dropped,
+  since real words don't look like that. It isn't perfect, but combined with the
+  short-message rule above it stops the common case of an emote name being
+  "translated" into a random phrase.
 - **The `translation.min_foreign_share` knob** (in `config.toml`) is the dial
   for channel auto-translate: how decisively the best foreign guess must beat the
   target in the head-to-head share before the bot acts (default `0.63`). Lower it

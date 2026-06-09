@@ -72,6 +72,15 @@ min_foreign_share = 0.63
 # 0.05 and the share figure is meaningless — is still skipped.
 min_foreign_signal = 0.10
 
+# Short messages (fewer than min_words words) are unreliable to detect AND to
+# translate: lingua and the translator both invent a "translation" for 1–2 word
+# fragments and for emote names that slip past cleaning. So a short message is
+# only translated when a SINGLE language is detected with at least this absolute
+# confidence. Real short foreign ("danke schön" ≈ 0.68, "buongiorno" ≈ 0.95)
+# clears it; fragments and emote junk (≈ 0.25) don't. Raise = skip more short
+# messages; lower = translate more of them (and risk more nonsense).
+min_short_confidence = 0.55
+
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count
