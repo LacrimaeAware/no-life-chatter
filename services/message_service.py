@@ -283,11 +283,21 @@ class MessageService:
         # Per-language: only their flagged language gets the lenient treatment.
         known = known_speaker(get_profile(user_id), best_lang)
 
-        # "Confidently foreign": the best foreign guess clears the bar AND beats
-        # the target by a clear margin (handles Spanish-vs-Portuguese ties too).
+        # "Confidently foreign" is a question about the *distribution*, not an
+        # absolute score: does the best foreign language clearly win the
+        # head-to-head against the target? Lingua's confidences are miscalibrated
+        # in absolute terms across languages (German tends to score high, Spanish
+        # low), so an absolute floor wrongly skipped plain Spanish like "las ratas
+        # en mi culo" (ES 0.23) even though English scored a mere 0.05. The
+        # reliable signal is the normalized share between the best foreign guess
+        # and the target — i.e. of the English-vs-foreign contest, how much does
+        # the foreign side win by. A tiny absolute floor still rejects the
+        # near-uniform-noise case (everything ~0.05) where share is meaningless.
+        denom = best_conf + target_conf
+        foreign_share = (best_conf / denom) if denom > 0 else 0.0
         confidently_foreign = (
-            best_conf >= config.MIN_CONFIDENCE
-            and (best_conf - target_conf) >= config.MIN_MARGIN
+            best_conf >= config.MIN_FOREIGN_SIGNAL
+            and foreign_share >= config.MIN_FOREIGN_SHARE
         )
 
         # Build the speaker profile from confident foreign detections.

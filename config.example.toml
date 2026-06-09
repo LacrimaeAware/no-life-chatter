@@ -43,20 +43,34 @@ google_credentials = "data/unsynced/google-service-account.json"
 # Default language to translate into when a user enables auto-translate.
 default_target = "EN"
 
-# Minimum language-detection confidence (0–1) before the bot acts on a message.
-# Detection is local (lingua). ~0.40 separates real foreign sentences from short
-# English/emote junk. Lower it to catch more, raise it to skip more.
+# Minimum language-detection confidence (0–1). Detection is local (lingua).
+# This is used by *practice mode*'s single-guess gate. Channel-wide
+# auto-translate uses the share-based gate below instead (lingua's absolute
+# scores are miscalibrated across languages, so an absolute floor under-fires
+# for languages like Spanish that simply never score as high as, say, German).
 min_confidence = 0.4
 
 # Minimum word count before channel-wide auto-translate considers a message
-# (short messages misdetect). Messages in non-Latin scripts bypass this.
+# (short messages misdetect). Messages in non-Latin scripts, and known speakers
+# of a language, bypass this.
 min_words = 4
 
-# How far the best foreign-language score must beat the target language's own
-# score for a message to count as "confidently not the target language". This
-# handles ambiguous messages where several languages score close together
-# (including the Spanish-vs-Portuguese near-tie). Raise = stricter.
-min_margin = 0.15
+# Channel auto-translate gate (the main dial). A message counts as "confidently
+# not the target language" when the best foreign guess wins the head-to-head
+# *share* against the target by at least this much:
+#
+#     best_foreign / (best_foreign + target)  >=  min_foreign_share
+#
+# This asks "of the English-vs-foreign contest, how decisively does foreign
+# win?" — which is reliable — instead of "did foreign clear some absolute score"
+# — which isn't, because Spanish/Italian/etc. rarely score as high as German.
+# 0.63 cleanly separates real foreign text from English/junk on a labelled test
+# set. Raise = stricter (skip more), lower = catch more.
+min_foreign_share = 0.63
+
+# Tiny absolute floor so near-uniform noise — where every language sits around
+# 0.05 and the share figure is meaningless — is still skipped.
+min_foreign_signal = 0.10
 
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a

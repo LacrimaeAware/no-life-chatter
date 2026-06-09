@@ -141,9 +141,14 @@ in your Startup folder (`shell:startup`).
 - **Detection is free** — it runs locally via `lingua`
   (`utils/language_detect.py`), with no API and no per-message charge. It's used
   only as a gate: a message is sent to the translator only if it's *confidently
-  not the target language* (the best foreign score must clearly beat the
-  target's own score). Detection doesn't need to pick the exact foreign language
-  — only rule out the target — because the translator re-detects the source
+  not the target language*. The test is about the **distribution**, not an
+  absolute score — the best foreign guess has to win the head-to-head *share*
+  against the target (`best / (best + target) ≥ min_foreign_share`). That matters
+  because lingua's absolute scores aren't comparable across languages (German
+  routinely scores higher than Spanish for equally-clear text), so a flat
+  absolute floor under-fires for some languages while letting English-ish junk
+  through for others. Detection doesn't need to pick the exact foreign language —
+  only rule out the target — because the translator re-detects the source
   itself. Short messages also require a minimum length unless the author is a
   known speaker of the language (see speaker profiles below).
 - **Translation** uses **DeepL** by default (`DEEPL_API_KEY`), which has a free
@@ -177,9 +182,11 @@ Other options if you'd rather self-host: **LibreTranslate** (open source) or
   the channel's emote list and stripping emotes before detecting — was left out
   on purpose to avoid the extra computation, since this is aimed at translating
   slower / offline-style chat rather than fast live spam.
-- **The `translation.min_confidence` knob** (in `config.toml`) is the dial for
-  how sure the detector must be before the bot acts. Lower it to catch more,
-  raise it to skip more.
+- **The `translation.min_foreign_share` knob** (in `config.toml`) is the dial
+  for channel auto-translate: how decisively the best foreign guess must beat the
+  target in the head-to-head share before the bot acts (default `0.63`). Lower it
+  to catch more, raise it to skip more. (`min_confidence` still governs the
+  separate practice-mode gate.)
 
 ## License
 

@@ -83,16 +83,23 @@ GOOGLE_CREDENTIALS: str = _resolve(
 # ------------------------------- translation -----------------------------
 _tr = _cfg.get("translation", {})
 DEFAULT_TARGET: str = _tr.get("default_target", "EN").upper()
-# lingua confidence scale (0..1). ~0.40 separates real foreign sentences from
-# short English/junk. (This is a different scale than the old langdetect 0.7.)
+# lingua confidence scale (0..1). Used by practice mode's single-guess gate.
+# (Channel auto-translate uses the share-based gate below instead, because
+# lingua's absolute scores are miscalibrated across languages.)
 MIN_CONFIDENCE: float = float(_tr.get("min_confidence", 0.4))
 # Minimum word count before channel auto-translate considers a message (short
-# messages misdetect). Non-Latin-script messages bypass this.
+# messages misdetect). Non-Latin-script messages, and known speakers, bypass it.
 MIN_WORDS: int = int(_tr.get("min_words", 4))
-# How far the best foreign-language score must beat the target language's own
-# score for a message to count as "confidently not the target language". Guards
-# against ambiguous messages where several languages (incl. English) are close.
-MIN_MARGIN: float = float(_tr.get("min_margin", 0.15))
+# Channel auto-translate gate. The decision is about the *distribution*, not an
+# absolute score: a message is "confidently not the target language" when the
+# best foreign guess wins the head-to-head share against the target by at least
+# MIN_FOREIGN_SHARE. (best / (best + target) >= share.) This translates clear
+# Spanish/etc. that never reaches a high absolute score, while still skipping
+# English/junk where the foreign guess only edges English out. 0.63 cleanly
+# separates the two on a labelled test set. MIN_FOREIGN_SIGNAL is a tiny floor
+# so near-uniform noise (everything ~0.05, share meaningless) is still skipped.
+MIN_FOREIGN_SHARE: float = float(_tr.get("min_foreign_share", 0.63))
+MIN_FOREIGN_SIGNAL: float = float(_tr.get("min_foreign_signal", 0.10))
 
 # ------------------------------ speaker profiles -------------------------
 # The bot learns which languages each user writes in, to translate them more
