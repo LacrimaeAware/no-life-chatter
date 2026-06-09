@@ -296,13 +296,20 @@ class MessageService:
 
         # Length gate: short Latin-script messages misdetect badly, so skip them
         # unless this is a known speaker of the language or the text is non-Latin
-        # (a clearly foreign script even when short).
+        # (a clearly foreign script even when short). Being a known speaker only
+        # relaxes the *length* requirement — it does NOT switch off the
+        # "is this actually foreign" test below.
         has_non_latin = bool(re.search(r'[^\x00-\x7FÀ-ɏ]', text))
         if not has_non_latin and len(text.split()) < config.MIN_WORDS and not known:
             return
 
-        # Translate when confidently foreign, or for a known speaker of it.
-        if not confidently_foreign and not known:
+        # The message must be confidently in the foreign language — ALWAYS, even
+        # for a known speaker. A known German speaker still writes English ("im
+        # not rich" detects as weak German, barely beating English); translating
+        # that is exactly the bug. The speaker profile lowers the length bar; it
+        # never overrides detection. Real foreign text (even short, e.g. "danke
+        # schön") clears this easily; English/junk does not.
+        if not confidently_foreign:
             return
 
         txt = self.gtranslate(text, target_language)
