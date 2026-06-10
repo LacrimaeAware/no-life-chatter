@@ -72,16 +72,38 @@ class Bot(commands.Bot):
         initialize_channel_settings(config.CHANNELS)
 
     async def event_ready(self):
-        logging.info(f"Ready | Logged in as {self.nick}")
+        logging.info(f"Ready | Logged in as {self.nick} (id {self.user_id})")
+        logging.info(f"Joined channels: {[c.name for c in self.connected_channels]}")
+        # Sending the ready message doubles as a self-test: if Twitch is dropping
+        # our messages (unverified phone, suspended, shadowban), we'll either get
+        # a NOTICE (logged by event_raw_data below) or a send exception here.
         if config.READY_MESSAGE:
             targets = [config.READY_CHANNEL] if config.READY_CHANNEL else config.CHANNELS
             for channel_name in targets:
                 channel = self.get_channel(channel_name)
-                if channel:
+                if not channel:
+                    logging.warning(f"Ready msg: not joined to '{channel_name}' — cannot send.")
+                    continue
+                try:
                     await channel.send(config.READY_MESSAGE)
+                    logging.info(f"Ready msg sent to #{channel_name} (if it didn't appear, watch for a NOTICE).")
+                except Exception as e:
+                    logging.error(f"Ready msg send FAILED for #{channel_name}: {e!r}")
 
     async def event_message(self, message):
         await self.handler.process_message(message)
+
+    async def event_raw_data(self, data):
+        # Surface Twitch's own NOTICE messages — this is how Twitch tells a bot
+        # *why* a message was dropped (e.g. msg-id=msg_requires_verified_phone_number,
+        # msg_banned, msg_channel_suspended, msg_duplicate, msg_rejected). Without
+        # this they're invisible and the bot just looks silently broken.
+        for line in data.split("\r\n"):
+            if " NOTICE " in line and "tmi.twitch.tv" in line:
+                logging.warning(f"Twitch NOTICE: {line.strip()}")
+
+    async def event_error(self, error, data=None):
+        logging.error(f"twitchio event error: {error!r} | data={data!r}")
 
 
 def main():

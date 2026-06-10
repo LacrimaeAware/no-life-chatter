@@ -346,7 +346,11 @@ class MessageService:
 
         txt = self.gtranslate(text, target_language)
         if txt and txt != text:
-            await message.channel.send(txt)
+            logging.info(f"Auto-translate -> #{message.channel.name}: {txt!r}")
+            try:
+                await message.channel.send(txt)
+            except Exception as e:
+                logging.error(f"send to #{message.channel.name} FAILED: {e!r}")
 
     async def send_whisper(self, token, user_id, message):
         url = "https://api.twitch.tv/helix/whispers"
