@@ -170,7 +170,10 @@ Q&A. See "Next work" below.
    compare against RAG-only. Current pilot shape: 41,278 train examples,
    2,186 validation examples, 2,580 optimizer steps on
    `unsloth/Qwen2.5-7B-Instruct-bnb-4bit`, LoRA rank 16, bf16 on RTX 4090,
-   prompt+completion SFT. Observed runtime reached 191/2580 steps in 7:30
+   prompt+completion SFT. Qwen was chosen as an ungated, low-friction pipeline
+   pilot, not as the guaranteed final personality model. If outputs feel bland,
+   rerun the same pipeline on Llama 3.1/3.2 8B Instruct or another preferred
+   7B-9B local chat model. Observed runtime reached 191/2580 steps in 7:30
    before a manual Ctrl+C, implying roughly 1.5 to 2.25 hours for the training
    phase including eval overhead. Current scripts save every 100 steps and
    auto-resume from the newest `persona_lora/checkpoint-*`. After RunPod

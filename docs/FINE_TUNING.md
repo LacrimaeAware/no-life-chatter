@@ -112,10 +112,12 @@ loads `/workspace/nlc_persona/persona_lora`, and writes:
 /workspace/nlc_persona/persona_lora_smoke_test.txt
 ```
 
-Open/download that text file and inspect the sample outputs. If they look
+The smoke test includes direct `@persona`-style prompts, normal and hyper-style
+instructions, old bot outputs for comparison, and two samples per prompt. Open
+or download that text file and inspect the sample outputs. If they look
 meaningfully better than the base/RAG-only behavior, proceed to merge/convert.
-If they look bad, fix the dataset/export/training setup before spending time on
-GGUF conversion.
+If they look bad, fix the prompt/eval shape, dataset/export, or base model
+choice before spending time on GGUF conversion.
 
 If training is interrupted, do **not** delete `nlc_persona` before resuming.
 The training script saves checkpoints under `/workspace/nlc_persona/persona_lora`
@@ -148,8 +150,11 @@ Start with an 8B instruct model and LoRA/QLoRA.
 - Pilot: RTX 4090 / RTX 3090 / A5000 class GPU, 24 GB VRAM.
 - More comfortable/faster: A100 40/80 GB or H100.
 - Pilot base model target: `unsloth/Qwen2.5-7B-Instruct-bnb-4bit`.
-  This avoids Hugging Face gated-model login friction for the first run and
-  still has GGUF/local-runtime paths for later testing.
+  This was chosen as a low-friction pipeline pilot because it is ungated and
+  easy to train through Unsloth, not because it is guaranteed to be the best
+  persona-voice model. If the pilot is technically successful but feels bland,
+  rerun on the model family the user actually wants to run long-term, e.g.
+  Llama 3.1/3.2 8B Instruct or another strong 7B-9B chat model.
 - Later comparison target: Llama 3.1/3.2 8B Instruct or another 7B-9B model
   that runs well locally after quantization.
 
