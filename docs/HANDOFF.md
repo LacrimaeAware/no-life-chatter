@@ -56,6 +56,10 @@ the live answer was a real, in-voice answer about his mage.
   `PYTHONUTF8=1` for any script that prints emoji (the launcher already does).
 - **Ingest more logs**: `python scripts/ingest_chatterino.py [logs-root]
   [--channels a,b,c] [--since YYYY-MM-DD]` — incremental & idempotent.
+- **Download public mirror logs for specific ThickPoo users**:
+  double-click `12-download-thickpoo-user-logs.bat`, enter Twitch logins, and
+  choose whether to import. It uses `scripts/download_zonian_user_logs.py` and
+  keeps raw downloads under gitignored `data/unsynced/external_logs/zonian/`.
 - **Query archive offline**: `python scripts/ask_archive.py said|quote|stats|search ...`
 - **Preview a Markov persona (no chat post)**: `python scripts/persona_preview.py <user>`
 - **Preview LLM/RAG exemplar selection (no model/chat post)**:

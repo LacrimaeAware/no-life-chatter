@@ -72,6 +72,38 @@ The bot already receives every message in its joined channels. A small hook in
 the archive self-maintaining from the day it's built, independent of
 Chatterino running.
 
+### 3. External user logs via Zonian/IVR mirrors
+
+`scripts/download_zonian_user_logs.py` can enrich the private archive with
+public historical logs for specific users in a specific channel. It calls the
+Zonian mirror API (`https://logs.zonian.dev/api/<channel>/<user>`) to discover
+which logging instance has the best coverage, downloads monthly raw logs from
+that instance, and optionally imports non-duplicate rows into
+`data/unsynced/chat_archive.db`.
+
+Double-click `12-download-thickpoo-user-logs.bat` for the normal user-facing
+flow. It prompts for one or more Twitch logins, defaults to `#thickpoo`, and
+asks whether to import after download. Raw logs are stored under
+`data/unsynced/external_logs/zonian/raw/<channel>/<user>/`; this path is
+gitignored and must stay private.
+
+CLI form:
+
+```
+python scripts/download_zonian_user_logs.py --channel thickpoo --users ebbel,forsenstares --import-archive
+```
+
+Useful test run:
+
+```
+python scripts/download_zonian_user_logs.py --channel thickpoo --users ebbel --limit-months 1
+```
+
+The mirror's raw monthly logs use UTC timestamps; the importer converts them to
+the local archive timezone (`America/New_York` by default) before inserting.
+Duplicate protection checks `(channel, author, sent_at, content)`, so rerunning
+the downloader is safe.
+
 ## Schema
 
 ```sql
