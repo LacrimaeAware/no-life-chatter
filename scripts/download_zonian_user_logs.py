@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils import chat_archive  # noqa: E402
+import config  # noqa: E402
 
 
 API_BASE = "https://logs.zonian.dev"
@@ -34,6 +35,18 @@ RAW_LINE_RE = re.compile(
     r"^\[(?P<date>\d{4}-\d{2}-\d{2}) (?P<time>\d{2}:\d{2}:\d{2})\]\s+"
     r"#?(?P<channel>\S+)\s+(?P<author>[^:]+):\s?(?P<content>.*)$"
 )
+DEFAULT_NOISE_USERS = {
+    "automod",
+    "bluepagmanbot",
+    "ebbelbot",
+    "mtgbot",
+    "nightbot",
+    "potatbotat",
+    "streamelements",
+    "streamlabs",
+    "supibot",
+    "weirdfarts1ave",
+}
 
 
 @dataclass(frozen=True)
@@ -170,6 +183,67 @@ def _summary_path(out_root: Path, channel: str) -> Path:
     return out_root / f"{_safe_name(channel)}_download_summary.json"
 
 
+def _is_noise_user(author: str, canonical: str, excluded: set[str]) -> bool:
+    return (
+        author in excluded
+        or canonical in excluded
+        or author in DEFAULT_NOISE_USERS
+        or canonical in DEFAULT_NOISE_USERS
+        or author.endswith("bot")
+        or canonical.endswith("bot")
+    )
+
+
+def archive_users(channel: str, min_messages: int, include_excluded: bool) -> tuple[list[str], list[dict]]:
+    """Return locally-known authors for a channel, ordered by archive count."""
+    conn = chat_archive.connect()
+    normalized_channel = chat_archive.normalize_channel(channel)
+    rows = conn.execute(
+        """
+        SELECT author, COUNT(*) AS n, MIN(sent_at), MAX(sent_at)
+        FROM messages
+        WHERE channel = ?
+        GROUP BY author
+        HAVING n >= ?
+        ORDER BY n DESC, author
+        """,
+        (normalized_channel, min_messages),
+    ).fetchall()
+
+    users = []
+    skipped = []
+    excluded = set(getattr(config, "EXCLUDE_USERS", set()))
+    for author, count, _first_seen, _last_seen in rows:
+        author = chat_archive.normalize(author)
+        canonical = chat_archive.normalize_author(author)
+        if not include_excluded and _is_noise_user(author, canonical, excluded):
+            skipped.append(
+                {
+                    "user": author,
+                    "count": count,
+                    "reason": "bot/noise account",
+                }
+            )
+            continue
+        users.append(author)
+
+    users = list(dict.fromkeys(users))
+    print(
+        f"Loaded {len(users)} users from local #{normalized_channel} archive "
+        f"(min {min_messages:,} messages"
+        f"{', including excluded' if include_excluded else ', excluded bot/noise accounts skipped'})."
+    )
+    if users:
+        preview = ", ".join(users[:20])
+        suffix = " ..." if len(users) > 20 else ""
+        print(f"Archive users: {preview}{suffix}")
+    if skipped:
+        preview = ", ".join(f"{item['user']} ({item['count']:,})" for item in skipped[:12])
+        suffix = " ..." if len(skipped) > 12 else ""
+        print(f"Skipped excluded: {preview}{suffix}")
+    return users, skipped
+
+
 def download_user(channel: str, user: str, out_root: Path, local_tz: ZoneInfo,
                   import_archive: bool, limit_months: int | None = None,
                   sleep_s: float = 0.25) -> dict:
@@ -250,6 +324,14 @@ def main() -> None:
     ap.add_argument("--channel", default="thickpoo")
     ap.add_argument("--users", default="", help="comma/space-separated usernames")
     ap.add_argument("--users-file", default="", help="optional text file, one user per line")
+    ap.add_argument("--from-archive", action="store_true",
+                    help="add all locally-known users from --channel in chat_archive.db")
+    ap.add_argument("--min-archive-messages", type=int, default=25,
+                    help="minimum local messages required with --from-archive")
+    ap.add_argument("--include-excluded", action="store_true",
+                    help="include users from config.persona.exclude_users when using --from-archive")
+    ap.add_argument("--list-users-only", action="store_true",
+                    help="print users selected from the local archive and exit")
     ap.add_argument("--out-root", default="data/unsynced/external_logs/zonian")
     ap.add_argument("--import-archive", action="store_true",
                     help="insert non-duplicate rows into data/unsynced/chat_archive.db")
@@ -260,6 +342,21 @@ def main() -> None:
     args = ap.parse_args()
 
     users = _split_users(args.users)
+    archive_source = {"enabled": False}
+    if args.from_archive:
+        archive_selected, archive_skipped = archive_users(
+            args.channel,
+            max(1, args.min_archive_messages),
+            include_excluded=args.include_excluded,
+        )
+        users.extend(archive_selected)
+        archive_source = {
+            "enabled": True,
+            "min_messages": max(1, args.min_archive_messages),
+            "include_excluded": args.include_excluded,
+            "selected": archive_selected,
+            "skipped": archive_skipped,
+        }
     if args.users_file:
         path = Path(args.users_file)
         if path.exists():
@@ -269,8 +366,14 @@ def main() -> None:
                 if line.strip() and not line.strip().startswith("#")
             )
     users = list(dict.fromkeys(user.lower() for user in users if user))
+    if args.list_users_only:
+        if not users:
+            raise SystemExit("No users selected.")
+        for user in users:
+            print(user)
+        return
     if not users:
-        raise SystemExit("No users given. Pass --users or --users-file.")
+        raise SystemExit("No users given. Pass --users, --users-file, or --from-archive.")
 
     out_root = Path(args.out_root)
     local_tz = ZoneInfo(args.local_tz)
@@ -299,6 +402,7 @@ def main() -> None:
         "channel": args.channel,
         "import_archive": args.import_archive,
         "out_root": str(out_root),
+        "archive_source": archive_source,
         "totals": dict(totals),
         "users": summaries,
     }

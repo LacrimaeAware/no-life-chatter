@@ -82,8 +82,10 @@ that instance, and optionally imports non-duplicate rows into
 `data/unsynced/chat_archive.db`.
 
 Double-click `12-download-thickpoo-user-logs.bat` for the normal user-facing
-flow. It prompts for one or more Twitch logins, defaults to `#thickpoo`, and
-asks whether to import after download. Raw logs are stored under
+flow. It selects usernames already present in the local `#thickpoo` archive,
+defaults to users with at least 25 local messages, skips configured bot/noise
+accounts plus obvious `*bot` accounts unless asked otherwise, and asks whether
+to import after download. Raw logs are stored under
 `data/unsynced/external_logs/zonian/raw/<channel>/<user>/`; this path is
 gitignored and must stay private.
 
@@ -93,10 +95,16 @@ CLI form:
 python scripts/download_zonian_user_logs.py --channel thickpoo --users ebbel,forsenstares --import-archive
 ```
 
+Automated from the existing local archive roster:
+
+```
+python scripts/download_zonian_user_logs.py --channel thickpoo --from-archive --min-archive-messages 25 --import-archive
+```
+
 Useful test run:
 
 ```
-python scripts/download_zonian_user_logs.py --channel thickpoo --users ebbel --limit-months 1
+python scripts/download_zonian_user_logs.py --channel thickpoo --from-archive --min-archive-messages 10000 --limit-months 1
 ```
 
 The mirror's raw monthly logs use UTC timestamps; the importer converts them to
