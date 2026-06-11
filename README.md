@@ -141,6 +141,7 @@ If you're on Windows, double-click these instead of using the terminal:
 | `stop-bot.bat` | Stop the background bot. |
 | `4-export-finetune-pilot.bat` | Export and zip a private persona fine-tuning pilot dataset for RunPod. |
 | `5-open-finetune-files.bat` | Open the fine-tune guide and the private output folder. |
+| `6-preview-persona-rag.bat` | Preview which archived lines persona RAG would feed into a prompt. |
 
 To start the bot automatically at login, put a shortcut to `run-background.vbs`
 in your Startup folder (`shell:startup`).

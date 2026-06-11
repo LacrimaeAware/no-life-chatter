@@ -37,6 +37,7 @@ pilot, and archive/general-knowledge Q&A. See "Next work" below.
 - **Query archive offline**: `python scripts/ask_archive.py said|quote|stats|search ...`
 - **Preview a Markov persona (no chat post)**: `python scripts/persona_preview.py <user>`
 - **Preview LLM/RAG exemplar selection (no model/chat post)**:
+  double-click `6-preview-persona-rag.bat`, or run
   `python scripts/persona_rag_preview.py <user> "topic or message" [--channel channel]`
 - **LLM personas need LM Studio**: load a model, Developer tab → Start Server
   (OpenAI-compatible at `http://127.0.0.1:1234`). The bot reads
