@@ -1,9 +1,10 @@
-from utils.chat_archive import recent_authors
+from utils.chat_archive import channel_members
 from utils.persona_classifier import classify
 
 description = (
-    "Guess which chatter who's here is most likely to have said a line. "
-    "Ranks only people active in this channel; add 'anyone' for the whole archive.\n"
+    "Guess which chatter of this chatroom is most likely to have said a line. "
+    "Ranks the room's members (anyone with history here); add 'anyone' for the "
+    "whole archive.\n"
     "  ~whosaid <sentence>   |   ~whosaid anyone <sentence>"
 )
 
@@ -20,8 +21,10 @@ async def handle_whosaid(bot, message, params):
     if anyone:
         ranked, scope = classify(text, top_k=3), "anyone"
     else:
-        present = recent_authors(message.channel.name, scan=1500)
-        ranked, scope = classify(text, top_k=3, restrict_to=present), "in chat"
+        # Members of THIS chatroom (anyone with history here), renormalized —
+        # NOT just whoever spoke in the last few minutes.
+        members = channel_members(message.channel.name)
+        ranked, scope = classify(text, top_k=3, restrict_to=members), "in chat"
         if not ranked:
             ranked, scope = classify(text, top_k=3), "anyone"
 

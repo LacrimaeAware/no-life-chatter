@@ -16,7 +16,7 @@ async def run_markov(message, params, command_name="markov"):
         return
 
     user = params[0].lstrip("@")
-    model = persona_markov.get_model(user)
+    model = persona_markov.get_model(user, channel=message.channel.name)
     if not model:
         await message.channel.send(f"Not enough archived messages to mimic {user}.")
         return

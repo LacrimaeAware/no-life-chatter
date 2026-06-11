@@ -685,6 +685,23 @@ def latest(channel: str, n: int = 25):
     return list(reversed(rows))
 
 
+_members_cache = {}
+
+
+def channel_members(channel: str, min_messages: int = 10):
+    """Everyone with real history in a channel — its membership, regardless of
+    whether they've spoken today. (~whosaid scopes to THE CHATROOM, not to
+    whoever happened to talk in the last few minutes.) Cached per process."""
+    key = (normalize_channel(channel), min_messages)
+    if key not in _members_cache:
+        conn = connect()
+        rows = conn.execute(
+            "SELECT author FROM messages WHERE channel = ? "
+            "GROUP BY author HAVING COUNT(*) >= ?", key).fetchall()
+        _members_cache[key] = {normalize_author(a) for a, in rows}
+    return _members_cache[key]
+
+
 def recent_authors(channel: str, scan: int = 400, limit: int = 60):
     """Distinct authors among the last `scan` messages of a channel — the pool
     of people currently around to mimic for a random reaction."""

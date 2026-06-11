@@ -22,9 +22,15 @@ from utils import chat_archive
 _BOUNDARY = ("\x02",)  # sentinel marking start/end of a message
 
 
-def build(author: str, order: int = 2, min_messages: int = 40):
-    """Build a Markov model for author, or None if they have too little text."""
-    msgs = chat_archive.messages_for(author)
+def build(author: str, order: int = 2, min_messages: int = 40, channel: str = None):
+    """Build a Markov model for author, or None if they have too little text.
+    With `channel`, prefers their messages in that chat (their voice THERE),
+    falling back to full history when they barely chat in it."""
+    msgs = []
+    if channel:
+        msgs = chat_archive.messages_for(author, channel=channel)
+    if len(msgs) < max(min_messages, 300):
+        msgs = chat_archive.messages_for(author)
     if len(msgs) < min_messages:
         return None
 
@@ -55,12 +61,14 @@ def build(author: str, order: int = 2, min_messages: int = 40):
 _model_cache = {}
 
 
-def get_model(author: str, order: int = 2, min_messages: int = 40):
+def get_model(author: str, order: int = 2, min_messages: int = 40, channel: str = None):
     """Cached build() — so the ~mimic command doesn't re-scan a user's whole
     history on every call. Cache is per process; clears on bot restart."""
-    key = (chat_archive.normalize_author(author), order)
+    channel_key = chat_archive.normalize_channel(channel) if channel else None
+    key = (chat_archive.normalize_author(author), order, channel_key)
     if key not in _model_cache:
-        _model_cache[key] = build(author, order=order, min_messages=min_messages)
+        _model_cache[key] = build(author, order=order, min_messages=min_messages,
+                                  channel=channel_key)
     return _model_cache[key]
 
 

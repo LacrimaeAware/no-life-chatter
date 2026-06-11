@@ -96,7 +96,7 @@ def _unique_messages(messages, n: int, seen=None):
     return out
 
 
-def exemplars(author: str, n: int = None):
+def exemplars(author: str, n: int = None, channel: str = None):
     """~n messages from the author across their whole history.
 
     Mostly a STABLE seeded sample (same core every restart) plus a small fresh
@@ -107,9 +107,18 @@ def exemplars(author: str, n: int = None):
     """
     n = n or config.LLM_EXEMPLARS
     author_key = chat_archive.normalize_author(author)
-    key = (author_key, n)
+    channel_key = chat_archive.normalize_channel(channel) if channel else None
+    key = (author_key, n, channel_key)
     if key not in _exemplar_cache:
-        pool = [m for m in chat_archive.messages_for(author) if _usable_exemplar(m)]
+        # Channel-scoped voice: a persona invoked in a chat speaks the way the
+        # person talks THERE, falling back to full history when they barely
+        # chat in that channel.
+        pool = []
+        if channel_key:
+            pool = [m for m in chat_archive.messages_for(author, channel=channel_key)
+                    if _usable_exemplar(m)]
+        if len(pool) < max(200, n):
+            pool = [m for m in chat_archive.messages_for(author) if _usable_exemplar(m)]
         core_n = max(1, int(n * 0.8))
         stable = random.Random(f"persona-core:{author_key}")
         core_pool = list(pool)
@@ -215,7 +224,7 @@ def select_exemplars(author: str, query_text: str, n: int = None,
 
 
 def select_evidence(author: str, query_text: str, n: int = None,
-                    exclude_terms=None):
+                    exclude_terms=None, channel: str = None):
     """Everything the prompt needs: (signature, relevant_flat, snippets).
 
     Snippets (chat moments) take priority inside the relevant budget — each
@@ -237,7 +246,7 @@ def select_evidence(author: str, query_text: str, n: int = None,
             flat_budget, seen=set(used),
         )
     seen = set(relevant) | used
-    signature = _unique_messages(exemplars(author, n),
+    signature = _unique_messages(exemplars(author, n, channel=channel),
                                  n - len(relevant) - len(snippets) * 5, seen)
     return signature, relevant, snippets
 
@@ -446,7 +455,7 @@ async def generate(author: str, channel: str, user_message: str = None,
     ctx_names = {a for _, a, _ in ctx_rows}
     signature, relevant, snippets = select_evidence(
         author, _retrieval_text(recent, user_message), n=exemplar_count,
-        exclude_terms=ctx_names,
+        exclude_terms=ctx_names, channel=channel,
     )
     ab_model = _roll_ab_model(invoked_by, model_override)
     event = {
