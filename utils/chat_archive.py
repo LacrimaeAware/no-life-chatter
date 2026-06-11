@@ -299,6 +299,18 @@ def context_before(channel: str, sent_at: str, n: int = 4, within_minutes: int =
     return list(reversed(rows))
 
 
+def recent_authors(channel: str, scan: int = 400, limit: int = 60):
+    """Distinct authors among the last `scan` messages of a channel — the pool
+    of people currently around to mimic for a random reaction."""
+    conn = connect()
+    rows = conn.execute(
+        "SELECT DISTINCT author FROM "
+        "(SELECT author FROM messages WHERE channel = ? ORDER BY id DESC LIMIT ?)",
+        (normalize(channel), scan),
+    ).fetchall()
+    return [r[0] for r in rows][:limit]
+
+
 def messages_for(author: str):
     """All archived message texts by author (for offline persona building)."""
     conn = connect()

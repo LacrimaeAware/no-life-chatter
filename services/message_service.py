@@ -2,6 +2,8 @@
 import logging
 import aiohttp
 import asyncio
+import random
+import time
 from google.oauth2 import service_account
 from google.cloud import translate_v2 as translate
 from utils.user_settings import get_user_settings
@@ -115,6 +117,7 @@ class MessageService:
         except Exception as e:
             logging.info(f"Google translation not configured ({e}).")
 
+        self._last_reaction = {}  # channel -> last persona-reaction timestamp
         self.can_translate = self.deepl_enabled or (self.translator is not None)
         if self.deepl_enabled:
             logging.info("Translation: DeepL enabled.")
@@ -138,8 +141,46 @@ class MessageService:
             return decode_html_entities(g.get('translatedText', '') or '')
         return None
 
+    async def maybe_react(self, message):
+        """Rarely, post a persona line of a random recent chatter — the "the bot
+        randomly does a bit" feature. Markov-based (free, no LLM); a future LLM
+        version will react to the actual conversation. Off unless
+        persona.reaction_chance > 0. Cooldown stops it clustering in a busy spell.
+        """
+        chance = getattr(config, "REACTION_CHANCE", 0.0)
+        if chance <= 0 or random.random() >= chance:
+            return
+        channel = message.channel.name
+        if time.time() - self._last_reaction.get(channel, 0) < config.REACTION_COOLDOWN:
+            return
+        try:
+            from utils.chat_archive import recent_authors
+            from utils import persona_markov
+            from utils.output_filter import is_clean
+
+            skip = config.EXCLUDE_USERS | {(self.bot.nick or "").lower()}
+            authors = [a for a in recent_authors(channel) if a not in skip]
+            random.shuffle(authors)
+            for target in authors[:8]:
+                model = persona_markov.get_model(target)
+                if not model:
+                    continue
+                for _ in range(15):
+                    line = persona_markov.generate(model)
+                    if line and len(line.split()) >= 2 and is_clean(line):
+                        if len(line) > 280:
+                            line = line[:279] + "…"
+                        self._last_reaction[channel] = time.time()
+                        logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
+                        await message.channel.send(f"🎭 {target}-bot: {line}")
+                        return
+        except Exception as e:
+            logging.warning(f"maybe_react failed: {e}")
+
     async def handle_regular_message(self, message):
         logging.info(f"Handling regular message from {message.author.name}: {message.content}")
+
+        await self.maybe_react(message)
 
         user_settings = get_user_settings(message.author.id)
         log_user_activity(message.channel.name, message.author.name)

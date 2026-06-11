@@ -145,6 +145,20 @@ ARCHIVE_ALIASES: dict = dict(_ar.get("aliases", {}))
 # blocklist below first so the bot never posts a bannable line to Twitch.
 _pe = _cfg.get("persona", {})
 MIMIC_ENABLED: bool = bool(_pe.get("mimic_enabled", True))
+# Chance (0..1) that any given chat message triggers a random persona reaction
+# (the bot posts a Markov line of a random recent chatter). 0 = off.
+# e.g. 0.002 ~= 1 in 500 messages. A cooldown stops it bunching up.
+REACTION_CHANCE: float = float(_pe.get("reaction_chance", 0.0))
+REACTION_COOLDOWN: float = float(_pe.get("reaction_cooldown", 90))
+# Usernames random reactions should never mimic (command/stats bots produce
+# junk). Explicit ~mimic still works on them if you really ask.
+EXCLUDE_USERS: set[str] = {
+    u.lower() for u in _pe.get("exclude_users", [
+        "streamelements", "nightbot", "fossabot", "moobot", "wizebot",
+        "soundalerts", "streamlabs", "pokemoncommunitygame", "potatbotat",
+        "buttsbot", "supibot", "kunszg",
+    ])
+}
 # Denylist of terms the bot must never post (one per line, '#' comments).
 # Kept OUT of the repo — lives in a gitignored file. Empty/missing = no filter.
 BLOCKLIST_FILE: str = _resolve(_pe.get("blocklist_file", "data/unsynced/blocklist.txt"))
