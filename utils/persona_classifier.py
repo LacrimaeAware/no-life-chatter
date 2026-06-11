@@ -57,7 +57,7 @@ def _pick_authors(conn, authors, min_messages, max_authors):
     return _dedupe_canonical((a for a, _ in rows if a not in exclude), max_authors)
 
 
-def _build_pipeline(char_max=200000, word_max=60000):
+def _build_pipeline(char_max=200000, word_max=60000, verbose=False):
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import FeatureUnion, Pipeline
@@ -66,31 +66,43 @@ def _build_pipeline(char_max=200000, word_max=60000):
     word = TfidfVectorizer(analyzer="word", ngram_range=(1, 2), min_df=2,
                            sublinear_tf=True, max_features=word_max)
     feats = FeatureUnion([("char", char), ("word", word)])
-    clf = LogisticRegression(max_iter=2000, C=10.0, class_weight="balanced")
+    # verbose=1 makes lbfgs print its iterations so training isn't a black box.
+    clf = LogisticRegression(max_iter=2000, C=10.0, class_weight="balanced",
+                             verbose=1 if verbose else 0)
     return Pipeline([("feats", feats), ("clf", clf)])
 
 
 def train(authors=None, per_author=3000, test_frac=0.1, seed=1337,
           min_messages=300, max_authors=24, **_):
     """Train and persist the classifier. Returns a held-out accuracy report."""
+    import time
     from collections import Counter
     rng = random.Random(seed)
     conn = chat_archive.connect()
     authors = _pick_authors(conn, authors, min_messages, max_authors)
+    print(f"[1/4] loading messages for {len(authors)} authors (cap {per_author} each)...", flush=True)
 
+    t0 = time.time()
     tr_X, tr_y, te_X, te_y = [], [], [], []
-    for a in authors:
-        msgs = [m for m in chat_archive.messages_for(a) if _usable(m)]
-        rng.shuffle(msgs)
-        msgs = msgs[:per_author]
+    for i, a in enumerate(authors, 1):
+        all_msgs = [m for m in chat_archive.messages_for(a) if _usable(m)]
+        rng.shuffle(all_msgs)
+        msgs = all_msgs[:per_author]
         cut = int(len(msgs) * (1 - test_frac))
         for m in msgs[:cut]:
             tr_X.append(m); tr_y.append(a)
         for m in msgs[cut:]:
             te_X.append(m); te_y.append(a)
+        print(f"   ({i}/{len(authors)}) {a}: using {len(msgs)} of {len(all_msgs):,}", flush=True)
 
-    pipe = _build_pipeline()
+    print(f"[2/4] {len(tr_X):,} train / {len(te_X):,} test messages loaded in "
+          f"{time.time()-t0:.0f}s. building char+word TF-IDF features...", flush=True)
+    pipe = _build_pipeline(verbose=True)
+    print("[3/4] fitting logistic regression (lbfgs iterations print below; "
+          "this is the slow part, usually a few minutes)...", flush=True)
+    t1 = time.time()
     pipe.fit(tr_X, tr_y)
+    print(f"[3/4] fit done in {time.time()-t1:.0f}s. evaluating on held-out...", flush=True)
 
     preds = pipe.predict(te_X)
     correct = sum(1 for p, y in zip(preds, te_y) if p == y)
