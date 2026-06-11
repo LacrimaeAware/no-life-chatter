@@ -1,11 +1,10 @@
-from utils.persona_embeddings import available, neighbors
+from utils.persona_embeddings import available, load, neighbors
 
 description = (
     "Who a chatter is semantically most similar to — embedding-space twins "
     "(same topics/energy, even with zero shared catchphrases). The meaning "
-    "counterpart of ~like's vocabulary overlap. Scale: ~0.6 is what a person "
-    "scores against THEMSELVES re-sampled, 0 = average stranger — so 0.5+ is "
-    "alt-tier similarity.\n"
+    "counterpart of ~like's vocabulary overlap. The ≈same-person flag is "
+    "calibrated against measured self-similarity, not a fixed number.\n"
     "  ~vibes <user>"
 )
 
@@ -24,8 +23,13 @@ async def handle_vibes(bot, message, params):
     if not sims:
         await message.channel.send(f"No semantic vector for {user} (not in the roster yet).")
         return
-    # ~0.58 is what the same person scores against themselves (split-half
-    # test) — flag matches in that band, they're alt-tier.
-    parts = [f"{a} ({s:.2f}{' ≈same-person!' if s >= 0.55 else ''})"
+    # Alt-tier flag: midpoint between the measured same-person ceiling
+    # (split-half self-similarity) and the 95th-pct stranger score, stored in
+    # the pickle at calibration time so a rebuild can't leave it stale. (A
+    # fixed 0.55 from the old noisier vectors flagged normal community
+    # similarity as alts.)
+    d = load()
+    flag_at = (d.get("self_sim_ceiling", 0.82) + d.get("cross_p95", 0.52)) / 2
+    parts = [f"{a} ({s:.2f}{' ≈same-person!' if s >= flag_at else ''})"
              for a, s in sims]
     await message.channel.send(f"🧬 {user}'s closest vibes: " + " · ".join(parts))

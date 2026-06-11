@@ -1,6 +1,12 @@
 from utils.user_settings import update_user_setting, ensure_user_settings
 from auth import is_authorized
 
+description = (
+    'Where your translations are sent (admins).\n'
+    '  ~tloutput local|whisper|channel <name>'
+)
+
+
 async def handle_tloutput(bot, message, params):
     if not is_authorized(message.author.name):
         await message.channel.send("You do not have permission to change the output mode.")

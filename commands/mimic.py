@@ -3,7 +3,7 @@ from utils import persona_markov
 from utils.output_filter import is_clean
 
 description = (
-    "Generate a Markov-chain line in a chatter's style, from their chat history.\n"
+    "Generate a Markov-chain line in a chatter's style, from their history in THIS channel (full history if they barely chat here).\n"
     "  ~mimic <user>   alias of ~markov <user>"
 )
 

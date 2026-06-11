@@ -4,6 +4,12 @@ from auth import is_super_admin
 import config
 
 # Configure logging
+description = (
+    'Global auto-translate switch (super admins).\n'
+    '  ~global_autotl on|off'
+)
+
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def update_global_setting(setting_value):

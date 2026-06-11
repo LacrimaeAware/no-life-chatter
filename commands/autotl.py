@@ -1,6 +1,12 @@
 from utils.user_settings import get_user_settings, ensure_user_settings, update_user_setting
 from auth import is_authorized  # Ensure this is the correct path to the authorization function
 
+description = (
+    'Toggle auto-translation of YOUR messages (admins).\n'
+    '  ~autotl'
+)
+
+
 async def handle_autotl(bot, message, params):
     """
     Toggles the translation setting for authorized users.

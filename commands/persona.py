@@ -8,8 +8,9 @@ from utils.output_filter import is_clean
 
 description = (
     "Talk to an AI persona of a chatter (natural mode), built from their chat "
-    "history and the live conversation.\n"
-    "  ~persona <user> [message]"
+    "history (this channel's when they have enough) and the live conversation. "
+    "model= forces a configured model.\n"
+    "  ~persona <user> [message] [model=llama|lora]"
 )
 
 

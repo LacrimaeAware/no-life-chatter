@@ -2,8 +2,8 @@ from commands.persona import _run
 
 description = (
     "Talk to an AI persona of a chatter in HYPERBOLE mode — their traits "
-    "exaggerated for comedy.\n"
-    "  ~hyper <user> [message]"
+    "exaggerated for comedy. model= forces a configured model.\n"
+    "  ~hyper <user> [message] [model=llama|lora]"
 )
 
 

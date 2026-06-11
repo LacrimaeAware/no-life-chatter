@@ -2,6 +2,12 @@ import time
 import psutil
 import logging
 
+description = (
+    'Latency + host stats (uptime shown is the MACHINE uptime, not the bot).\n'
+    '  ~ping'
+)
+
+
 async def handle_ping(bot, message, params):
     start_time = time.time()
     logging.info("Starting ping command processing.")

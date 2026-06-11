@@ -2,6 +2,12 @@
 import logging
 from importlib import import_module
 
+description = (
+    'List commands, or show details for one.\n'
+    '  ~help [command]'
+)
+
+
 async def handle_help(bot, message, params):
     from command_registry import command_handlers
 

@@ -1,6 +1,12 @@
 from utils.user_settings import update_user_setting, ensure_user_settings
 from auth import is_authorized  # Ensure this is the correct path to the authorization function
 
+description = (
+    'Set your translation target language (admins).\n'
+    '  ~setlang <LANG>   e.g. ~setlang EN'
+)
+
+
 async def handle_setlang(bot, message, params):
     """
     Sets the translation language for authorized users.

@@ -4,6 +4,12 @@ from auth import is_super_admin
 import config
 
 # Configure logging
+description = (
+    'Per-channel auto-translate switch (super admins).\n'
+    '  ~chan_autotl <channel> on|off'
+)
+
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def update_channel_setting(channel_name, setting_value):
