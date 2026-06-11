@@ -4,7 +4,8 @@ REM  NoLifeChatter - export persona fine-tuning pilot dataset
 REM
 REM  Double-click this on your Windows machine.
 REM  It exports ALL regular chatters in the configured archive/channels
-REM  (minimum 1,000 messages), then builds a zip for RunPod.
+REM  (minimum 1,000 messages, maximum 1,000 examples each),
+REM  then builds a zip for RunPod.
 REM
 REM  Private output:
 REM    data\unsynced\fine_tune\persona_sft_runpod.zip
@@ -22,11 +23,11 @@ if not exist "data\unsynced\fine_tune" mkdir "data\unsynced\fine_tune"
 
 echo.
 echo [1/3] Exporting training examples for all regular chatters...
-echo       Criteria: min 1,000 messages, max 6,000 examples per author.
+echo       Criteria: min 1,000 messages, max 1,000 examples per author.
 echo.
 ".venv\Scripts\python.exe" scripts\export_persona_sft.py ^
   --min-author-messages 1000 ^
-  --max-examples-per-author 6000
+  --max-examples-per-author 1000
 if errorlevel 1 (
   echo.
   echo ERROR: Export failed. Scroll up to see why.

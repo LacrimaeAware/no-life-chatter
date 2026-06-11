@@ -32,9 +32,10 @@ Outputs:
 These files contain real chat and are gitignored. Do not commit them.
 
 The batch file exports all regular chatters in the configured archive/channels:
-minimum 1,000 messages and maximum 6,000 training examples per author. That is
-the recommended first pilot. It is broader than the old four-person example and
-better matches the goal of modeling the whole chat.
+minimum 1,000 messages and maximum 1,000 training examples per author. That is
+the recommended first pilot: broad enough to test all-persona conditioning, but
+small enough not to waste GPU time before the pipeline is proven. A durable run
+can raise this later, e.g. 6,000 examples per author.
 
 Manual equivalent, only if the batch file fails:
 
