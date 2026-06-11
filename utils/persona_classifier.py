@@ -209,12 +209,18 @@ def _count_words(msgs):
     return _count_tokens(msgs)[0]
 
 
-def _logodds_profile(ac, na, bc, nb, top, min_count=3, exclude=None):
+def _logodds_profile(ac, na, bc, nb, top, min_count=3, exclude=None,
+                     prevalence=None, n_panel=0):
     """Fightin' Words log-odds of an author's word counts (ac/na) vs a shared
     background (bc/nb); keep the top `top` positive (distinctive) terms,
-    L2-normalized into a {word: weight} vector. `exclude` drops terms outright
-    (the everyone-says-it stoplist — 'to'/'and' can't be a voice marker no
-    matter how confidently overused)."""
+    L2-normalized into a {word: weight} vector. `exclude` drops terms outright.
+
+    prevalence/n_panel: how many of the panel's chatters use each term at all.
+    Raw log-odds favors high-frequency terms (more data = more statistical
+    confidence), so 'ok'/'you' can outrank a person's actual catchphrases.
+    Weighting by ln(panel/users) balances overuse against rarity: a term
+    nearly everyone uses (>=80% of panel) is never a marker, and a term only
+    1-2 people use beats a mildly-overused common one."""
     import math
     scored = []
     for w, ya in ac.items():
@@ -225,32 +231,55 @@ def _logodds_profile(ac, na, bc, nb, top, min_count=3, exclude=None):
         num_b, den_b = yb + 0.5, nb - yb + 0.5
         z = (math.log(num_a / den_a) - math.log(num_b / den_b)) / \
             math.sqrt(1.0 / num_a + 1.0 / num_b)
-        if z > 0:
-            scored.append((w, z))
+        if z <= 0:
+            continue
+        if prevalence is not None and n_panel:
+            users = prevalence.get(w, 1)
+            if users / n_panel >= 0.8:
+                continue
+            z *= math.log(n_panel / users)
+        scored.append((w, z))
     scored.sort(key=lambda kv: -kv[1])
     scored = scored[:top]
     norm = math.sqrt(sum(z * z for _, z in scored)) or 1.0
     return {w: z / norm for w, z in scored}
 
 
-def _voice_profile(msgs, bg_counts, words_top=300, phrases_top=150):
+def _stops(bg_counts):
+    """(stop words, stop pairs): background top-100 words are never markers;
+    a pair is stopped only when BOTH halves are that common."""
+    (bw, _), (bp, _) = bg_counts
+    stop = {w for w, _ in bw.most_common(100)}
+    return stop, {p for p in bp if all(t in stop for t in p.split(" ", 1))}
+
+
+def _voice_profile_from_counts(aw, naw, ap, nap, bg_counts, prevalence=None,
+                               words_top=300, phrases_top=150, stops=None):
+    (bw, nbw), (bp, nbp) = bg_counts
+    stop, stop_pairs = stops or _stops(bg_counts)
+    n_panel = prevalence["n"] if prevalence else 0
+    return {
+        "words": _logodds_profile(
+            aw, naw, bw, nbw, words_top, exclude=stop,
+            prevalence=prevalence["words"] if prevalence else None, n_panel=n_panel),
+        "phrases": (_logodds_profile(
+            ap, nap, bp, nbp, phrases_top, exclude=stop_pairs,
+            prevalence=prevalence["pairs"] if prevalence else None, n_panel=n_panel)
+            if nap else {}),
+    }
+
+
+def _voice_profile(msgs, bg_counts, prevalence=None, words_top=300, phrases_top=150):
     """{'words': {...}, 'phrases': {...}} — each category capped and
     independently normalized, per the favorite-words / favorite-associations
     model: a person is their top distinctive words plus their top distinctive
-    adjacent word-pairs. Words everyone says (background top-100) are never
-    markers; a pair is dropped only when BOTH halves are that common."""
-    (bw, nbw), (bp, nbp) = bg_counts
-    stop = {w for w, _ in bw.most_common(100)}
-    stop_pairs = {p for p in bp if all(t in stop for t in p.split(" ", 1))}
+    adjacent word-pairs, rarity-weighted when a prevalence panel is given."""
     aw, ap = _count_tokens(msgs)
     naw, nap = sum(aw.values()), sum(ap.values())
     if naw < 500:
         return None
-    return {
-        "words": _logodds_profile(aw, naw, bw, nbw, words_top, exclude=stop),
-        "phrases": (_logodds_profile(ap, nap, bp, nbp, phrases_top, exclude=stop_pairs)
-                    if nap else {}),
-    }
+    return _voice_profile_from_counts(aw, naw, ap, nap, bg_counts, prevalence,
+                                      words_top, phrases_top)
 
 
 def _bg_counts(bg_cap=120000):
@@ -264,13 +293,15 @@ def _bg_counts(bg_cap=120000):
 def build_style_profiles(roster=None, words_top=300, phrases_top=150,
                          bg_cap=120000, min_messages=2000, max_roster=80):
     """Per-author voice profile for ~like / ~markers: favorite words + favorite
-    word-pairs, scored by Fightin' Words log-odds vs one shared background.
+    word-pairs, scored by Fightin' Words log-odds vs one shared background and
+    weighted by panel rarity (how few roster chatters use the term at all).
 
     Processes ALL of each person's archived messages (no sampling) — the
     profile itself is the cap: only the top `words_top`/`phrases_top` most
     distinctive entries per category are kept, so a 60k-message chatter and a
     3k-message chatter end up the same size. Covers a broad roster (top
     chatters by volume), not just the classifier classes."""
+    from collections import Counter
     conn = chat_archive.connect()
     if roster is None:
         exclude = {u.lower() for u in getattr(config, "EXCLUDE_USERS", set())}
@@ -280,14 +311,37 @@ def build_style_profiles(roster=None, words_top=300, phrases_top=150,
         roster = [a for a, _ in rows if a not in exclude and "bot" not in a][:max_roster]
     roster = _dedupe_canonical(roster)
     bg = _bg_counts(bg_cap)   # one shared background -> comparable scales
-    profiles = {}
+    stops = _stops(bg)
+
+    # Pass 1: count everyone, pruned to scoreable terms (>=3 uses), so we can
+    # learn each term's panel prevalence before scoring anyone.
+    per_author = {}
     for a in roster:
         msgs = [m for m in chat_archive.messages_for(a) if _usable(m)]
-        prof = _voice_profile(msgs, bg, words_top, phrases_top)
-        if prof:
-            profiles[a] = prof
+        aw, ap = _count_tokens(msgs)
+        naw, nap = sum(aw.values()), sum(ap.values())
+        if naw < 500:
+            continue
+        per_author[a] = (naw, Counter({w: c for w, c in aw.items() if c >= 3}),
+                         nap, Counter({p: c for p, c in ap.items() if c >= 3}))
+    n_panel = len(per_author)
+    wprev, pprev = Counter(), Counter()
+    for naw, aw, nap, ap in per_author.values():
+        wprev.update(aw.keys())
+        pprev.update(ap.keys())
+    # store only >=2-user terms; a missing term means "1 user" (max rarity)
+    prevalence = {"words": {w: c for w, c in wprev.items() if c >= 2},
+                  "pairs": {p: c for p, c in pprev.items() if c >= 2},
+                  "n": n_panel}
+
+    # Pass 2: score each author with rarity weighting.
+    profiles = {}
+    for a, (naw, aw, nap, ap) in per_author.items():
+        profiles[a] = _voice_profile_from_counts(
+            aw, naw, ap, nap, bg, prevalence, words_top, phrases_top, stops)
     model = load()
     model["profiles"] = profiles
+    model["prevalence"] = prevalence
     model.pop("style", None)
     model.pop("centroids", None)
     with open(config.CLASSIFIER_FILE, "wb") as fh:
@@ -311,7 +365,8 @@ def profile_for(author, author_cap=20000):
         return None
     rng = random.Random(13)
     rng.shuffle(msgs)
-    return _voice_profile(msgs[:author_cap], _bg_counts(40000))
+    return _voice_profile(msgs[:author_cap], _bg_counts(40000),
+                          prevalence=model.get("prevalence"))
 
 
 def most_like(author, n=6):
@@ -338,8 +393,11 @@ def most_like(author, n=6):
         score = 0.6 * sum(v for _, v in shared_w) + 0.4 * sum(v for _, v in shared_p)
         shared_p.sort(key=lambda kv: -kv[1])
         shared_w.sort(key=lambda kv: -kv[1])
-        evidence = [k for k, _ in shared_p[:2]] + [k for k, _ in shared_w[:4]]
-        sims.append((c, score, evidence[:5]))
+        # don't show a pair AND its own word ("hello emote · emote")
+        pair_ev = [k for k, _ in shared_p[:2]]
+        in_pairs = {t for p in pair_ev for t in p.split()}
+        word_ev = [k for k, _ in shared_w if k not in in_pairs][:4]
+        sims.append((c, score, (pair_ev + word_ev)[:5]))
     sims.sort(key=lambda kv: -kv[1])
     return sims[:n]
 
