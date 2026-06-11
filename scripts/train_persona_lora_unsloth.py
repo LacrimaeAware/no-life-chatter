@@ -33,6 +33,7 @@ def main() -> None:
     import unsloth  # noqa: F401
     from unsloth import FastLanguageModel
     from datasets import load_dataset
+    import torch
     from transformers import TrainingArguments
     from trl import SFTTrainer
 
@@ -76,10 +77,13 @@ def main() -> None:
     effective_batch = max(1, args.batch_size * args.grad_accum)
     steps_per_epoch = math.ceil(len(data["train"]) / effective_batch)
     total_steps = math.ceil(steps_per_epoch * args.epochs)
+    use_bf16 = bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())
+    warmup_steps = max(1, int(total_steps * 0.03))
     print(
         "Training plan: "
         f"{len(data['train']):,} train examples, {len(data['validation']):,} validation examples, "
         f"effective batch {effective_batch}, about {total_steps:,} optimizer steps. "
+        f"precision {'bf16' if use_bf16 else 'fp16'}, warmup {warmup_steps} steps. "
         "Logs every 10 steps, eval every 100 steps, save every 250 steps.",
         flush=True,
     )
@@ -90,7 +94,7 @@ def main() -> None:
         gradient_accumulation_steps=args.grad_accum,
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         logging_steps=10,
         logging_first_step=True,
@@ -98,8 +102,8 @@ def main() -> None:
         save_steps=250,
         save_total_limit=2,
         optim="adamw_8bit",
-        fp16=True,
-        bf16=False,
+        fp16=not use_bf16,
+        bf16=use_bf16,
         report_to="none",
         seed=1337,
         disable_tqdm=False,

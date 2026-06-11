@@ -49,7 +49,15 @@ python train_persona_lora_unsloth.py \
 
 echo
 echo "[4/4] Packaging result..."
-zip -r persona_lora_result.zip persona_lora
+python - <<'PY'
+from pathlib import Path
+import shutil
+
+target = Path("persona_lora_result.zip")
+if target.exists():
+    target.unlink()
+shutil.make_archive("persona_lora_result", "zip", "persona_lora")
+PY
 
 echo
 echo "DONE."
