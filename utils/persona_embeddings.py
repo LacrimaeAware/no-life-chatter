@@ -20,13 +20,19 @@ from utils import chat_archive
 _FILE = os.path.join("data", "unsynced", "persona_embeddings.pkl")
 _DATA = None
 _CENTERED = None
+_MTIME = None
 
 
 def load():
-    global _DATA
-    if _DATA is None:
+    """Cached pickle, hot-reloaded when the file changes (an offline rebuild
+    should reach the running bot without a restart)."""
+    global _DATA, _CENTERED, _MTIME
+    mtime = os.path.getmtime(_FILE)
+    if _DATA is None or mtime != _MTIME:
         with open(_FILE, "rb") as fh:
             _DATA = pickle.load(fh)
+        _CENTERED = None
+        _MTIME = mtime
     return _DATA
 
 
@@ -36,6 +42,7 @@ def available() -> bool:
 
 def _centered():
     global _CENTERED
+    load()
     if _CENTERED is None:
         import numpy as np
         vectors = load()["vectors"]
@@ -45,6 +52,18 @@ def _centered():
         M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-9)
         _CENTERED = {a: M[i] for i, a in enumerate(names)}
     return _CENTERED
+
+
+def similarities(author):
+    """{other: centered cosine} for every roster member, or {}."""
+    if not available():
+        return {}
+    vectors = _centered()
+    canon = chat_archive.normalize_author(author)
+    v = vectors.get(canon)
+    if v is None:
+        return {}
+    return {c: float(v @ w) for c, w in vectors.items() if c != canon}
 
 
 def neighbors(author, n=5):

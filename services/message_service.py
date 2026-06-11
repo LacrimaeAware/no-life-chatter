@@ -11,7 +11,7 @@ from utils.romanize import romanize, is_supported, thai_segment
 from utils.language_detect import detect_language, detect_confidences
 from services.translators import deepl_translate
 from services.emotes import ensure_channel_emotes, strip_emotes
-from utils.speaker_profile import record_language
+from utils.speaker_profile import known_languages, record_language
 import re
 import sqlite3
 import html
@@ -464,7 +464,15 @@ class MessageService:
         if (not has_non_latin
                 and len(text.split()) < config.MIN_WORDS
                 and best_conf < config.MIN_SHORT_CONFIDENCE):
-            return
+            # ~speak concession: an established speaker of THIS detected
+            # language gets a relaxed bar (their short foreign lines are
+            # usually real); fragments detecting as some random language
+            # still die here — the old blanket bypass translated emote
+            # leftovers. This is what makes the stored ~speak flags DO
+            # something again.
+            relaxed = max(0.0, config.MIN_SHORT_CONFIDENCE - 0.15)
+            if not (best_lang in known_languages(user_id) and best_conf >= relaxed):
+                return
 
         txt = self.gtranslate(text, target_language)
         if txt and txt != text:

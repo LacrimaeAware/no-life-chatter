@@ -43,9 +43,12 @@ async def handle_markers(bot, message, params):
             f"Not enough archived messages for {user} in {_scope_label(channel, year)}.")
         return
     # profiles are insertion-ordered most-distinctive-first
-    words = list(prof.get("words", {}))[:10]
-    pairs = list(prof.get("phrases", {}))[:5]
+    words = list(prof.get("words", {}))[:8]
+    emotes = list(prof.get("emotes", {}))[:5]
+    pairs = list(prof.get("phrases", {}))[:4]
     msg = f"🔖 {user}'s voice ({_scope_label(channel, year)}) — words: {', '.join(words)}"
+    if emotes:
+        msg += f" · emotes: {' '.join(emotes)}"
     if pairs:
         msg += f" · pairs: {' / '.join(pairs)}"
     await message.channel.send(msg)

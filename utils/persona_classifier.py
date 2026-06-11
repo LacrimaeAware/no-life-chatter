@@ -203,6 +203,20 @@ _INVISIBLE_RE = re.compile(
     "[​-‏⁠﻿󠀀-󠁿]")
 
 
+_EMOTE_TOKEN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]+$")
+
+
+def _is_emote_token(tok: str) -> bool:
+    """Emote-shaped: internal capital after position 0 (KEKW-as-camel like
+    monkaS/PagChomp/FeelsDankMan) or an all-caps run >=3 (KEKW, LULW,
+    OMEGALUL). Lowercase-typed emotes (xd, lekw) stay in the words channel —
+    indistinguishable from slang, and that's fine."""
+    if not _EMOTE_TOKEN_RE.match(tok):
+        return False
+    return bool(re.search(r"[a-z][A-Z0-9]|[A-Z][A-Z]", tok[0:]) and
+                (any(c.isupper() for c in tok[1:]) or (tok.isupper() and len(tok) >= 3)))
+
+
 def _count_tokens(msgs):
     """(word counts, adjacent-pair counts) for voice profiles, in one pass.
     Dropped as non-voice: URL shrapnel (https/com/youtube/status...),
@@ -214,13 +228,23 @@ def _count_tokens(msgs):
     associations") only form between surviving adjacent tokens."""
     from collections import Counter
     users = _known_usernames()
-    words, pairs = Counter(), Counter()
+    words, pairs, emotes = Counter(), Counter(), Counter()
     mentioned = set()
     for m in msgs:
-        low = _URL_RE.sub(" ", _INVISIBLE_RE.sub("", m or "")).lower()
+        raw = _URL_RE.sub(" ", _INVISIBLE_RE.sub("", m or ""))
+        low = raw.lower()
         mentioned.update(_MENTION_RE.findall(low))
+        # Emotes are their own channel (case-marked tokens, original casing
+        # kept) — they'd otherwise dominate the words channel while ALSO
+        # polluting the semantic layer. Per the favorite-emotes-matrix design.
+        emote_toks = set()
+        for tok in re.findall(r"[A-Za-z][A-Za-z0-9_]+", raw):
+            if _is_emote_token(tok) and tok.lower() not in users:
+                emotes[tok] += 1
+                emote_toks.add(tok.lower())
         toks = [w for w in _WORD_RE.findall(low)
-                if len(w) >= 2 and not any(ch.isdigit() for ch in w) and w not in users]
+                if len(w) >= 2 and not any(ch.isdigit() for ch in w)
+                and w not in users and w not in emote_toks]
         words.update(toks)
         pairs.update(f"{a} {b}" for a, b in zip(toks, toks[1:]) if a != b)
     if mentioned:
@@ -228,11 +252,18 @@ def _count_tokens(msgs):
             words.pop(w, None)
         pairs = Counter({p: c for p, c in pairs.items()
                          if not (set(p.split(" ", 1)) & mentioned)})
-    return words, pairs
+    return words, pairs, emotes
 
 
 def _count_words(msgs):
     return _count_tokens(msgs)[0]
+
+
+def strip_emote_tokens(text: str) -> str:
+    """Remove emote-shaped tokens — for the semantic layer, which should embed
+    meaning, not emote spam."""
+    return " ".join(t for t in (text or "").split()
+                    if not _is_emote_token(t.strip(".,!?\"'()")))
 
 
 def _logodds_profile(ac, na, bc, nb, top, min_count=3, exclude=None,
@@ -274,14 +305,15 @@ def _logodds_profile(ac, na, bc, nb, top, min_count=3, exclude=None,
 def _stops(bg_counts):
     """(stop words, stop pairs): background top-100 words are never markers;
     a pair is stopped only when BOTH halves are that common."""
-    (bw, _), (bp, _) = bg_counts
+    (bw, _), (bp, _), _ = bg_counts
     stop = {w for w, _ in bw.most_common(100)}
     return stop, {p for p in bp if all(t in stop for t in p.split(" ", 1))}
 
 
 def _voice_profile_from_counts(aw, naw, ap, nap, bg_counts, prevalence=None,
-                               words_top=300, phrases_top=150, stops=None):
-    (bw, nbw), (bp, nbp) = bg_counts
+                               words_top=300, phrases_top=150, emotes_top=100,
+                               stops=None, ae=None, nae=0):
+    (bw, nbw), (bp, nbp), (be, nbe) = bg_counts
     stop, stop_pairs = stops or _stops(bg_counts)
     n_panel = prevalence["n"] if prevalence else 0
     return {
@@ -292,6 +324,11 @@ def _voice_profile_from_counts(aw, naw, ap, nap, bg_counts, prevalence=None,
             ap, nap, bp, nbp, phrases_top, exclude=stop_pairs,
             prevalence=prevalence["pairs"] if prevalence else None, n_panel=n_panel)
             if nap else {}),
+        "emotes": (_logodds_profile(
+            ae, nae, be, nbe, emotes_top,
+            prevalence=prevalence.get("emotes") if prevalence else None,
+            n_panel=n_panel)
+            if ae and nae else {}),
     }
 
 
@@ -300,12 +337,12 @@ def _voice_profile(msgs, bg_counts, prevalence=None, words_top=300, phrases_top=
     independently normalized, per the favorite-words / favorite-associations
     model: a person is their top distinctive words plus their top distinctive
     adjacent word-pairs, rarity-weighted when a prevalence panel is given."""
-    aw, ap = _count_tokens(msgs)
-    naw, nap = sum(aw.values()), sum(ap.values())
+    aw, ap, ae = _count_tokens(msgs)
+    naw, nap, nae = sum(aw.values()), sum(ap.values()), sum(ae.values())
     if naw < 500:
         return None
     return _voice_profile_from_counts(aw, naw, ap, nap, bg_counts, prevalence,
-                                      words_top, phrases_top)
+                                      words_top, phrases_top, ae=ae, nae=nae)
 
 
 def _bg_counts(bg_cap=120000, channel=None):
@@ -317,8 +354,8 @@ def _bg_counts(bg_cap=120000, channel=None):
     else:
         bg = [r[0] for r in conn.execute(
             "SELECT content FROM messages ORDER BY RANDOM() LIMIT ?", (bg_cap,)).fetchall()]
-    bw, bp = _count_tokens(bg)
-    return (bw, sum(bw.values())), (bp, sum(bp.values()))
+    bw, bp, be = _count_tokens(bg)
+    return (bw, sum(bw.values())), (bp, sum(bp.values())), (be, sum(be.values()))
 
 
 def build_style_profiles(roster=None, words_top=300, phrases_top=150,
@@ -349,27 +386,31 @@ def build_style_profiles(roster=None, words_top=300, phrases_top=150,
     per_author = {}
     for a in roster:
         msgs = [m for m in chat_archive.messages_for(a) if _usable(m)]
-        aw, ap = _count_tokens(msgs)
-        naw, nap = sum(aw.values()), sum(ap.values())
+        aw, ap, ae = _count_tokens(msgs)
+        naw, nap, nae = sum(aw.values()), sum(ap.values()), sum(ae.values())
         if naw < 500:
             continue
         per_author[a] = (naw, Counter({w: c for w, c in aw.items() if c >= 3}),
-                         nap, Counter({p: c for p, c in ap.items() if c >= 3}))
+                         nap, Counter({p: c for p, c in ap.items() if c >= 3}),
+                         nae, Counter({e: c for e, c in ae.items() if c >= 3}))
     n_panel = len(per_author)
-    wprev, pprev = Counter(), Counter()
-    for naw, aw, nap, ap in per_author.values():
+    wprev, pprev, eprev = Counter(), Counter(), Counter()
+    for naw, aw, nap, ap, nae, ae in per_author.values():
         wprev.update(aw.keys())
         pprev.update(ap.keys())
+        eprev.update(ae.keys())
     # store only >=2-user terms; a missing term means "1 user" (max rarity)
     prevalence = {"words": {w: c for w, c in wprev.items() if c >= 2},
                   "pairs": {p: c for p, c in pprev.items() if c >= 2},
+                  "emotes": {e: c for e, c in eprev.items() if c >= 2},
                   "n": n_panel}
 
     # Pass 2: score each author with rarity weighting.
     profiles = {}
-    for a, (naw, aw, nap, ap) in per_author.items():
+    for a, (naw, aw, nap, ap, nae, ae) in per_author.items():
         profiles[a] = _voice_profile_from_counts(
-            aw, naw, ap, nap, bg, prevalence, words_top, phrases_top, stops)
+            aw, naw, ap, nap, bg, prevalence, words_top, phrases_top,
+            stops=stops, ae=ae, nae=nae)
     model = load()
     model["profiles"] = profiles
     model["prevalence"] = prevalence
@@ -437,14 +478,20 @@ def most_like(author, n=6, channel=None, year=None):
                     for k in target["words"] if k in prof["words"]]
         shared_p = [(k, target["phrases"][k] * prof["phrases"][k])
                     for k in target.get("phrases", {}) if k in prof.get("phrases", {})]
-        score = 0.6 * sum(v for _, v in shared_w) + 0.4 * sum(v for _, v in shared_p)
+        te, pe = target.get("emotes", {}), prof.get("emotes", {})
+        shared_e = [(k, te[k] * pe[k]) for k in te if k in pe]
+        score = (0.45 * sum(v for _, v in shared_w)
+                 + 0.25 * sum(v for _, v in shared_p)
+                 + 0.30 * sum(v for _, v in shared_e))
         shared_p.sort(key=lambda kv: -kv[1])
         shared_w.sort(key=lambda kv: -kv[1])
         # don't show a pair AND its own word ("hello emote · emote")
+        shared_e.sort(key=lambda kv: -kv[1])
         pair_ev = [k for k, _ in shared_p[:2]]
         in_pairs = {t for p in pair_ev for t in p.split()}
-        word_ev = [k for k, _ in shared_w if k not in in_pairs][:4]
-        sims.append((c, score, (pair_ev + word_ev)[:5]))
+        word_ev = [k for k, _ in shared_w if k not in in_pairs][:3]
+        emote_ev = [k for k, _ in shared_e[:2]]
+        sims.append((c, score, (pair_ev + emote_ev + word_ev)[:5]))
     sims.sort(key=lambda kv: -kv[1])
     return sims[:n]
 

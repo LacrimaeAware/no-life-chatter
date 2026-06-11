@@ -7,6 +7,8 @@ class CommandProcessor:
 
     async def process_command(self, message):
         parts = message.content.lstrip(self.bot.prefix).split()
+        if not parts:  # bare '~' / '~~' — not a command, don't crash
+            return
         command = parts[0].lower()
         params = parts[1:]
 

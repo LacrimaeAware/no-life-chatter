@@ -39,10 +39,21 @@ def embed_batch(texts):
 
 
 def person_vector(author, per_author, rng):
-    """Mean-pooled, L2-normalized embedding of a sample of their messages."""
+    """Mean-pooled, L2-normalized embedding of a sample of their messages.
+
+    Emote tokens and URLs are stripped BEFORE embedding and a message must
+    still carry >=4 real words — the semantic layer should embed meaning;
+    emote usage is its own profile channel. (One-emote lines taught the old
+    vectors nothing and diluted everyone toward the same point.)"""
     import numpy as np
-    msgs = [m for m in chat_archive.messages_for(author)
-            if persona_classifier._usable(m) and 4 <= len(m.split()) <= 60]
+    msgs = []
+    for m in chat_archive.messages_for(author):
+        if not persona_classifier._usable(m):
+            continue
+        cleaned = persona_classifier.strip_emote_tokens(
+            persona_classifier._URL_RE.sub(" ", m))
+        if 4 <= len(cleaned.split()) <= 60:
+            msgs.append(cleaned)
     if len(msgs) < 30:
         return None, 0
     rng.shuffle(msgs)
@@ -57,7 +68,7 @@ def person_vector(author, per_author, rng):
 def main():
     import numpy as np
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--per-author", type=int, default=200)
+    ap.add_argument("--per-author", type=int, default=1000)
     ap.add_argument("--report", action="store_true",
                     help="print nearest neighbors per author when done")
     args = ap.parse_args()

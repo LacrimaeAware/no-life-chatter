@@ -31,7 +31,9 @@ def _load():
     if _terms is None:
         terms = set()
         try:
-            with open(config.BLOCKLIST_FILE, encoding="utf-8") as fh:
+            # utf-8-sig: a BOM would otherwise glue to the first '#' and turn that
+            # comment line into a live blocked term
+            with open(config.BLOCKLIST_FILE, encoding="utf-8-sig") as fh:
                 for line in fh:
                     line = line.strip()
                     if line and not line.startswith("#"):

@@ -63,6 +63,14 @@ def known_speaker(profile: dict, lang: str, min_count: int | None = None) -> boo
     return entry["flagged"] or entry["count"] >= min_count
 
 
+def known_languages(user_id) -> set:
+    """Languages this user is an established speaker of (flagged via ~speak, or
+    written confidently >= SPEAKER_MIN_COUNT times). Used by the translate
+    gate's short-message concession."""
+    profile = get_profile(user_id)
+    return {lang for lang in profile if known_speaker(profile, lang)}
+
+
 def flag_speaker(user_id, lang: str, on: bool = True) -> None:
     """Manually mark (or unmark) a user as a speaker of `lang`."""
     lang = (lang or "").upper()

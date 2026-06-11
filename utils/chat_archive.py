@@ -278,17 +278,37 @@ def ingest_file(path: str, channel: str, date: str) -> dict:
 
 # ----------------------------- live capture -----------------------------
 
+_live_backlog = []
+
+
 def record_live(channel: str, author: str, content: str, sent_at: str) -> None:
-    """Append one live chat message. Never raises into the bot's message path."""
+    """Append one live chat message. Never raises into the bot's message path.
+    If a bulk import holds the writer lock past the busy timeout, the row is
+    buffered and flushed on a later message instead of silently lost."""
+    _live_backlog.append((channel, author, content, sent_at))
     try:
         conn = connect()
         with conn:
-            conn.execute(
-                "INSERT INTO messages (channel, author, sent_at, content, source) VALUES (?,?,?,?, 'live')",
-                (normalize_channel(channel), normalize_author(author), sent_at, content),
-            )
+            while _live_backlog:
+                _record_one(conn, *_live_backlog[0])
+                _live_backlog.pop(0)
+        return
+    except sqlite3.OperationalError:
+        if len(_live_backlog) > 5000:
+            del _live_backlog[:1000]
+        logging.warning(f"archive busy; {len(_live_backlog)} live messages buffered")
+        return
     except Exception as e:
-        logging.warning(f"chat_archive live write failed: {e}")
+        logging.warning(f"record_live failed: {e}")
+        _live_backlog.pop()
+        return
+
+
+def _record_one(conn, channel: str, author: str, content: str, sent_at: str) -> None:
+    conn.execute(
+        "INSERT INTO messages (channel, author, sent_at, content, source) VALUES (?,?,?,?, 'live')",
+        (normalize_channel(channel), normalize_author(author), sent_at, content),
+    )
 
 
 # ------------------------------- queries --------------------------------
@@ -440,20 +460,29 @@ def context_window(message_id: int, channel: str, before: int = 2, after: int = 
     responding to instead of the line in isolation."""
     conn = connect()
     chan = normalize_channel(channel)
-    prev = conn.execute(
-        "SELECT id, author, content FROM messages WHERE channel = ? AND id < ? "
-        "ORDER BY id DESC LIMIT ?",
-        (chan, message_id, before),
-    ).fetchall()
     hit = conn.execute(
-        "SELECT id, author, content FROM messages WHERE id = ?", (message_id,)
+        "SELECT id, author, content, sent_at FROM messages WHERE id = ?",
+        (message_id,),
+    ).fetchall()
+    if not hit:
+        return []
+    ts = hit[0][3]
+    # Order by TIME, not row id: bulk imports interleave sources, so id
+    # neighbors can be from a different month. (sent_at, id) breaks ties for
+    # same-second messages.
+    prev = conn.execute(
+        "SELECT id, author, content FROM messages WHERE channel = ? "
+        "AND (sent_at < ? OR (sent_at = ? AND id < ?)) "
+        "ORDER BY sent_at DESC, id DESC LIMIT ?",
+        (chan, ts, ts, message_id, before),
     ).fetchall()
     nxt = conn.execute(
-        "SELECT id, author, content FROM messages WHERE channel = ? AND id > ? "
-        "ORDER BY id LIMIT ?",
-        (chan, message_id, after),
+        "SELECT id, author, content FROM messages WHERE channel = ? "
+        "AND (sent_at > ? OR (sent_at = ? AND id > ?)) "
+        "ORDER BY sent_at, id LIMIT ?",
+        (chan, ts, ts, message_id, after),
     ).fetchall()
-    return list(reversed(prev)) + hit + nxt
+    return list(reversed(prev)) + [r[:3] for r in hit] + nxt
 
 
 def said(author: str, phrase: str, limit: int = 3):

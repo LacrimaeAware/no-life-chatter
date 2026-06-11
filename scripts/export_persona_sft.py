@@ -246,7 +246,10 @@ def export(args) -> dict:
     channel_placeholders = ",".join("?" for _ in channels)
     rows = conn.execute(
         "SELECT id, channel, author, sent_at, content FROM messages "
-        f"WHERE channel IN ({channel_placeholders}) ORDER BY channel, id",
+        f"WHERE channel IN ({channel_placeholders}) "
+        # TIME order: bulk imports interleave sources, so row id is NOT
+        # chronological — id-ordered context windows train on wrong/future chat
+        f"ORDER BY channel, sent_at, id",
         channels,
     )
 
