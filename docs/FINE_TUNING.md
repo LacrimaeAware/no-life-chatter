@@ -95,19 +95,25 @@ Use this for the first paid run:
 4. Choose **Secure Cloud**.
 5. Choose **RTX 4090, 24 GB VRAM**.
 6. Choose the official **PyTorch / Jupyter** template.
-7. Set **Container Disk** to `80 GB`.
-8. Leave **Network Volume** off/empty for the pilot.
-9. Deploy the pod.
-10. Open JupyterLab or Web Terminal.
+7. Select the normal Pod **Volume Disk** option, not Network Volume.
+8. Set **Volume Disk** to `80 GB`.
+9. Leave **Network Volume** off/empty for the pilot.
+10. Leave **Container Disk** at the default, usually `20 GB`.
+11. Deploy the pod.
+12. Open JupyterLab or Web Terminal.
 
 Why this exact choice: RTX 4090 has enough VRAM for an 8B QLoRA run, is much
 cheaper than A100/H100, and trains the same kind of LoRA that can later run
 locally after merge/quantization.
 
-Disk note: the 20 GB default can run out of space once Python packages, model
-downloads, checkpoints, and the dataset are all present. `80 GB` is boring and
-safe. Do not create a persistent network volume for this pilot unless you know
-you want to keep files there between pods; it can keep billing after the run.
+Disk note: RunPod has three similarly named storage choices. If the UI makes you
+choose between **Volume Disk** and **Network Volume**, choose **Volume Disk**.
+For this pilot, use the regular Volume Disk because `/workspace` lives there,
+and the helper script keeps Hugging Face, datasets, pip cache, temp files,
+checkpoints, and the LoRA output under `/workspace`. `80 GB` is boring and safe.
+**Do not create a Network Volume** for this pilot; RunPod says network volumes
+persist independently of any Pod and keep billing until removed. Container Disk
+is just the temporary container/session area, so the default is fine here.
 
 If no RTX 4090 is available, pick this fallback order:
 

@@ -76,6 +76,8 @@ chat as personas" mode becomes far more natural.
 
 ## Chat personality maps / psychometrics research (wanted, bigger idea)
 
+Full working note: [CHAT_PERSONALITY_RESEARCH.md](CHAT_PERSONALITY_RESEARCH.md).
+
 Use the archive as a high-volume behavioral corpus to map chatters, cliques,
 and latent "personality" dimensions from language. This is partly a fun feature
 and partly a possible research/art project: Twitch chat logs as a messy but rich
@@ -106,6 +108,11 @@ for each cluster with evidence snippets.
 - **Who-said-it** — post a real archive quote, chat guesses the author,
   scoreboard in SQLite. The single highest fun-per-effort feature once the
   archive exists. (Roadmap Phase 5.)
+- **Emote/lore glossary RAG** — build a private glossary from 7TV/BTTV/FFZ
+  emote names plus archive contexts, so archive-Q&A and personas can understand
+  local references like emotes, recurring bits, shortened game names (`wow` ->
+  World of Warcraft), and phrases that only make sense inside the chat. Start
+  with retrieval/evidence, not fine-tuning.
 - **Film trivia** — TMDB free API: "name the film from cast + year", poster
   blur-up reveals, etc. Pairs with the Letterboxd item.
 - **Chat Wrapped** — yearly per-user recap from the archive: messages sent,

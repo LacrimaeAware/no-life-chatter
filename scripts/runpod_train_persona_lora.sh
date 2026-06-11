@@ -10,6 +10,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Keep model/package caches on /workspace so the regular RunPod Volume Disk is
+# the only disk that needs to be sized up for the pilot.
+export HF_HOME=/workspace/hf_cache
+export TRANSFORMERS_CACHE=/workspace/hf_cache
+export HF_DATASETS_CACHE=/workspace/hf_datasets_cache
+export PIP_CACHE_DIR=/workspace/pip_cache
+export TMPDIR=/workspace/tmp
+mkdir -p "$HF_HOME" "$HF_DATASETS_CACHE" "$PIP_CACHE_DIR" "$TMPDIR"
+
 echo "== NoLifeChatter persona LoRA pilot =="
 echo "Working directory: $(pwd)"
 echo

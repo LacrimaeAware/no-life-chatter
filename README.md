@@ -211,7 +211,8 @@ for the current state of the persona/archive work. Also: a searchable
 [chat archive](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 over Chatterino logs and
 live chat — built; it powers the `~said`/`~quote`/`~firstseen`/`~chatstats`
 commands), a [persona bot roadmap](docs/PERSONA_BOT_ROADMAP.md) (per-user chat
-personas, rare in-character reactions, playful psychometrics, trivia), and an
+personas, rare in-character reactions, playful psychometrics, trivia), a
+[chat personality research note](docs/CHAT_PERSONALITY_RESEARCH.md), and an
 [idea bank](docs/IDEA_BANK.md) of smaller things.
 
 ## License

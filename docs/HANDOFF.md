@@ -168,10 +168,18 @@ pilot, and archive/general-knowledge Q&A. See "Next work" below.
 6. **Retrieval polish** — the lightweight FTS RAG is built. Future upgrades:
    include lead-in context around retrieved lines (`context_before`) and/or add
    embeddings when plain keyword search misses semantic matches.
-7. **Bigger context / model options** — LM Studio at 16k ctx for more exemplars;
+7. **Chat personality research** — saved in
+   `docs/CHAT_PERSONALITY_RESEARCH.md`. Keep style/personality features separate
+   from interaction/social-graph features so clusters do not simply mean "these
+   people talk to each other."
+8. **Emote/lore glossary RAG** — archive-Q&A/personas should eventually retrieve
+   local emote meanings, shortened game names, and recurring bits from evidence
+   in chat instead of guessing.
+9. **Bigger context / model options** — LM Studio at 16k ctx for more exemplars;
    try an abliterated 8B for edgy; or hosted cheap model for the benign Q&A.
 
 See `docs/PERSONA_BOT_ROADMAP.md` (full roadmap), `docs/CHAT_ARCHIVE.md` (data
 layer + Chatterino format spec), `docs/FINE_TUNING.md` (LoRA pilot runbook),
+`docs/CHAT_PERSONALITY_RESEARCH.md` (psychometrics/personality-map plan), and
 `docs/IDEA_BANK.md` (more ideas). Private, machine-specific notes (paths,
 hardware, decisions) are in gitignored `_private/PERSONA-NOTES.md`.

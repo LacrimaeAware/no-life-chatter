@@ -73,7 +73,7 @@ async def _maybe_continue(message, user, original_prompt, previous_line, mode):
             break
         if len(follow) > 480:
             follow = follow[:479] + "..."
-        await message.channel.send(f"🎭 {user}: {follow}")
+        await message.channel.send(f"🎭 {user} (cont.): {follow}")
         last_line = follow
 
 
