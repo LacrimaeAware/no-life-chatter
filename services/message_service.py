@@ -182,7 +182,7 @@ class MessageService:
                         line = line[:279] + "…"
                     self._last_reaction[channel] = time.time()
                     logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
-                    await message.channel.send(f"🎭 {target}-bot: {line}")
+                    await message.channel.send(f"🎭 {target}: {line}")
                     return
         except Exception as e:
             logging.warning(f"maybe_react failed: {e}")
