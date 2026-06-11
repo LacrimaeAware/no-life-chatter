@@ -1,0 +1,8 @@
+cd /workspace/nlc_persona && python - <<'PY'
+from urllib.request import urlopen
+base = "https://raw.githubusercontent.com/LacrimaeAware/no-life-chatter/main/scripts/"
+for name in ["smoke_test_persona_lora.py", "runpod_smoke_test_persona_lora.sh"]:
+    print("fetching", name)
+    open(name, "wb").write(urlopen(base + name, timeout=60).read())
+PY
+bash runpod_smoke_test_persona_lora.sh

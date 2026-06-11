@@ -176,8 +176,11 @@ Q&A. See "Next work" below.
    auto-resume from the newest `persona_lora/checkpoint-*`. After RunPod
    finishes, download `persona_lora_result.zip`, stop the pod, then run
    `7-install-runpod-lora-result.bat` locally. The zip is a LoRA adapter, not a
-   standalone LM Studio GGUF; next step is smoke-test, merge with base model,
-   then convert/quantize or serve with a LoRA-capable runtime.
+   standalone LM Studio GGUF. Before conversion, run
+   `8-copy-runpod-smoke-test-command.bat`, paste into RunPod, and inspect
+   `/workspace/nlc_persona/persona_lora_smoke_test.txt`. If the samples look
+   promising, merge with the base model, then convert/quantize or serve with a
+   LoRA-capable runtime.
 3. **Archive/general-knowledge Q&A** — a separate `~askchat`-style route for
    questions like "do we have an emote of the bottle dog?", using archive/emote
    retrieval plus a stronger answer model. Do not solve this via fine-tuning.

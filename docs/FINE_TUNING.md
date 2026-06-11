@@ -97,6 +97,26 @@ steps after install are:
    server that supports PEFT/LoRA adapters directly.
 4. Compare LoRA-only, RAG-only, and LoRA+RAG bot replies.
 
+If the RunPod pod or its Network Volume is still available, smoke-test the
+adapter there before converting. On Windows, double-click:
+
+```text
+8-copy-runpod-smoke-test-command.bat
+```
+
+Then paste the copied command into the RunPod terminal. It fetches
+`scripts/smoke_test_persona_lora.py` and `scripts/runpod_smoke_test_persona_lora.sh`,
+loads `/workspace/nlc_persona/persona_lora`, and writes:
+
+```text
+/workspace/nlc_persona/persona_lora_smoke_test.txt
+```
+
+Open/download that text file and inspect the sample outputs. If they look
+meaningfully better than the base/RAG-only behavior, proceed to merge/convert.
+If they look bad, fix the dataset/export/training setup before spending time on
+GGUF conversion.
+
 If training is interrupted, do **not** delete `nlc_persona` before resuming.
 The training script saves checkpoints under `/workspace/nlc_persona/persona_lora`
 every 100 optimizer steps and automatically resumes from the newest
