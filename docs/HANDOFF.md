@@ -173,7 +173,11 @@ Q&A. See "Next work" below.
    prompt+completion SFT. Observed runtime reached 191/2580 steps in 7:30
    before a manual Ctrl+C, implying roughly 1.5 to 2.25 hours for the training
    phase including eval overhead. Current scripts save every 100 steps and
-   auto-resume from the newest `persona_lora/checkpoint-*`.
+   auto-resume from the newest `persona_lora/checkpoint-*`. After RunPod
+   finishes, download `persona_lora_result.zip`, stop the pod, then run
+   `7-install-runpod-lora-result.bat` locally. The zip is a LoRA adapter, not a
+   standalone LM Studio GGUF; next step is smoke-test, merge with base model,
+   then convert/quantize or serve with a LoRA-capable runtime.
 3. **Archive/general-knowledge Q&A** — a separate `~askchat`-style route for
    questions like "do we have an emote of the bottle dog?", using archive/emote
    retrieval plus a stronger answer model. Do not solve this via fine-tuning.

@@ -143,6 +143,7 @@ If you're on Windows, double-click these instead of using the terminal:
 | `4-export-finetune-pilot.bat` | Export and zip a private persona fine-tuning pilot dataset for RunPod. |
 | `5-open-finetune-files.bat` | Open the fine-tune guide and the private output folder. |
 | `6-preview-persona-rag.bat` | Preview which archived lines persona RAG would feed into a prompt. |
+| `7-install-runpod-lora-result.bat` | Copy/extract the downloaded RunPod LoRA result into the private fine-tune folder. |
 
 To start the bot automatically at login, put a shortcut to `run-background.vbs`
 in your Startup folder (`shell:startup`).

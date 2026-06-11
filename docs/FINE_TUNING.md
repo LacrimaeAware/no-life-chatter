@@ -75,6 +75,28 @@ bash nlc_persona/RUN_ME_ON_RUNPOD.sh
 When it finishes, download `/workspace/nlc_persona/persona_lora_result.zip`.
 Then stop/terminate the pod.
 
+Back on Windows, double-click:
+
+```text
+7-install-runpod-lora-result.bat
+```
+
+That copies the downloaded zip from `Downloads` into the gitignored private
+fine-tune folder and extracts it to:
+
+```text
+data\unsynced\fine_tune\persona_lora_result
+```
+
+This result is a **LoRA adapter**, not a standalone LM Studio GGUF yet. Next
+steps after install are:
+
+1. Quick smoke-test the adapter against a few prompts.
+2. If it looks promising, merge the adapter with its base model.
+3. Convert/quantize the merged model to GGUF for LM Studio or run it through a
+   server that supports PEFT/LoRA adapters directly.
+4. Compare LoRA-only, RAG-only, and LoRA+RAG bot replies.
+
 If training is interrupted, do **not** delete `nlc_persona` before resuming.
 The training script saves checkpoints under `/workspace/nlc_persona/persona_lora`
 every 100 optimizer steps and automatically resumes from the newest
