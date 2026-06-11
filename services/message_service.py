@@ -213,7 +213,7 @@ class MessageService:
             if len(line) > 280:
                 line = line[:279] + "..."
             logging.info(f"Persona reaction follow-up in #{message.channel.name} as {target}: {line!r}")
-            await message.channel.send(f"🎭 {target} (random cont.): {line}")
+            await message.channel.send(f"↳ 🎲 {target}: {line}")
             last_line = line
 
     async def maybe_react(self, message):
@@ -252,7 +252,7 @@ class MessageService:
                         line = line[:279] + "..."
                     self._last_reaction[channel] = time.time()
                     logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
-                    await message.channel.send(f"🎭 {target} (random): {line}")
+                    await message.channel.send(f"🎲 {target}: {line}")
                     await self._maybe_continue_reaction(
                         message, target, line, use_llm, is_clean, persona_markov, persona_llm
                     )

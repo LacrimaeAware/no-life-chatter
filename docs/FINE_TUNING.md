@@ -95,9 +95,9 @@ Use this for the first paid run:
 4. Choose **Secure Cloud**.
 5. Choose **RTX 4090, 24 GB VRAM**.
 6. Choose the official **PyTorch / Jupyter** template.
-7. Select the normal Pod **Volume Disk** option, not Network Volume.
-8. Set **Volume Disk** to `80 GB`.
-9. Leave **Network Volume** off/empty for the pilot.
+7. Create/select a **Network Volume** in the same datacenter as the GPU.
+8. Set the Network Volume to `80 GB`.
+9. Attach that Network Volume to the pod.
 10. Leave **Container Disk** at the default, usually `20 GB`.
 11. Deploy the pod.
 12. Open JupyterLab or Web Terminal.
@@ -106,14 +106,18 @@ Why this exact choice: RTX 4090 has enough VRAM for an 8B QLoRA run, is much
 cheaper than A100/H100, and trains the same kind of LoRA that can later run
 locally after merge/quantization.
 
-Disk note: RunPod has three similarly named storage choices. If the UI makes you
-choose between **Volume Disk** and **Network Volume**, choose **Volume Disk**.
-For this pilot, use the regular Volume Disk because `/workspace` lives there,
-and the helper script keeps Hugging Face, datasets, pip cache, temp files,
-checkpoints, and the LoRA output under `/workspace`. `80 GB` is boring and safe.
-**Do not create a Network Volume** for this pilot; RunPod says network volumes
-persist independently of any Pod and keep billing until removed. Container Disk
-is just the temporary container/session area, so the default is fine here.
+Disk note: RunPod has three similarly named storage choices. For this workflow,
+use a **Network Volume** because it mounts at `/workspace`, survives pod
+termination, and is cheaper than leaving a stopped pod's regular Volume Disk
+around. The helper script keeps Hugging Face, datasets, pip cache, temp files,
+checkpoints, and the LoRA output under `/workspace`, so attaching a Network
+Volume makes the run more restart-safe. `80 GB` is boring and safe. Container
+Disk is just the temporary container/session area, so the default is fine here.
+
+Important: a Network Volume is tied to a datacenter. Create it in the same
+datacenter where you can actually launch the RTX 4090/A5000/L40S pod. If that
+datacenter has no GPU availability, either pick a GPU in that datacenter or
+delete/recreate the Network Volume in another one.
 
 If no RTX 4090 is available, pick this fallback order:
 

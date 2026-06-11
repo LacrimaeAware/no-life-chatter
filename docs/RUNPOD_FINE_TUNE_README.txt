@@ -16,9 +16,9 @@ RunPod setup:
 3. Secure Cloud
 4. GPU: RTX 4090 24 GB
 5. Template: official PyTorch / Jupyter
-6. Storage: choose regular Volume Disk, not Network Volume
-7. Volume Disk: 80 GB
-8. Network Volume: leave empty/off for the pilot
+6. Storage: create/select a Network Volume in the same datacenter
+7. Network Volume: 80 GB
+8. Attach that Network Volume to the pod
 9. Container Disk: leave default/20 GB
 10. Deploy
 11. Open JupyterLab
