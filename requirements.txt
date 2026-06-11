@@ -7,3 +7,4 @@ psutil
 lingua-language-detector
 pykakasi
 pythainlp
+scikit-learn
