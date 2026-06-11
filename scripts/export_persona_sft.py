@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import re
@@ -77,6 +78,9 @@ def _clean_line(value: str, max_chars: int) -> str:
     return value
 
 
+TIMESTAMP_IN_TEXT_RE = re.compile(r"\[\d{2}:\d{2}:\d{2}\]")
+
+
 def _usable_output(content: str, min_words: int, max_chars: int, allow_urls: bool) -> bool:
     content = (content or "").strip()
     if not content or content.startswith(config.PREFIX):
@@ -86,6 +90,10 @@ def _usable_output(content: str, min_words: int, max_chars: int, allow_urls: boo
     if len(content.split()) < min_words:
         return False
     if not allow_urls and URL_RE.search(content):
+        return False
+    # A bracketed timestamp inside the text is a log-parse artifact (a merged
+    # or malformed line) — never a real chat message. Don't train on it.
+    if TIMESTAMP_IN_TEXT_RE.search(content):
         return False
     return True
 
@@ -130,11 +138,8 @@ def _channels(conn, requested: list[str]) -> list[str]:
     return [row[0] for row in conn.execute("SELECT DISTINCT channel FROM messages")]
 
 
-def _make_example(row, context_rows, max_context_chars: int) -> dict | None:
-    context = _format_context(context_rows, max_context_chars)
-    if not context:
-        return None
-    persona = chat_archive.normalize_author(row["author"])
+def _example_from_candidate(cand: dict) -> dict:
+    persona = cand["persona"]
     return {
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -142,32 +147,81 @@ def _make_example(row, context_rows, max_context_chars: int) -> dict | None:
                 "role": "user",
                 "content": (
                     f"<persona={persona}>\n"
-                    f"Recent chat in #{row['channel']}:\n{context}\n\n"
+                    f"Recent chat in #{cand['channel']}:\n{cand['context']}\n\n"
                     f"Write {persona}'s next chat message."
                 ),
             },
-            {"role": "assistant", "content": row["content"]},
+            {"role": "assistant", "content": cand["content"]},
         ],
         "metadata": {
             "persona": persona,
-            "channel": row["channel"],
-            "sent_at": row["sent_at"],
-            "message_id": row["id"],
+            "channel": cand["channel"],
+            "sent_at": cand["sent_at"],
+            "message_id": cand["id"],
         },
     }
 
 
-def _reservoir_add(reservoir: dict, seen: Counter, example: dict,
-                   max_examples: int, rng: random.Random) -> None:
-    persona = example["metadata"]["persona"]
-    seen[persona] += 1
-    bucket = reservoir[persona]
-    if len(bucket) < max_examples:
-        bucket.append(example)
-        return
-    j = rng.randrange(seen[persona])
-    if j < max_examples:
-        bucket[j] = example
+def _reservoir_add(bucket: list, count: int, item: dict, cap: int,
+                   rng: random.Random) -> None:
+    """Unbiased reservoir sampling of `item` into `bucket` (<= cap entries)."""
+    if len(bucket) < cap:
+        bucket.append(item)
+    else:
+        j = rng.randrange(count)
+        if j < cap:
+            bucket[j] = item
+
+
+_TOKEN_RE = re.compile(r"[a-z0-9']{2,}")
+
+
+def _tokens(text: str) -> list[str]:
+    return _TOKEN_RE.findall((text or "").lower())
+
+
+def _distinctiveness_models(candidates: dict, min_z: float) -> dict:
+    """Per-author {token: z} signature maps via the log-odds-ratio with an
+    informative prior (Monroe, Colaresi & Quinn 2008, "Fightin' Words"):
+    each author vs the rest of the selected group, add-0.5 smoothed, z-scored.
+
+    z>0 = the author says the word more than the group average; high z is their
+    signature vocabulary/emotes/topics. A message's distinctiveness is the sum
+    of its signature tokens' z — the tail of "characteristically them" that the
+    uniform sample drowned in filler. This is the fix to "what are we
+    minimizing": train on what makes them *them*, not their average "lol".
+    """
+    global_counts = Counter()
+    author_counts = {}
+    for persona, items in candidates.items():
+        c = Counter()
+        for it in items:
+            c.update(_tokens(it["content"]))
+        author_counts[persona] = c
+        global_counts.update(c)
+    total = sum(global_counts.values())
+    models = {}
+    for persona, ac in author_counts.items():
+        n_a = sum(ac.values())
+        n_b = total - n_a
+        zmap = {}
+        if n_a > 0 and n_b > 0:
+            for w, y_aw in ac.items():
+                y_bw = global_counts[w] - y_aw
+                num_a, den_a = y_aw + 0.5, n_a - y_aw + 0.5
+                num_b, den_b = y_bw + 0.5, n_b - y_bw + 0.5
+                if den_a <= 0 or den_b <= 0:
+                    continue
+                delta = math.log(num_a / den_a) - math.log(num_b / den_b)
+                z = delta / math.sqrt(1.0 / num_a + 1.0 / num_b)
+                if z >= min_z:
+                    zmap[w] = z
+        models[persona] = zmap
+    return models
+
+
+def _distinctiveness(content: str, zmap: dict) -> float:
+    return sum(zmap.get(t, 0.0) for t in set(_tokens(content)))
 
 
 def export(args) -> dict:
@@ -191,24 +245,20 @@ def export(args) -> dict:
         channels,
     )
 
-    reservoir = defaultdict(list)
-    seen = Counter()
+    # Collect candidate examples per author (reservoir-capped so a huge channel
+    # can't blow up memory); distinctiveness selection happens after.
+    collect_cap = max(args.collect_cap_per_author, args.max_examples_per_author)
+    candidates = defaultdict(list)
+    collected = Counter()
     skipped = Counter()
     context_by_channel = defaultdict(lambda: deque(maxlen=args.context))
 
     for msg_id, channel, author, sent_at, content in rows:
-        row = {
-            "id": msg_id,
-            "channel": channel,
-            "author": author,
-            "sent_at": sent_at,
-            "content": _clean_line(content, args.max_output_chars),
-        }
+        cleaned = _clean_line(content, args.max_output_chars)
         persona = chat_archive.normalize_author(author)
         current_dt = _dt(sent_at)
-        raw_context = list(context_by_channel[channel])
         context = []
-        for ctx in raw_context:
+        for ctx in context_by_channel[channel]:
             if current_dt:
                 ctx_dt = _dt(ctx["sent_at"])
                 if ctx_dt and (current_dt - ctx_dt).total_seconds() > args.within_minutes * 60:
@@ -219,17 +269,51 @@ def export(args) -> dict:
             skipped["author"] += 1
         elif len(context) < args.min_context:
             skipped["context"] += 1
-        elif not _usable_output(row["content"], args.min_words, args.max_output_chars, args.allow_urls):
+        elif not _usable_output(cleaned, args.min_words, args.max_output_chars, args.allow_urls):
             skipped["output"] += 1
         else:
-            example = _make_example(row, context[-args.context:], args.max_context_chars)
-            if example:
-                _reservoir_add(reservoir, seen, example, args.max_examples_per_author, rng)
+            context_str = _format_context(context[-args.context:], args.max_context_chars)
+            if context_str:
+                collected[persona] += 1
+                _reservoir_add(
+                    candidates[persona], collected[persona],
+                    {"persona": persona, "channel": channel, "sent_at": sent_at,
+                     "id": msg_id, "content": cleaned, "context": context_str},
+                    collect_cap, rng,
+                )
 
         if content and not content.lstrip().startswith(config.PREFIX):
-            context_by_channel[channel].append(row)
+            context_by_channel[channel].append(
+                {"author": author, "sent_at": sent_at, "content": cleaned}
+            )
 
-    examples = [example for bucket in reservoir.values() for example in bucket]
+    # Select per author: most-distinctive first, with a random tail for coverage.
+    models = (
+        _distinctiveness_models(candidates, args.distinctiveness_min_z)
+        if args.distinctiveness_ratio > 0 else {}
+    )
+    keep = args.max_examples_per_author
+    signature_kept = Counter()
+    chosen = []
+    for persona, items in candidates.items():
+        if models.get(persona):
+            scored = sorted(
+                items, key=lambda it: _distinctiveness(it["content"], models[persona]),
+                reverse=True,
+            )
+            n_sig = min(len(scored), int(keep * args.distinctiveness_ratio))
+            signature_kept[persona] = n_sig
+            picked = scored[:n_sig]
+            rest = scored[n_sig:]
+            rng.shuffle(rest)
+            picked += rest[: max(0, keep - len(picked))]
+        else:
+            picked = list(items)
+            rng.shuffle(picked)
+            picked = picked[:keep]
+        chosen.extend(picked)
+
+    examples = [_example_from_candidate(c) for c in chosen]
     rng.shuffle(examples)
 
     train, val = [], []
@@ -248,14 +332,21 @@ def export(args) -> dict:
             fh.write(json.dumps(example, ensure_ascii=False) + "\n")
 
     per_author = Counter(example["metadata"]["persona"] for example in examples)
+    top_signatures = {
+        persona: [w for w, _ in sorted(zmap.items(), key=lambda kv: -kv[1])[:12]]
+        for persona, zmap in models.items() if zmap
+    }
     return {
         "train": len(train),
         "validation": len(val),
         "total": len(examples),
         "authors": len(per_author),
         "channels": channels,
+        "distinctiveness_ratio": args.distinctiveness_ratio,
+        "signature_kept": dict(signature_kept.most_common(20)),
+        "top_signatures": top_signatures,
         "top_authors": per_author.most_common(20),
-        "seen_candidates": dict(seen.most_common(20)),
+        "collected_candidates": dict(collected.most_common(20)),
         "skipped": dict(skipped),
         "out": str(out),
         "val_out": str(val_out),
@@ -281,6 +372,13 @@ def main() -> None:
                     help="comma-separated alias=canonical author merges for this export")
     ap.add_argument("--min-author-messages", type=int, default=500)
     ap.add_argument("--max-examples-per-author", type=int, default=8000)
+    ap.add_argument("--distinctiveness-ratio", type=float, default=0.6,
+                    help="fraction of each author's examples picked by signature "
+                         "distinctiveness (rest random for coverage); 0 = uniform")
+    ap.add_argument("--distinctiveness-min-z", type=float, default=1.5,
+                    help="min log-odds z-score for a token to count as signature")
+    ap.add_argument("--collect-cap-per-author", type=int, default=40000,
+                    help="max candidates held per author before selection (memory bound)")
     ap.add_argument("--context", type=int, default=8)
     ap.add_argument("--min-context", type=int, default=3)
     ap.add_argument("--within-minutes", type=int, default=20)

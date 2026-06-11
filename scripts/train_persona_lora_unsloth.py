@@ -23,6 +23,9 @@ def main() -> None:
     ap.add_argument("--val", default="/workspace/nlc_persona/persona_val.jsonl")
     ap.add_argument("--out", default="/workspace/nlc_persona/persona_lora")
     ap.add_argument("--model", default="unsloth/Qwen2.5-7B-Instruct-bnb-4bit")
+    ap.add_argument("--eos-token", default="",
+                    help="EOS marker for completion masking; default = tokenizer's. "
+                         "Qwen: <|im_end|>  Llama-3.x: <|eot_id|>")
     ap.add_argument("--max-seq-length", type=int, default=2048)
     ap.add_argument("--epochs", type=float, default=1.0)
     ap.add_argument("--batch-size", type=int, default=2)
@@ -155,7 +158,11 @@ def main() -> None:
         if "completion_only_loss" in args_params:
             training_kwargs["completion_only_loss"] = True
         if "eos_token" in args_params:
-            training_kwargs["eos_token"] = "<|im_end|>"
+            # Wrong EOS here silently breaks completion masking on a different
+            # base. Default to the tokenizer's own EOS; override per family.
+            eos = args.eos_token or getattr(tokenizer, "eos_token", None)
+            if eos:
+                training_kwargs["eos_token"] = eos
         if "dataset_num_proc" in args_params:
             training_kwargs["dataset_num_proc"] = 1
     training_args = args_cls(**training_kwargs)

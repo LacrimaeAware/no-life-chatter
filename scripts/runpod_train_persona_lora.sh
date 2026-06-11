@@ -44,10 +44,22 @@ python -m pip install unsloth datasets trl
 
 echo
 echo "[3/4] Training LoRA..."
+# v2 default: an ABLITERATED base so the persona isn't fighting refusal
+# alignment (the pilot's plain Qwen kept refusing edgy jokes). Override by
+# exporting MODEL / EOS_TOKEN before running. EOS MUST match the base family
+# (Llama-3.x: <|eot_id|>, Qwen2.5: <|im_end|>) or completion masking breaks.
+# If the primary 401s on download, try a fallback:
+#   MODEL=huihui-ai/Llama-3.1-8B-Instruct-abliterated  EOS_TOKEN='<|eot_id|>'
+#   MODEL=huihui-ai/Qwen2.5-7B-Instruct-abliterated     EOS_TOKEN='<|im_end|>'
+MODEL="${MODEL:-mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated}"
+EOS_TOKEN="${EOS_TOKEN:-<|eot_id|>}"
+echo "Base model: $MODEL   EOS: $EOS_TOKEN"
 python train_persona_lora_unsloth.py \
   --train "$(pwd)/persona_train.jsonl" \
   --val "$(pwd)/persona_val.jsonl" \
   --out "$(pwd)/persona_lora" \
+  --model "$MODEL" \
+  --eos-token "$EOS_TOKEN" \
   --epochs 1 \
   --rank 16
 
