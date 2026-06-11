@@ -13,6 +13,10 @@ description = (
 )
 
 
+def _stop_followup(text):
+    return (text or "").strip().upper() in {"STOP", "NO", "NONE"}
+
+
 async def _run(bot, message, params, mode):
     if not params:
         await message.channel.send(f"Usage: ~{'hyper' if mode=='hyper' else 'persona'} <user> [message]")
@@ -57,9 +61,11 @@ async def _maybe_continue(message, user, original_prompt, previous_line, mode):
             break
         await asyncio.sleep(getattr(config, "PERSONA_COMMAND_CONTINUE_DELAY", 1.5))
         follow_prompt = (
-            f'{original_prompt or ""}\n'
-            f'You just said: "{last_line}". Send one natural short follow-up '
-            f"chat message as {user}, like a real chatter double-texting."
+            f'Original message to you: "{original_prompt or ""}"\n'
+            f'You just said: "{last_line}". Decide if {user} would naturally '
+            f"send one immediate second chat message that continues the SAME "
+            f"thought. If yes, output only that short follow-up. If no coherent "
+            f"follow-up is natural, output exactly STOP. Do not change topic."
         )
         follow = await persona_llm.generate(
             user,
@@ -69,7 +75,7 @@ async def _maybe_continue(message, user, original_prompt, previous_line, mode):
             exemplar_count=getattr(config, "LLM_RETRY_EXEMPLARS", 60),
             context_count=getattr(config, "LLM_RETRY_CONTEXT", 12),
         )
-        if not follow or not is_clean(follow):
+        if not follow or _stop_followup(follow) or not is_clean(follow):
             break
         if len(follow) > 480:
             follow = follow[:479] + "..."

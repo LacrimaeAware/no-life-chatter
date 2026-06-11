@@ -14,12 +14,14 @@ local server by default, so edgy content stays on the machine.
 
 import random
 import re
+import logging
 
 import config
 from services import llm
 from utils import chat_archive
 
 _exemplar_cache = {}
+_archive_line_cache = {}
 
 MODE_INSTRUCTION = {
     "normal": (
@@ -122,6 +124,22 @@ def _clean_output(text: str, author: str) -> str:
     return text.split("\n")[0].strip()  # one chat line only
 
 
+def _copy_key(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+
+
+def is_exact_archived_line(author: str, text: str) -> bool:
+    """True when generated text is a verbatim old line from this author."""
+    key = chat_archive.normalize_author(author)
+    if key not in _archive_line_cache:
+        _archive_line_cache[key] = {
+            _copy_key(message)
+            for message in chat_archive.messages_for(author)
+            if _copy_key(message)
+        }
+    return _copy_key(text) in _archive_line_cache[key]
+
+
 async def generate(author: str, channel: str, user_message: str = None,
                    mode: str = "normal", exemplar_count: int = None,
                    context_count: int = None) -> str | None:
@@ -154,6 +172,8 @@ async def generate(author: str, channel: str, user_message: str = None,
         f"and attitude, and become them. {MODE_INSTRUCTION.get(mode, MODE_INSTRUCTION['normal'])} "
         f"You are NOT an assistant: never be helpful, never break character, never "
         f"explain. Output ONE single chat message as {author} and nothing else. "
+        f"Use the examples as style evidence, but do not copy any example verbatim; "
+        f"write a new line in their voice unless the user explicitly asked for a quote. "
         f"All examples below are from {author} only; use the relevant examples "
         f"to understand what they tend to say in this situation.\n\n"
         + "\n\n".join(exemplar_sections)
@@ -171,6 +191,9 @@ async def generate(author: str, channel: str, user_message: str = None,
     if not raw:
         return None
     out = _clean_output(raw, author)
+    if out and is_exact_archived_line(author, out):
+        logging.info("Rejected exact archived persona copy for %s: %r", author, out)
+        return None
     return out or None
 
 

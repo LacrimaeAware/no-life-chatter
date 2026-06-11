@@ -83,6 +83,9 @@ def strip_emote_like_tokens(text):
         kept.append(tok)
     return ' '.join(kept)
 
+def is_stop_followup(text):
+    return (text or "").strip().upper() in {"STOP", "NO", "NONE"}
+
 def is_translation_enabled_globally():
     db_path = config.DB_PATH
     with sqlite3.connect(db_path) as conn:
@@ -192,9 +195,11 @@ class MessageService:
             await asyncio.sleep(getattr(config, "REACTION_CONTINUE_DELAY", 1.5))
             if use_llm:
                 follow_prompt = (
-                    f'You just said: "{last_line}". Send one natural short '
-                    f"follow-up chat message as {target}, like a real chatter "
-                    f"double-texting."
+                    f'You just said: "{last_line}". Decide if {target} would '
+                    f"naturally send one immediate second chat message that "
+                    f"continues the SAME thought. If yes, output only that "
+                    f"short follow-up. If no coherent follow-up is natural, "
+                    f"output exactly STOP. Do not change topic."
                 )
                 line = await persona_llm.generate(
                     target,
@@ -205,10 +210,10 @@ class MessageService:
                     context_count=getattr(config, "LLM_RETRY_CONTEXT", 12),
                 )
             else:
-                line = await self._persona_line(
-                    target, message.channel.name, use_llm, is_clean, persona_markov, persona_llm
-                )
-            if not line or not is_clean(line):
+                # Markov can make a funny standalone line, but it cannot make a
+                # coherent second line tied to the first one.
+                break
+            if not line or is_stop_followup(line) or not is_clean(line):
                 break
             if len(line) > 280:
                 line = line[:279] + "..."
