@@ -122,22 +122,27 @@ def _instance_month_urls(instances: list[str], channel: str, user: str,
 
 
 def _download_month(instances: list[str], channel: str, user: str,
-                    year: int, month: int) -> tuple[str, str] | None:
+                    year: int, month: int) -> tuple[str, str] | str | None:
     errors = []
     for url in _instance_month_urls(instances, channel, user, year, month):
         try:
             text = _request_text(url)
+        except urllib.error.HTTPError as exc:
+            errors.append((url, f"HTTP {exc.code}: {exc.reason}", exc.code))
+            continue
         except Exception as exc:
-            errors.append(f"{url}: {exc}")
+            errors.append((url, str(exc), None))
             continue
         if text.strip().startswith("<!doctype html") or text.strip().startswith("<!DOCTYPE html"):
-            errors.append(f"{url}: got HTML instead of raw logs")
+            errors.append((url, "got HTML instead of raw logs", None))
             continue
         return url, text
+    if errors and all(code == 404 for _url, _error, code in errors):
+        return "missing"
     if errors:
         print("    all instances failed for month:")
-        for error in errors[:4]:
-            print(f"      {error}")
+        for url, error, _code in errors[:4]:
+            print(f"      {url}: {error}")
     return None
 
 
@@ -250,7 +255,22 @@ def download_user(channel: str, user: str, out_root: Path, local_tz: ZoneInfo,
     api_url = f"{API_BASE}/api/{urllib.parse.quote(channel)}/{urllib.parse.quote(user)}"
     print(f"\n== {channel}/{user} ==")
     print(f"API: {api_url}")
-    info = _request_json(api_url)
+    try:
+        info = _request_json(api_url)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            print("  no logs reported by API")
+            return {
+                "user": user,
+                "error": "api_not_found",
+                "months_reported": 0,
+                "months_downloaded": 0,
+                "months_missing": 0,
+                "rows_parsed": 0,
+                "rows_inserted": 0,
+                "failures": [],
+            }
+        raise
     if info.get("error"):
         print(f"  API error: {info.get('error')}")
         return {"user": user, "error": info.get("error")}
@@ -279,10 +299,15 @@ def download_user(channel: str, user: str, out_root: Path, local_tz: ZoneInfo,
     total_rows = 0
     total_inserted = 0
     downloaded = 0
+    missing = 0
     failures = []
     for i, (year, month) in enumerate(months, 1):
         print(f"  [{i}/{len(months)}] {year:04d}-{month:02d}", end="", flush=True)
         result = _download_month(instances, resolved_channel, resolved_user, year, month)
+        if result == "missing":
+            missing += 1
+            print(" no logs")
+            continue
         if not result:
             print(" failed")
             failures.append(f"{year:04d}-{month:02d}")
@@ -307,6 +332,7 @@ def download_user(channel: str, user: str, out_root: Path, local_tz: ZoneInfo,
         "resolved_channel": resolved_channel,
         "months_reported": len(months),
         "months_downloaded": downloaded,
+        "months_missing": missing,
         "rows_parsed": total_rows,
         "rows_inserted": total_inserted,
         "failures": failures,
@@ -325,7 +351,9 @@ def main() -> None:
     ap.add_argument("--users", default="", help="comma/space-separated usernames")
     ap.add_argument("--users-file", default="", help="optional text file, one user per line")
     ap.add_argument("--from-archive", action="store_true",
-                    help="add all locally-known users from --channel in chat_archive.db")
+                    help="add locally-known users from chat_archive.db")
+    ap.add_argument("--users-from-channel", default="",
+                    help="archive channel to select users from; defaults to --channel")
     ap.add_argument("--min-archive-messages", type=int, default=25,
                     help="minimum local messages required with --from-archive")
     ap.add_argument("--include-excluded", action="store_true",
@@ -344,14 +372,16 @@ def main() -> None:
     users = _split_users(args.users)
     archive_source = {"enabled": False}
     if args.from_archive:
+        source_channel = args.users_from_channel or args.channel
         archive_selected, archive_skipped = archive_users(
-            args.channel,
+            source_channel,
             max(1, args.min_archive_messages),
             include_excluded=args.include_excluded,
         )
         users.extend(archive_selected)
         archive_source = {
             "enabled": True,
+            "channel": source_channel,
             "min_messages": max(1, args.min_archive_messages),
             "include_excluded": args.include_excluded,
             "selected": archive_selected,
@@ -394,7 +424,7 @@ def main() -> None:
             print(f"\n!! {args.channel}/{user} failed: {exc}")
             summary = {"user": user, "error": str(exc)}
         summaries.append(summary)
-        for key in ("months_downloaded", "rows_parsed", "rows_inserted"):
+        for key in ("months_downloaded", "months_missing", "rows_parsed", "rows_inserted"):
             totals[key] += int(summary.get(key) or 0)
 
     summary_doc = {
@@ -412,6 +442,7 @@ def main() -> None:
     print(f"Summary: {summary_path}")
     print(
         f"Months downloaded: {totals['months_downloaded']:,}; "
+        f"months with no logs: {totals['months_missing']:,}; "
         f"rows parsed: {totals['rows_parsed']:,}; "
         f"new archive rows: {totals['rows_inserted']:,}"
     )

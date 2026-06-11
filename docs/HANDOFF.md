@@ -62,6 +62,10 @@ the live answer was a real, in-voice answer about his mage.
   uses `scripts/download_zonian_user_logs.py --from-archive` and keeps raw
   downloads under gitignored `data/unsynced/external_logs/zonian/`. Zonian
   currently reports channel coverage from 2024-10-27 through 2026-06-11.
+- **Download other-channel logs for ThickPoo members only**:
+  double-click `13-download-other-channel-logs-for-thickpoo-members.bat`.
+  It loops over the user's target channel list, but selects the user roster
+  from local `#thickpoo` via `--users-from-channel thickpoo`.
 - **Query archive offline**: `python scripts/ask_archive.py said|quote|stats|search ...`
 - **Preview a Markov persona (no chat post)**: `python scripts/persona_preview.py <user>`
 - **Preview LLM/RAG exemplar selection (no model/chat post)**:

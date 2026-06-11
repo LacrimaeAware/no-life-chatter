@@ -101,6 +101,18 @@ Automated from the existing local archive roster:
 python scripts/download_zonian_user_logs.py --channel thickpoo --from-archive --min-archive-messages 25 --import-archive
 ```
 
+Cross-channel pull for ThickPoo members only:
+
+```
+python scripts/download_zonian_user_logs.py --channel duardo1 --from-archive --users-from-channel thickpoo --min-archive-messages 25 --import-archive
+```
+
+For the full baked-in channel list, double-click
+`13-download-other-channel-logs-for-thickpoo-members.bat`. That downloads logs
+from Duardo1, Forsen, NymN, Fernardo, EarnestSincereSugmaMale, Ebbel, and the
+other listed channels, but only for users selected from the local `#thickpoo`
+archive.
+
 Useful test run:
 
 ```
@@ -110,7 +122,10 @@ python scripts/download_zonian_user_logs.py --channel thickpoo --from-archive --
 The mirror's raw monthly logs use UTC timestamps; the importer converts them to
 the local archive timezone (`America/New_York` by default) before inserting.
 Duplicate protection checks `(channel, author, sent_at, content)`, so rerunning
-the downloader is safe.
+the downloader is safe. This same duplicate check is the right overlap strategy
+for future older local logs too: import every source into the same normalized
+schema, then skip or purge rows whose `(channel, author, sent_at, content)` is
+already present.
 
 ## Schema
 
