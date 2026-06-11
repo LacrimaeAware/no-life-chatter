@@ -139,6 +139,8 @@ If you're on Windows, double-click these instead of using the terminal:
 | `run-background.vbs` | Run the bot **hidden** (no window), restarting it if it crashes, logging to `data/bot.log`. |
 | `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
 | `stop-bot.bat` | Stop the background bot. |
+| `4-export-finetune-pilot.bat` | Export and zip a private persona fine-tuning pilot dataset for RunPod. |
+| `5-open-finetune-files.bat` | Open the fine-tune guide and the private output folder. |
 
 To start the bot automatically at login, put a shortcut to `run-background.vbs`
 in your Startup folder (`shell:startup`).

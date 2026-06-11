@@ -74,6 +74,33 @@ they're already in. Make "how often it responds" a real parameter and bias it:
 This generalizes the current `reaction_chance`; the autonomous "bot hangs out in
 chat as personas" mode becomes far more natural.
 
+## Chat personality maps / psychometrics research (wanted, bigger idea)
+
+Use the archive as a high-volume behavioral corpus to map chatters, cliques,
+and latent "personality" dimensions from language. This is partly a fun feature
+and partly a possible research/art project: Twitch chat logs as a messy but rich
+source for measuring stable social/personality signals over time.
+
+Sketch:
+- Build per-user embeddings from message samples, topic distributions, emote
+  usage, reply targets, timing, message length, punctuation/caps habits, and
+  lexical markers.
+- Cluster users into "chat gangs" / social neighborhoods: who talks to whom,
+  who shares emotes/phrases, who appears in the same conversational contexts.
+- Derive interpretable axes instead of only Big Five imitation: irony density,
+  aggression/playfulness, lore-reference rate, emote reliance, question-vs-claim
+  style, night-owl/activity rhythms, social centrality, topic breadth, etc.
+- Compare stability across time: do dimensions survive across months/years,
+  channels, and changing chat metas? This is the interesting "does it replicate"
+  question.
+- If this ever becomes public/research-facing, get consent from included users
+  before publishing logs, examples, or identifiable scores. Use aggregate or
+  anonymized outputs by default.
+
+Deliverables could start small: `~psyche <user>` for private/fun metrics,
+offline notebooks that render 2D/3D maps of chatters, and a generated report
+for each cluster with evidence snippets.
+
 ## Trivia & games
 
 - **Who-said-it** — post a real archive quote, chat guesses the author,

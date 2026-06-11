@@ -17,22 +17,26 @@ the training pipeline improves voice.
 
 ## Local export
 
-From the repo on the Windows machine:
+Preferred path: double-click this file on the Windows machine:
 
-```powershell
-.\.venv\Scripts\python.exe scripts\export_persona_sft.py `
-  --authors earnestsinceresugmamale,gero_30,forsenstares,ebbel `
-  --max-examples-per-author 6000
+```text
+4-export-finetune-pilot.bat
 ```
 
 Outputs:
 
 - `data/unsynced/fine_tune/persona_train.jsonl`
 - `data/unsynced/fine_tune/persona_val.jsonl`
+- `data/unsynced/fine_tune/persona_sft_runpod.zip`
 
 These files contain real chat and are gitignored. Do not commit them.
 
-For a broader first run:
+The batch file exports all regular chatters in the configured archive/channels:
+minimum 1,000 messages and maximum 6,000 training examples per author. That is
+the recommended first pilot. It is broader than the old four-person example and
+better matches the goal of modeling the whole chat.
+
+Manual equivalent, only if the batch file fails:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\export_persona_sft.py `
@@ -48,56 +52,24 @@ The exporter writes OpenAI-style chat JSONL:
 
 For the first paid pilot, use this exact Windows sequence:
 
-```powershell
-.\.venv\Scripts\python.exe scripts\export_persona_sft.py `
-  --authors earnestsinceresugmamale,gero_30,forsenstares,ebbel `
-  --max-examples-per-author 6000
-
-Compress-Archive `
-  -Path data\unsynced\fine_tune\persona_train.jsonl,data\unsynced\fine_tune\persona_val.jsonl `
-  data\unsynced\fine_tune\persona_sft.zip -Force
+```text
+Double-click 4-export-finetune-pilot.bat
 ```
 
-Then upload `data\unsynced\fine_tune\persona_sft.zip` to the RunPod Jupyter
+Then upload `data\unsynced\fine_tune\persona_sft_runpod.zip` to the RunPod Jupyter
 file browser, into `/workspace/`.
 
-In the RunPod terminal:
+In the RunPod terminal, the only commands you should need are:
 
 ```bash
 cd /workspace
 mkdir -p nlc_persona
-unzip persona_sft.zip -d nlc_persona
-find nlc_persona -maxdepth 3 -type f -print
+unzip persona_sft_runpod.zip -d nlc_persona
+bash /workspace/nlc_persona/runpod_train_persona_lora.sh
 ```
 
-At that point the dataset is on the GPU machine. The next step is installing
-Unsloth/TRL and running the trainer. Prefer the official Unsloth install path
-for the selected template, because PyTorch/CUDA versions must match.
-
-Clone the public repo and install the training dependencies:
-
-```bash
-cd /workspace
-git clone https://github.com/LacrimaeAware/no-life-chatter.git NoLifeChatter
-python -m venv /workspace/nlc_train_env
-source /workspace/nlc_train_env/bin/activate
-python -m pip install --upgrade pip
-python -m pip install unsloth datasets trl
-```
-
-Run the pilot:
-
-```bash
-python /workspace/NoLifeChatter/scripts/train_persona_lora_unsloth.py \
-  --train /workspace/nlc_persona/persona_train.jsonl \
-  --val /workspace/nlc_persona/persona_val.jsonl \
-  --out /workspace/nlc_persona/persona_lora \
-  --epochs 1 \
-  --rank 16
-```
-
-If `find nlc_persona` shows the JSONL files nested under extra folders, adjust
-the `--train` and `--val` paths to the exact printed paths.
+When it finishes, download `/workspace/nlc_persona/persona_lora_result.zip`.
+Then stop/terminate the pod.
 
 ## GPU choice
 
@@ -123,13 +95,19 @@ Use this for the first paid run:
 4. Choose **Secure Cloud**.
 5. Choose **RTX 4090, 24 GB VRAM**.
 6. Choose the official **PyTorch / Jupyter** template.
-7. Set container disk / volume to at least `80 GB`.
-8. Deploy the pod.
-9. Open JupyterLab or Web Terminal.
+7. Set **Container Disk** to `80 GB`.
+8. Leave **Network Volume** off/empty for the pilot.
+9. Deploy the pod.
+10. Open JupyterLab or Web Terminal.
 
 Why this exact choice: RTX 4090 has enough VRAM for an 8B QLoRA run, is much
 cheaper than A100/H100, and trains the same kind of LoRA that can later run
 locally after merge/quantization.
+
+Disk note: the 20 GB default can run out of space once Python packages, model
+downloads, checkpoints, and the dataset are all present. `80 GB` is boring and
+safe. Do not create a persistent network volume for this pilot unless you know
+you want to keep files there between pods; it can keep billing after the run.
 
 If no RTX 4090 is available, pick this fallback order:
 
