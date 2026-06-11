@@ -54,6 +54,13 @@ The exporter writes OpenAI-style chat JSONL:
 - `user`: `<persona=name>` plus recent chat context
 - `assistant`: the real next message that persona wrote
 
+Training is ordinary supervised fine-tuning / next-token prediction on those
+assistant messages. With current TRL versions the script requests
+completion-only loss, so the model is mainly penalized for predicting the
+persona's reply, not for recreating the prompt text. It does **not** train the
+retrieval database, and it does not memorize or index facts the way RAG does.
+RAG remains the memory system; LoRA is only a style/voice prior.
+
 For the first paid pilot, use this exact Windows sequence:
 
 ```text
@@ -118,6 +125,38 @@ or download that text file and inspect the sample outputs. If they look
 meaningfully better than the base/RAG-only behavior, proceed to merge/convert.
 If they look bad, fix the prompt/eval shape, dataset/export, or base model
 choice before spending time on GGUF conversion.
+
+Current pilot result as of 2026-06-11: training completed and the adapter was
+installed locally under the private fine-tune folder, but the LoRA-only smoke
+test looked mixed/bland. This is not ready to merge into LM Studio as the live
+persona model yet. The current hypothesis is that LoRA-only is the wrong
+evaluation surface: the intended product is **LoRA + RAG**, while the first
+smoke test used only the adapter and tiny hand-written context windows.
+
+To compare the RunPod LoRA smoke-test text against the current local LM Studio
+RAG behavior, put the downloaded RunPod file here:
+
+```text
+data\unsynced\fine_tune\persona_lora_smoke_test.txt
+```
+
+Then double-click:
+
+```text
+9-compare-lora-vs-local-rag.bat
+```
+
+This writes a private report:
+
+```text
+data\unsynced\fine_tune\persona_lora_vs_local_rag.md
+```
+
+That report is **RAG-only on the local model** versus **LoRA-only on RunPod**.
+It still does not test LoRA+RAG together. The next real evaluation should run
+the trained adapter on RunPod with prompts that include the same author-only RAG
+exemplars used by the live bot, or merge/serve the adapter somewhere safe and
+run the existing persona prompt against it.
 
 If training is interrupted, do **not** delete `nlc_persona` before resuming.
 The training script saves checkpoints under `/workspace/nlc_persona/persona_lora`

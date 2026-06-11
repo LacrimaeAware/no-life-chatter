@@ -22,9 +22,9 @@ pushed** to `github.com/LacrimaeAware/no-life-chatter` (`main`):
   directed-at-persona chance, cooldowns, and optional one-line follow-ups.
 - **Random reactions** — the bot rarely speaks up in a chatter's persona.
 
-What's NOT done yet (the work to pick up): a **Turing-test game**, integrating
-the RunPod fine-tuning pilot after it finishes, and archive/general-knowledge
-Q&A. See "Next work" below.
+What's NOT done yet (the work to pick up): a **Turing-test game**, a proper
+LoRA+RAG evaluation/merge path for the RunPod fine-tuning pilot, and
+archive/general-knowledge Q&A. See "Next work" below.
 
 ## How to run / verify
 
@@ -166,24 +166,24 @@ Q&A. See "Next work" below.
 2. **Fine-tuning pilot** — current pilot export is ThickPoo-only and curated:
    selected high-value chatters, bot accounts excluded, known alt accounts
    merged, max 5,000 examples per author. Train a LoRA using
-   `docs/FINE_TUNING.md` and `scripts/train_persona_lora_unsloth.py`, then
-   compare against RAG-only. Current pilot shape: 41,278 train examples,
-   2,186 validation examples, 2,580 optimizer steps on
+   `docs/FINE_TUNING.md` and `scripts/train_persona_lora_unsloth.py`.
+   Current pilot shape: 41,278 train examples, 2,186 validation examples,
+   2,580 optimizer steps on
    `unsloth/Qwen2.5-7B-Instruct-bnb-4bit`, LoRA rank 16, bf16 on RTX 4090,
    prompt+completion SFT. Qwen was chosen as an ungated, low-friction pipeline
    pilot, not as the guaranteed final personality model. If outputs feel bland,
    rerun the same pipeline on Llama 3.1/3.2 8B Instruct or another preferred
-   7B-9B local chat model. Observed runtime reached 191/2580 steps in 7:30
-   before a manual Ctrl+C, implying roughly 1.5 to 2.25 hours for the training
-   phase including eval overhead. Current scripts save every 100 steps and
-   auto-resume from the newest `persona_lora/checkpoint-*`. After RunPod
-   finishes, download `persona_lora_result.zip`, stop the pod, then run
-   `7-install-runpod-lora-result.bat` locally. The zip is a LoRA adapter, not a
-   standalone LM Studio GGUF. Before conversion, run
-   `8-copy-runpod-smoke-test-command.bat`, paste into RunPod, and inspect
-   `/workspace/nlc_persona/persona_lora_smoke_test.txt`. If the samples look
-   promising, merge with the base model, then convert/quantize or serve with a
-   LoRA-capable runtime.
+   7B-9B local chat model. The first RunPod training run completed, the user
+   downloaded `persona_lora_result.zip`, and `7-install-runpod-lora-result.bat`
+   installed it under the gitignored private fine-tune folder. The zip is a
+   LoRA adapter, not a standalone LM Studio GGUF. The first LoRA-only smoke
+   test looked mixed/bland; do **not** treat it as ready for the live bot. A
+   local RAG-only comparison helper now exists:
+   `9-compare-lora-vs-local-rag.bat` /
+   `scripts/compare_lora_smoke_with_local_rag.py`, writing the private report
+   `data/unsynced/fine_tune/persona_lora_vs_local_rag.md`. Next real eval:
+   test **LoRA+RAG** together on RunPod or after merge/quantization, then decide
+   whether to keep Qwen, rerun on Llama, or adjust the export/eval prompts.
 3. **Archive/general-knowledge Q&A** — a separate `~askchat`-style route for
    questions like "do we have an emote of the bottle dog?", using archive/emote
    retrieval plus a stronger answer model. Do not solve this via fine-tuning.
