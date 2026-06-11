@@ -5,8 +5,8 @@ rhythm) + word n-grams (vocabulary/topic), into a multinomial logistic
 regression. This is the standard, strong authorship-attribution pipeline.
 
 Why TF-IDF + LR over the old Naive Bayes: NB had to cap the vocabulary at the
-most *common* features, so a rare-but-distinctive word (e.g. "simmons" for
-poggerooskii) got dropped entirely and couldn't influence the guess. TF-IDF
+most *common* features, so a rare-but-distinctive word (a niche term one chatter
+uses constantly) got dropped entirely and couldn't influence the guess. TF-IDF
 keeps rare terms and weights them by how distinctive they are, and LR learns a
 per-author weight for each — so a single signature word can carry the call.
 
@@ -182,8 +182,8 @@ def signature_words(author, n=12, author_cap=5000, bg_cap=40000, min_count=3, se
         c = Counter()
         for m in msgs:
             for w in _WORD_RE.findall((m or "").lower()):
-                # drop digit-bearing tokens (mostly @usernames like gero_30,
-                # skyprime_17) so markers are actual vocabulary, not who they ping
+                # drop digit-bearing tokens (mostly @usernames like name_12 /
+                # user99) so markers are actual vocabulary, not who they ping
                 if len(w) >= 2 and not any(ch.isdigit() for ch in w):
                     c[w] += 1
         return c
