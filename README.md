@@ -1,51 +1,89 @@
 # NoLifeChatter
 
-A Twitch chat bot that translates messages on the fly — with a built-in
-**language-learning "practice mode"** that turns a stream's chat into a little
-study tool.
+A modular Twitch chat bot with two halves that share one local SQLite archive:
 
-> This is a small personal project I built a while back, cleaned up and
-> published as a showcase. It isn't a polished product meant for daily use; it's
-> here as a record of something I made and as a reasonable example of a modular
-> Python bot. Feel free to read it, run it, or borrow ideas from it.
+- **Live translation** — detects non-target-language messages and translates
+  them on the fly, with a language-learning "practice mode."
+- **Chat personas** — it archives chat, then can answer *as* a given chatter —
+  a quick local Markov version, or a context-aware LLM version running on a
+  local model — plus archive search (`~said`, `~quote`, stats) and rare,
+  in-character "the bot does a bit" reactions.
+
+> A personal project, cleaned up and published as a showcase. It's a record of
+> something I built and a reasonable example of a modular Python bot —
+> auto-discovered commands, a swappable translation backend, a local FTS5 chat
+> archive, and a retrieval/fine-tuning persona pipeline. Read it, run it, or
+> borrow ideas. It is not a polished product for daily use, and the persona
+> features operate on real chat, so see the privacy notes before pointing it at
+> anyone's logs.
 
 ## What it does
 
+### Translation
 - **Auto-translation** — flags messages that aren't already in the target
-  language and translates them (e.g. into English) via DeepL (or Google). Runs
-  per-user, per-channel, or globally. Detection is local/free, so messages
-  already in the target language never hit a translation API.
-- **Practice mode** — for language learners. When you write in your native
-  language, the bot privately *whispers* you the translation in the language(s)
-  you're studying. When you write in a language you're learning, it posts the
-  native translation to chat so others can follow along.
-- **Romanization** — optional romanized readings for non-Latin scripts:
-  Japanese (Hepburn, via `pykakasi`), Korean (Revised Romanization), and Thai
-  (via `pythainlp`, with word segmentation).
-- **Flexible output** — send translations to the same channel, to another
-  channel, or as a whisper.
-- **Speaker profiles** — the bot learns which languages each user actually
-  writes in (a simple count, no ratios). Once you've written a language enough
-  times, even your short messages in it get translated; everyone else needs a
-  longer, clearly-foreign message. `~speak <lang>` flags it instantly.
-- **Per-user / per-channel / global settings** persisted in SQLite.
+  language and translates them via DeepL (or Google). Per-user, per-channel, or
+  global. Detection is local/free, so target-language messages never hit an API.
+- **Practice mode** — when you write in your native language the bot whispers
+  you the translation in the language(s) you're studying; when you write in a
+  language you're learning it posts the native translation to chat.
+- **Romanization** — optional readings for non-Latin scripts (JA Hepburn, KO
+  Revised, TH via `pythainlp`).
+- **Speaker profiles** — learns which languages each user actually writes in, so
+  even their short messages get translated once they're established.
+
+### Chat archive & personas
+- **Searchable archive** — every message the bot sees, plus historical
+  Chatterino logs, in one SQLite + FTS5 database. Powers `~said` ("did they ever
+  say X?"), `~quote`, `~firstseen`, `~chatstats` — instant, local, no API.
+- **Markov personas** (`~markov`/`~mimic`) — a recombination of a chatter's own
+  words. Instant, fully local, no model.
+- **LLM personas** (`~persona`, `~hyper`) — many-shot voice cloning: the prompt
+  is built from a distinctiveness-ranked sample of the chatter's real messages
+  plus topic-relevant retrieved lines and the live conversation, run against a
+  **local** OpenAI-compatible model (LM Studio by default — free, private, and
+  uncensored models won't refuse edgy chat). `~hyper` exaggerates their traits.
+- **Reactions** — at a low per-message chance the bot spontaneously chimes in as
+  a random recent chatter, reacting to the actual conversation.
+- **Fine-tuning pipeline** — an offline path to export distinctiveness-weighted
+  training data and train a per-persona LoRA on a rented GPU. See
+  [docs/FINE_TUNING.md](docs/FINE_TUNING.md).
+- **Output filter** — anything the bot is about to post is checked against a
+  denylist first, so recombined real chat can't get the account banned.
+
+Per-user / per-channel / global settings persist in SQLite.
 
 ## How it works
 
+Two products, one archive. The **runtime bot** is the root Python modules +
+`commands/ services/ utils/`; the **offline pipeline** is under `scripts/`.
+
 ```
-chatbot.py                 # entry point: starts the bot + token-refresh thread
-├── config.py              # loads config.toml (+ .env secrets) — no hard-coded data
-├── handlers.py            # routes each message: command vs. regular chat
-├── command_processor.py   # parses "~command args" and dispatches
-├── command_registry.py    # auto-discovers command modules in commands/
-├── commands/              # one file per command (~help, ~practice, ~setlang, ...)
-├── services/
-│   └── message_service.py # translation + practice-mode logic, whispers
-└── utils/
-    ├── token_manager.py   # keeps the Twitch OAuth token fresh in the background
-    ├── user_settings.py   # SQLite read/write for per-user settings
-    ├── romanize.py        # romanization dispatcher
-    └── roman_scripts/     # per-language romanizers (ja / ko / th)
+chatbot.py              # entry point: bot + background token refresh
+config.py               # loads config.toml (+ .env secrets); no hard-coded data
+handlers.py             # routes each message; also archives it (live capture)
+command_processor.py    # parses "~command args" and dispatches
+command_registry.py     # auto-discovers command modules in commands/
+auth.py                 # admin / super-admin checks (from config)
+commands/               # one file per command (translation + archive + persona)
+services/
+  message_service.py    # translation, practice mode, whispers, persona reactions
+  translators.py        # DeepL / Google behind one interface
+  llm.py                # async client for any OpenAI-compatible chat endpoint
+  emotes.py             # per-channel 7TV/BTTV/FFZ emote fetch + strip
+utils/
+  language_detect.py    # local lingua detection (the free translation gate)
+  speaker_profile.py    # per-user language tracking
+  romanize.py + roman_scripts/   # JA / KO / TH romanizers
+  token_manager.py      # keeps the Twitch OAuth token fresh
+  user_settings.py      # SQLite per-user settings
+  chat_archive.py       # SQLite + FTS5 archive: ingest, search, retrieval
+  persona_markov.py     # Markov persona generator
+  persona_llm.py        # many-shot LLM persona engine (RAG + candidate select)
+  output_filter.py      # denylist gate before the bot posts anything
+scripts/                # offline pipeline: init/auth, log ingest, archive query,
+                        #   persona preview, fine-tune export/train (RunPod)
+data/                   # gitignored: SQLite DBs, bot.log, OAuth tokens
+docs/                   # design docs (start at docs/HANDOFF.md)
 ```
 
 Commands are auto-discovered: drop a `commands/foo.py` with a
@@ -65,9 +103,8 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~quote <user>` | anyone | Random real quote from the chat archive. |
 | `~firstseen <user>` | anyone | A user's first archived message. |
 | `~chatstats <user>` | anyone | Archive stats: count, first/last seen, busiest hour. |
-| `~markov <user>` | anyone | Quick Markov-chain line in a chatter's style (explicit-command only; no model needed). |
-| `~mimic <user>` | anyone | Alias for `~markov`. |
-| `~persona <user> [msg]` | anyone | Talk to an AI persona of a chatter (LLM, context-aware, natural). |
+| `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |
+| `~persona <user> [msg]` | anyone | Talk to an AI persona of a chatter (local LLM, context-aware). |
 | `~hyper <user> [msg]` | anyone | Same, but their traits exaggerated for comedy. |
 | `~autotl` | admin | Toggle auto-translate for yourself. |
 | `~setlang <LANG>` | admin | Set your translation target language (e.g. `EN`). |
@@ -75,149 +112,103 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~chan_autotl <channel> on\|off` | super admin | Per-channel auto-translate. |
 | `~global_autotl on\|off` | super admin | Global auto-translate switch. |
 
-Admins and super-admins are configured in `config.toml` — there are no
-hard-coded users.
+Admins and super-admins are configured in `config.toml` — no hard-coded users.
 
 ## Setup
 
 Requires **Python 3.12+**.
 
-1. **Install dependencies** (with [Poetry](https://python-poetry.org/)):
-
-   ```bash
-   poetry install
-   ```
-
+1. **Install dependencies:** `poetry install` (or `pip install -r requirements.txt`).
 2. **Configure** — copy the templates and fill them in:
-
    ```bash
-   cp config.example.toml config.toml   # channels, admins, paths
-   cp .env.example .env                 # Twitch client id/secret
+   cp config.example.toml config.toml   # channels, admins, paths, persona/llm knobs
+   cp .env.example .env                 # Twitch client id/secret, DeepL key
    ```
-
-   - Create a Twitch application at <https://dev.twitch.tv/console/apps> to get
-     a **client ID** and **client secret**. Add `http://localhost:3000` to its
-     *OAuth Redirect URLs*.
-   - For translation, get a free **DeepL API key**
-     (<https://www.deepl.com/pro-api>) and set `DEEPL_API_KEY` in `.env`.
-     That's the easy path. (Optionally, you can also/instead use Google Cloud
-     Translation by pointing `GOOGLE_APPLICATION_CREDENTIALS` at a
-     service-account JSON; it's used as a fallback.)
-
-3. **Initialise the database:**
-
-   ```bash
-   python scripts/init_db.py
-   ```
-
+   - Create a Twitch app at <https://dev.twitch.tv/console/apps> for a client ID
+     and secret. Add `http://localhost:3000` to its *OAuth Redirect URLs*.
+   - For translation, get a free **DeepL API key** (<https://www.deepl.com/pro-api>)
+     and set `DEEPL_API_KEY` in `.env`. (Google Cloud Translation works as an
+     optional fallback via a service-account JSON.)
+3. **Initialise the database:** `python scripts/init_db.py`
 4. **Authorize the bot account** (one-time, fully local):
+   `python scripts/get_initial_token.py` — opens Twitch in your browser,
+   captures the redirect locally, saves tokens; refreshes automatically after.
+5. **Run it:** `python chatbot.py`
 
-   ```bash
-   python scripts/get_initial_token.py
-   ```
+The bot needs no web server — it talks to Twitch directly over IRC/Helix.
 
-   This opens Twitch in your browser, captures the redirect locally, and saves
-   the tokens. From then on the bot refreshes them automatically.
+### Personas (optional)
 
-5. **Run it:**
-
-   ```bash
-   python chatbot.py
-   ```
-
-The bot runs anywhere Python does and doesn't need a web server — it talks to
-Twitch directly over IRC/Helix.
+The Markov persona (`~markov`) and archive commands work with no extra setup
+once you've ingested logs (`python scripts/ingest_chatterino.py`). The LLM
+personas (`~persona`/`~hyper`) need an OpenAI-compatible endpoint — point
+`[llm].endpoint` in `config.toml` at a local **LM Studio** server (load a model,
+Developer tab → Start Server) or any compatible API.
 
 ### Windows quickstart & background running
 
-If you're on Windows, double-click these instead of using the terminal:
+Double-click instead of using the terminal:
 
 | Script | Does |
 | --- | --- |
 | `1-setup.bat` | Create the venv, install deps, build the DB (run once). |
 | `2-login.bat` | Authorize the bot account (one-time). |
 | `3-run.bat` | Run the bot in a visible window. |
-| `run-background.vbs` | Run the bot **hidden** (no window), restarting it if it crashes, logging to `data/bot.log`. |
+| `run-background.vbs` | Run the bot **hidden**, restarting it if it crashes, logging to `data/bot.log`. |
 | `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
 | `stop-bot.bat` | Stop the background bot. |
-| `4-export-finetune-pilot.bat` | Export and zip a private persona fine-tuning pilot dataset for RunPod. |
-| `5-open-finetune-files.bat` | Open the fine-tune guide and the private output folder. |
-| `6-preview-persona-rag.bat` | Preview which archived lines persona RAG would feed into a prompt. |
-| `7-install-runpod-lora-result.bat` | Copy/extract the downloaded RunPod LoRA result into the private fine-tune folder. |
-| `8-copy-runpod-smoke-test-command.bat` | Copy the RunPod command that smoke-tests the trained LoRA adapter. |
 
-To start the bot automatically at login, put a shortcut to `run-background.vbs`
-in your Startup folder (`shell:startup`).
+To auto-start at login, put a shortcut to `run-background.vbs` in your Startup
+folder (`shell:startup`). Additional numbered helpers for the offline
+persona/fine-tuning pipeline exist alongside these; the channel-specific ones
+are kept private under `_private/` (see [docs/FINE_TUNING.md](docs/FINE_TUNING.md)).
 
 ## A note on cost
 
-- **Detection is free** — it runs locally via `lingua`
-  (`utils/language_detect.py`), with no API and no per-message charge. It's used
-  only as a gate: a message is sent to the translator only if it's *confidently
-  not the target language*. The test is about the **distribution**, not an
-  absolute score — the best foreign guess has to win the head-to-head *share*
-  against the target (`best / (best + target) ≥ min_foreign_share`). That matters
-  because lingua's absolute scores aren't comparable across languages (German
-  routinely scores higher than Spanish for equally-clear text), so a flat
-  absolute floor under-fires for some languages while letting English-ish junk
-  through for others. Detection doesn't need to pick the exact foreign language —
-  only rule out the target — because the translator re-detects the source
-  itself. **Short messages are held to a stricter bar**: a one-to-three-word
-  message is only translated when a *single* language is detected with high
-  absolute confidence (`min_short_confidence`). Both the detector and the
-  translator tend to invent a "translation" for tiny fragments and for emote
-  names, so unless something like "danke schön" or "buongiorno" is clearly
-  there, short text is left alone.
-- **Translation** uses **DeepL** by default (`DEEPL_API_KEY`), which has a free
-  tier (~500k characters/month). **Google Cloud Translation** (also free up to a
-  monthly limit) can be used as a fallback via a service-account key.
-
-Both providers sit behind `services/translators.py`, so adding another — or
-rotating between them to stretch multiple free tiers — is a contained change.
-Other options if you'd rather self-host: **LibreTranslate** (open source) or
-**Argos Translate** (fully offline, no API).
+- **Detection is free** — local `lingua` (`utils/language_detect.py`), no API.
+  It's a gate: a message goes to the translator only if it's *confidently not
+  the target language* — judged by the **distribution** (the best foreign guess
+  must win the head-to-head share against the target, `min_foreign_share`), not
+  an absolute score, since lingua's absolute scores aren't comparable across
+  languages. Short messages need a *single* language at high confidence
+  (`min_short_confidence`), because both the detector and translator invent
+  output for tiny fragments and emote names.
+- **Translation** uses **DeepL** by default (free ~500k chars/month), with
+  Google Cloud Translation as an optional fallback. Both sit behind
+  `services/translators.py`, so swapping or rotating backends is contained;
+  self-host options: **LibreTranslate** or **Argos Translate** (offline).
+- **Personas are free to run locally.** The LLM personas use a local model (LM
+  Studio), so there's no per-message charge. Fine-tuning is the only paid step,
+  and it's a one-time rented-GPU run (a few dollars), not a subscription.
 
 ## Known issues & notes
 
-- **Twitch whispers are unreliable by design.** Twitch silently rate-limits or
-  blocks whispers from bots to fight spam, sometimes with no clear error. The
-  sending account also needs a verified phone number and the
-  `user:manage:whispers` scope. Practice-mode whispers can just… not arrive.
-  This is on Twitch's side, not the bot's.
-- **Romanization is approximate.** Japanese and Thai readings depend on the
-  underlying libraries and won't always match a textbook; Korean uses a
-  straight Hangul-to-Latin mapping. It's "good enough to read along," not
-  authoritative. This part could still use work.
-- **Language codes differ between services.** `lingua`, DeepL, Google, and what
-  users type don't all use the same codes (e.g. DeepL wants `EN-US` and `ZH`).
-  The bot normalizes to one uppercase scheme with small alias maps, but uncommon
-  languages can still slip through.
-- **Emotes can skew detection.** Twitch and third-party emotes are just words
-  inside a message, so a line with an emote in it can confuse the detector. The
-  bot strips @mentions, URLs, known chatters' names, and the channel's 7TV /
-  BTTV / FFZ emotes before detecting. Emotes that aren't in those lists (e.g.
-  native Twitch emotes, which the bot doesn't enumerate) are caught by a
-  structural heuristic — tokens with internal capitals (`CuldBeWorthIt`,
-  `hesRight`) or long all-caps mashes (`TELLMEHEDIDNTJUSTSAYTHAT`) are dropped,
-  since real words don't look like that. It isn't perfect, but combined with the
-  short-message rule above it stops the common case of an emote name being
-  "translated" into a random phrase.
-- **The `translation.min_foreign_share` knob** (in `config.toml`) is the dial
-  for channel auto-translate: how decisively the best foreign guess must beat the
-  target in the head-to-head share before the bot acts (default `0.63`). Lower it
-  to catch more, raise it to skip more. (`min_confidence` still governs the
-  separate practice-mode gate.)
+- **Twitch whispers are unreliable by design** — Twitch rate-limits/blocks bot
+  whispers to fight spam; the account also needs a verified phone and the
+  `user:manage:whispers` scope. Practice-mode whispers can just not arrive.
+- **Romanization is approximate** — good enough to read along, not authoritative.
+- **Language codes differ between services** — normalized to one scheme with
+  small alias maps; uncommon languages can still slip through.
+- **Emotes can skew detection** — the bot strips @mentions, URLs, known chatters'
+  names and the channel's 7TV/BTTV/FFZ emotes, and catches stray emote names
+  structurally (internal-capital or long all-caps tokens), but it isn't perfect.
+- **Personas reflect their source chat.** They recombine/continue real messages,
+  so quality and content track the logs; the output filter blocks a denylist
+  before posting, but you own what your bot posts on Twitch.
+- The dials live in `config.toml`: `translation.min_foreign_share` (auto-translate
+  sensitivity), `translation.min_short_confidence`, and the `[persona]`/`[llm]`
+  sections (reaction chance, exemplar counts, endpoint).
 
-## Roadmap & ideas
+## Roadmap & docs
 
-Design docs live in [`docs/`](docs/) — start with [HANDOFF.md](docs/HANDOFF.md)
-for the current state of the persona/archive work. Also: a searchable
-[chat archive](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 over Chatterino logs and
-live chat — built; it powers the `~said`/`~quote`/`~firstseen`/`~chatstats`
-commands), a [persona bot roadmap](docs/PERSONA_BOT_ROADMAP.md) (per-user chat
-personas, rare in-character reactions, playful psychometrics, trivia), a
-[chat personality research note](docs/CHAT_PERSONALITY_RESEARCH.md), and an
-[idea bank](docs/IDEA_BANK.md) of smaller things.
+Design docs live in [`docs/`](docs/) — start with
+[HANDOFF.md](docs/HANDOFF.md) for the current state of the persona/archive work.
+Also: the [chat archive design](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 + the
+Chatterino log format), the [persona roadmap](docs/PERSONA_BOT_ROADMAP.md),
+[fine-tuning](docs/FINE_TUNING.md), a
+[chat-personality research note](docs/CHAT_PERSONALITY_RESEARCH.md), an
+[idea bank](docs/IDEA_BANK.md), and the planned
+[repo reorganization](docs/REORG_PLAN.md).
 
 ## License
 
