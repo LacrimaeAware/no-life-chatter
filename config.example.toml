@@ -105,6 +105,19 @@ mimic_enabled = true
 # cooldown (seconds) keeps it from bunching up during a busy stretch.
 reaction_chance = 0.0
 reaction_cooldown = 90
+# Use the LLM (context-aware) for reactions instead of Markov. Needs an [llm]
+# endpoint (LM Studio) running; falls back gracefully if it's unreachable.
+reaction_use_llm = false
+
+[llm]
+# Persona engine backend — any OpenAI-compatible chat endpoint. LM Studio's
+# local server by default (free, local, private). Load a model + start the
+# server, or point this at llama.cpp / Ollama / a hosted API.
+endpoint = "http://127.0.0.1:1234/v1/chat/completions"
+model = "local"
+timeout = 45
+exemplars = 150
+context_messages = 25
 # Anything the bot is about to post is checked against this denylist first, so
 # recombined real chat can't get the bot banned for posting slurs/hate terms.
 # Keep the actual list in a gitignored file (one term per line, '#' comments);

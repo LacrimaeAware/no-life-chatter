@@ -163,6 +163,18 @@ EXCLUDE_USERS: set[str] = {
 # Kept OUT of the repo — lives in a gitignored file. Empty/missing = no filter.
 BLOCKLIST_FILE: str = _resolve(_pe.get("blocklist_file", "data/unsynced/blocklist.txt"))
 
+# LLM persona engine (~persona / ~hyper, and optionally the random reaction).
+# Points at any OpenAI-compatible chat endpoint — LM Studio's local server by
+# default (free, local, private). Leave it; just run LM Studio with a model.
+_llm = _cfg.get("llm", {})
+LLM_ENDPOINT: str = _llm.get("endpoint", "http://127.0.0.1:1234/v1/chat/completions")
+LLM_MODEL: str = _llm.get("model", "local")  # LM Studio uses whatever's loaded
+LLM_TIMEOUT: float = float(_llm.get("timeout", 45))
+LLM_EXEMPLARS: int = int(_llm.get("exemplars", 150))   # real lines put in the prompt
+LLM_CONTEXT: int = int(_llm.get("context_messages", 25))  # recent chat lines for context
+# Use the LLM (context-aware) for random reactions instead of Markov.
+REACTION_USE_LLM: bool = bool(_pe.get("reaction_use_llm", False))
+
 # --------------------------------- secrets --------------------------------
 # Read straight from the environment so they never live in tracked files.
 TWITCH_CLIENT_ID: str | None = os.getenv("TWITCH_CLIENT_ID")

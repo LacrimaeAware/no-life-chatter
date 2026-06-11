@@ -21,8 +21,8 @@ estimates, assuming evenings/weekends:
 | --- | --- | --- | --- |
 | 0 | Chat archive (ingest + live capture) | **done** | no |
 | 1 | Archive Q&A commands (`~said`, `~quote`, stats) | **done** | no |
-| 2 | Persona cards (accurate + hyperbolic, offline batch) | a weekend | yes, offline |
-| 3 | Runtime roleplay (`~as <user>`, rare random reactions) | an evening | yes, online |
+| 2 | Persona cards (accurate + hyperbolic, offline batch) | **done (v1)** | yes, offline |
+| 3 | Runtime roleplay (`~persona`/`~hyper`, random reactions) | **done (v1)** | yes, local |
 | 3.5 | Fine-tuned voice model (one model, all personas) | a weekend + ~$5–20/run | training |
 | 4 | Playful psychometrics (Big-5-flavored profiles) | an evening+ | yes, offline |
 | 5 | Trivia (quote-attribution game, film trivia) | an evening | no (optional) |

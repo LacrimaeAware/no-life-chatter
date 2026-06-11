@@ -299,6 +299,18 @@ def context_before(channel: str, sent_at: str, n: int = 4, within_minutes: int =
     return list(reversed(rows))
 
 
+def latest(channel: str, n: int = 25):
+    """The last n messages in a channel (oldest first) — live conversation
+    context for a persona to react to. Includes live-captured messages."""
+    conn = connect()
+    rows = conn.execute(
+        "SELECT sent_at, author, content FROM messages WHERE channel = ? "
+        "ORDER BY id DESC LIMIT ?",
+        (normalize(channel), n),
+    ).fetchall()
+    return list(reversed(rows))
+
+
 def recent_authors(channel: str, scan: int = 400, limit: int = 60):
     """Distinct authors among the last `scan` messages of a channel — the pool
     of people currently around to mimic for a random reaction."""

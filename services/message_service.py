@@ -155,25 +155,35 @@ class MessageService:
             return
         try:
             from utils.chat_archive import recent_authors
-            from utils import persona_markov
+            from utils import persona_markov, persona_llm
             from utils.output_filter import is_clean
 
             skip = config.EXCLUDE_USERS | {(self.bot.nick or "").lower()}
             authors = [a for a in recent_authors(channel) if a not in skip]
             random.shuffle(authors)
+            use_llm = getattr(config, "REACTION_USE_LLM", False)
             for target in authors[:8]:
-                model = persona_markov.get_model(target)
-                if not model:
-                    continue
-                for _ in range(15):
-                    line = persona_markov.generate(model)
-                    if line and len(line.split()) >= 2 and is_clean(line):
-                        if len(line) > 280:
-                            line = line[:279] + "…"
-                        self._last_reaction[channel] = time.time()
-                        logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
-                        await message.channel.send(f"🎭 {target}-bot: {line}")
-                        return
+                line = None
+                if use_llm:
+                    # Context-aware: reacts to the actual current conversation.
+                    cand = await persona_llm.generate(target, channel, mode="normal")
+                    if cand and len(cand.split()) >= 2 and is_clean(cand):
+                        line = cand
+                else:
+                    model = persona_markov.get_model(target)
+                    if model:
+                        for _ in range(15):
+                            cand = persona_markov.generate(model)
+                            if cand and len(cand.split()) >= 2 and is_clean(cand):
+                                line = cand
+                                break
+                if line:
+                    if len(line) > 280:
+                        line = line[:279] + "…"
+                    self._last_reaction[channel] = time.time()
+                    logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
+                    await message.channel.send(f"🎭 {target}-bot: {line}")
+                    return
         except Exception as e:
             logging.warning(f"maybe_react failed: {e}")
 
