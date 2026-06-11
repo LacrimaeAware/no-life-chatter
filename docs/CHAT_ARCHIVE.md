@@ -81,42 +81,37 @@ which logging instance has the best coverage, downloads monthly raw logs from
 that instance, and optionally imports non-duplicate rows into
 `data/unsynced/chat_archive.db`.
 
-Double-click `12-download-thickpoo-user-logs.bat` for the normal user-facing
-flow. It selects usernames already present in the local `#thickpoo` archive,
+It selects usernames already present in your local archive for a channel,
 defaults to users with at least 25 local messages, skips configured bot/noise
-accounts plus obvious `*bot` accounts unless asked otherwise, and asks whether
-to import after download. Raw logs are stored under
+accounts (`config` `EXCLUDE_USERS` plus common public bots) and obvious `*bot`
+accounts unless asked otherwise, and optionally imports after download. Raw
+logs are stored under
 `data/unsynced/external_logs/zonian/raw/<channel>/<user>/`; this path is
-gitignored and must stay private.
+gitignored and must stay private. (Convenience double-click launchers that hard-
+code a specific channel and roster are kept private under `_private/`.)
 
 CLI form:
 
 ```
-python scripts/download_zonian_user_logs.py --channel thickpoo --users ebbel,forsenstares --import-archive
+python scripts/download_zonian_user_logs.py --channel yourchannel --users user1,user2 --import-archive
 ```
 
 Automated from the existing local archive roster:
 
 ```
-python scripts/download_zonian_user_logs.py --channel thickpoo --from-archive --min-archive-messages 25 --import-archive
+python scripts/download_zonian_user_logs.py --channel yourchannel --from-archive --min-archive-messages 25 --import-archive
 ```
 
-Cross-channel pull for ThickPoo members only:
+Cross-channel pull, but only for users from one home channel's roster:
 
 ```
-python scripts/download_zonian_user_logs.py --channel duardo1 --from-archive --users-from-channel thickpoo --min-archive-messages 25 --import-archive
+python scripts/download_zonian_user_logs.py --channel otherchannel --from-archive --users-from-channel yourchannel --min-archive-messages 25 --import-archive
 ```
-
-For the full baked-in channel list, double-click
-`13-download-other-channel-logs-for-thickpoo-members.bat`. That downloads logs
-from Duardo1, Forsen, NymN, Fernardo, EarnestSincereSugmaMale, Ebbel, and the
-other listed channels, but only for users selected from the local `#thickpoo`
-archive.
 
 Useful test run:
 
 ```
-python scripts/download_zonian_user_logs.py --channel thickpoo --from-archive --min-archive-messages 10000 --limit-months 1
+python scripts/download_zonian_user_logs.py --channel yourchannel --from-archive --min-archive-messages 10000 --limit-months 1
 ```
 
 The mirror's raw monthly logs use UTC timestamps; the importer converts them to
@@ -126,7 +121,8 @@ so rerunning the downloader is safe. For overlapping logs whose timestamps may
 be shifted by timezone/source differences, import also skips substantial same
 author/channel lines with the same normalized text within a configurable window
 (`--dedupe-window-hours`, default 12). Short repeated chat/emote lines still
-need exact timestamps, so real repeated `Lemon`-style chatter is not collapsed.
+need exact timestamps, so genuinely repeated short emote-style chatter is not
+collapsed.
 
 This same two-layer rule is the baseline overlap strategy for future older local
 logs too: import every source into the same normalized schema, then skip exact

@@ -43,8 +43,8 @@ exemplars (other-bot `<` commands, links, ping+emote-only lines) filtered;
 ignore) + anti-bleed rule and guard (candidates echoing another chatter's
 context line ≥0.9 similarity are rejected); (6) **candidate selection** —
 `[llm] candidates = 2` samples per reply, best valid one posted. Verified on
-the exact failing smoke case: ebbel/WoW retrieval now returns WoW opinions and
-the live answer was a real, in-voice answer about his mage.
+the exact failing smoke case (a user asked a game question): retrieval now
+returns that game's opinions and the live answer was a real, in-voice reply.
 
 ## How to run / verify
 
@@ -56,16 +56,15 @@ the live answer was a real, in-voice answer about his mage.
   `PYTHONUTF8=1` for any script that prints emoji (the launcher already does).
 - **Ingest more logs**: `python scripts/ingest_chatterino.py [logs-root]
   [--channels a,b,c] [--since YYYY-MM-DD]` — incremental & idempotent.
-- **Download public mirror logs for specific ThickPoo users**:
-  double-click `12-download-thickpoo-user-logs.bat`; it selects users already
-  present in the local `#thickpoo` archive, then asks whether to import. It
-  uses `scripts/download_zonian_user_logs.py --from-archive` and keeps raw
-  downloads under gitignored `data/unsynced/external_logs/zonian/`. Zonian
-  currently reports channel coverage from 2024-10-27 through 2026-06-11.
-- **Download other-channel logs for ThickPoo members only**:
-  double-click `13-download-other-channel-logs-for-thickpoo-members.bat`.
-  It loops over the user's target channel list, but selects the user roster
-  from local `#thickpoo` via `--users-from-channel thickpoo`.
+- **Download public mirror logs for a channel's users**:
+  `scripts/download_zonian_user_logs.py --channel <ch> --from-archive` selects
+  users already present in the local archive for that channel, then optionally
+  imports. Raw downloads go under gitignored
+  `data/unsynced/external_logs/zonian/`. (Convenience launchers that hard-code
+  a specific channel + roster live privately under `_private/`.)
+- **Cross-channel pull for one channel's roster**: same script with
+  `--users-from-channel <homechannel>` selects the user list from your home
+  channel's local archive while pulling from other channels.
   Import dedupe is two-layer: exact `(channel, author, sent_at, content)` first,
   then substantial same-author/channel normalized text within
   `--dedupe-window-hours` (default 12) so UTC/local timestamp shifts do not
@@ -96,13 +95,13 @@ the live answer was a real, in-voice answer about his mage.
 
 ## Data
 
-- Archive DB: `data/unsynced/chat_archive.db` (gitignored). **741,094 messages**
-  from **thickpoo, duardo1, earnestsinceresugmamale, fernardo** (f3rnard0 merged
-  via alias). 164 authors. duardo1 (467k) and thickpoo (213k) are the big ones.
+- Archive DB: `data/unsynced/chat_archive.db` (gitignored). ~740k messages
+  across the configured channels (a couple of large channels dominate the
+  count), ~160 authors, with alias-merged alt accounts.
 - Source logs: Chatterino2 at
-  `C:\Users\EcceNihilum\AppData\Roaming\Chatterino2\Logs\Twitch\Channels`
-  (13.4 GB, 135 channels, since 2025-03-06; nothing older exists on this
-  machine — user has older logs on another computer to ingest later).
+  `%AppData%\Chatterino2\Logs\Twitch\Channels` (tens of GB, ~135 channels;
+  ingest only the channels you care about). Older logs on another machine can
+  be ingested later — the importer is incremental.
 - Live capture: the bot appends every message it sees (`handlers.py` →
   `chat_archive.record_live`), so the archive self-maintains.
 
@@ -197,7 +196,7 @@ the live answer was a real, in-voice answer about his mage.
    single emotes / 1-word / pure-link / too-short and too-long lines; prefer
    lines that "make a statement" (declarative, has a verb) so it's a fun guess,
    not a boring quote. Add a scoreboard table.
-2. **Fine-tuning pilot** — current pilot export is ThickPoo-only and curated:
+2. **Fine-tuning pilot** — current pilot export is single-channel and curated:
    selected high-value chatters, bot accounts excluded, known alt accounts
    merged, max 5,000 examples per author. Train a LoRA using
    `docs/FINE_TUNING.md` and `scripts/train_persona_lora_unsloth.py`.

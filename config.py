@@ -136,7 +136,7 @@ ARCHIVE_LIVE: bool = bool(_ar.get("live_capture", True))
 # Default Chatterino logs root for the ingest script (so you don't retype it).
 ARCHIVE_CHATTERINO_LOGS: str = _ar.get("chatterino_logs", "")
 # Spelling variants that should count as the same channel/user, e.g.
-# {"f3rnard0" = "fernardo"} merges a typo-named channel into the real one.
+# {"typo_name" = "real_name"} merges a typo-named channel into the real one.
 ARCHIVE_ALIASES: dict = dict(_ar.get("aliases", {}))
 # More precise aliases. These are layered on top of archive.aliases, but only
 # affect the relevant side so alt accounts do not accidentally rename channels.

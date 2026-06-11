@@ -35,18 +35,23 @@ RAW_LINE_RE = re.compile(
     r"^\[(?P<date>\d{4}-\d{2}-\d{2}) (?P<time>\d{2}:\d{2}:\d{2})\]\s+"
     r"#?(?P<channel>\S+)\s+(?P<author>[^:]+):\s?(?P<content>.*)$"
 )
+# Globally-common Twitch bots, safe to ship publicly. Channel-specific bots and
+# your own bot account belong in config's EXCLUDE_USERS (gitignored), which is
+# unioned in at runtime — that keeps personal account names out of this repo.
 DEFAULT_NOISE_USERS = {
     "automod",
-    "bluepagmanbot",
-    "ebbelbot",
-    "mtgbot",
     "nightbot",
-    "potatbotat",
     "streamelements",
     "streamlabs",
     "supibot",
-    "weirdfarts1ave",
+    "moobot",
+    "fossabot",
 }
+try:  # extend with the user's private exclude list, if configured
+    import config as _cfg
+    DEFAULT_NOISE_USERS = DEFAULT_NOISE_USERS | {u.lower() for u in getattr(_cfg, "EXCLUDE_USERS", set())}
+except Exception:
+    pass
 
 
 @dataclass(frozen=True)
@@ -404,7 +409,7 @@ def main() -> None:
             pass
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--channel", default="thickpoo")
+    ap.add_argument("--channel", required=True, help="Twitch channel login to pull logs from")
     ap.add_argument("--users", default="", help="comma/space-separated usernames")
     ap.add_argument("--users-file", default="", help="optional text file, one user per line")
     ap.add_argument("--from-archive", action="store_true",
