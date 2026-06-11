@@ -114,6 +114,32 @@ def _axis_vectors():
     return _AXIS_VECS
 
 
+def pole_map():
+    """{pole_label: (axis, sign)} — both ends of every axis are queryable."""
+    out = {}
+    for axis, (neg, pos, _a, _b) in AXES.items():
+        out[pos] = (axis, +1)
+        out[neg] = (axis, -1)
+    return out
+
+
+def leaderboard(pole, n=5):
+    """Top-n chatters toward a pole label: [(author, z), ...] or None if the
+    pole isn't one of the configured axis ends."""
+    import numpy as np
+    target = pole_map().get((pole or "").lower())
+    if not target or not persona_embeddings.available():
+        return None
+    axis, sign = target
+    vectors = persona_embeddings._centered()
+    names = list(vectors)
+    M = np.vstack([vectors[a] for a in names])
+    scores = M @ _axis_vectors()[axis]
+    z = (scores - scores.mean()) / (scores.std() or 1.0)
+    order = (sign * z).argsort()[::-1][:n]
+    return [(names[i], float(sign * z[i])) for i in order]
+
+
 def traits_for(author):
     """[(axis_label, z)] sorted by |z|, or [] if the author has no vector.
     z is relative to the roster: +2 = far toward the axis name, -2 = far
