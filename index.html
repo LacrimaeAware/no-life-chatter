@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="NoLifeChatter is a modular Twitch bot for live translation, local chat archives, persona experiments, and stylometry.">
+  <title>NoLifeChatter</title>
+  <link rel="stylesheet" href="assets/pages.css">
+</head>
+<body>
+  <header class="site-header" aria-label="Primary">
+    <a class="brand" href="#top" aria-label="NoLifeChatter home">
+      <span class="brand-mark" aria-hidden="true">NLC</span>
+      <span>NoLifeChatter</span>
+    </a>
+    <nav class="nav-links" aria-label="Project links">
+      <a href="#archive-map">Map</a>
+      <a href="#examples">Examples</a>
+      <a href="README.md">README</a>
+      <a href="docs/HANDOFF.md">Docs</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <canvas id="hero-network" class="hero-canvas" aria-label="Animated anonymized chat network"></canvas>
+      <div class="hero-shade" aria-hidden="true"></div>
+      <div class="hero-content">
+        <p class="eyebrow">Local archive. Live chat. Persona lab.</p>
+        <h1 id="hero-title">NoLifeChatter</h1>
+        <p class="hero-copy">
+          A modular Twitch bot that translates live messages, searches a local
+          SQLite chat archive, and experiments with Markov, retrieval, LoRA, and
+          embedding-based persona tools.
+        </p>
+        <div class="hero-actions" aria-label="Quick links">
+          <a class="text-link" href="#pipeline">See the pipeline</a>
+          <a class="text-link" href="docs/HANDOFF.md">Read the handoff</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="metric-band" aria-label="Project snapshot">
+      <div class="metric-grid">
+        <div>
+          <span class="metric-value">local</span>
+          <span class="metric-label">archive search and persona context</span>
+        </div>
+        <div>
+          <span class="metric-value">private</span>
+          <span class="metric-label">no public logs, names, quotes, or tokens</span>
+        </div>
+        <div>
+          <span class="metric-value">modular</span>
+          <span class="metric-label">commands, services, utilities, scripts</span>
+        </div>
+        <div>
+          <span class="metric-value">offline</span>
+          <span class="metric-label">optional RAG, embeddings, and LoRA pipeline</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="pipeline">
+      <div class="section-intro">
+        <p class="eyebrow">Runtime shape</p>
+        <h2>From one chat line to one careful reply</h2>
+        <p>
+          The public repo shows the system architecture without publishing the
+          private archive. Commands share the same local database, while LLM
+          features can stay pointed at LM Studio or any OpenAI-compatible local
+          endpoint.
+        </p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card">
+          <span class="feature-kicker">1</span>
+          <h3>Capture</h3>
+          <p>Live messages and imported history are normalized into SQLite and FTS5.</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-kicker">2</span>
+          <h3>Retrieve</h3>
+          <p>Search, regex, quotes, recent context, and persona exemplars come from the same archive.</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-kicker">3</span>
+          <h3>Generate</h3>
+          <p>Markov, local LLM, exaggerated personas, and LoRA tests can be compared side by side.</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-kicker">4</span>
+          <h3>Gate</h3>
+          <p>Responses pass through posting controls before they reach chat.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section visual-section" id="archive-map">
+      <div class="section-intro">
+        <p class="eyebrow">Anonymized visualization</p>
+        <h2>A map of voices, not a leak of names</h2>
+        <p>
+          This network is a representative, anonymized sketch of what the archive
+          analysis is for: finding nearby voices, active clusters, and odd edges
+          worth inspecting. Labels and values are rounded placeholders.
+        </p>
+      </div>
+
+      <div class="visual-grid">
+        <figure class="canvas-panel">
+          <canvas id="cluster-map" width="960" height="640" aria-label="Anonymized persona network graph"></canvas>
+          <figcaption>
+            Node size hints at activity. Edge strength hints at shared topics,
+            markers, or embedding similarity. Public labels are anonymized.
+          </figcaption>
+        </figure>
+
+        <div class="legend-panel" aria-label="Network legend">
+          <h3>What the map can answer</h3>
+          <ul>
+            <li>Which chatters cluster by language, topics, or posting rhythm?</li>
+            <li>Which accounts look unusually close after removing common phrases?</li>
+            <li>Which persona needs more history before it stops sounding generic?</li>
+            <li>Which retrieval examples are steering a generation?</li>
+          </ul>
+          <div class="legend-list" aria-hidden="true">
+            <span><i class="dot dot-teal"></i>voice cluster</span>
+            <span><i class="dot dot-gold"></i>high activity</span>
+            <span><i class="dot dot-coral"></i>edge case</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section chart-section">
+      <div class="section-intro">
+        <p class="eyebrow">Control dials</p>
+        <h2>The interesting part is probability</h2>
+        <p>
+          A good bot should not answer everything. It needs confidence thresholds,
+          retrieval scores, randomness, and posting limits that can be tuned
+          without rewriting the command layer.
+        </p>
+      </div>
+
+      <div class="bar-chart" role="img" aria-label="Representative probability controls">
+        <div class="bar-row">
+          <span>Directed command</span>
+          <i style="--bar: 100%; --tone: #2f7f76"></i>
+          <strong>always</strong>
+        </div>
+        <div class="bar-row">
+          <span>Retrieval confidence</span>
+          <i style="--bar: 74%; --tone: #c29224"></i>
+          <strong>high</strong>
+        </div>
+        <div class="bar-row">
+          <span>Voice distinctiveness</span>
+          <i style="--bar: 63%; --tone: #b95c50"></i>
+          <strong>varies</strong>
+        </div>
+        <div class="bar-row">
+          <span>Ambient reply chance</span>
+          <i style="--bar: 10%; --tone: #4764a8"></i>
+          <strong>rare</strong>
+        </div>
+        <div class="bar-row">
+          <span>Follow-up burst cap</span>
+          <i style="--bar: 32%; --tone: #6d5a9f"></i>
+          <strong>capped</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="section examples-section" id="examples">
+      <div class="section-intro">
+        <p class="eyebrow">Sanitized examples</p>
+        <h2>Commands without publishing private chat</h2>
+        <p>
+          The real bot works against real local logs. These examples use fake
+          names and invented lines so the public page can show behavior without
+          exposing the archive.
+        </p>
+      </div>
+
+      <div class="terminal-grid">
+        <pre><code>user_07: ~said chatter_12 "try it"
+bot: chatter_12 said that 14 times - first in 2025.</code></pre>
+        <pre><code>user_03: ~persona chatter_04 thoughts on this patch?
+bot: [persona] chatter_04: it works but the vibes are suspicious</code></pre>
+        <pre><code>user_11: ~vibes chatter_19
+bot: closest voices: chatter_06, chatter_22, chatter_31</code></pre>
+        <pre><code>user_02: ~regex anyone "\\bseason [0-9]+\\b"
+bot: found matches across the local archive.</code></pre>
+      </div>
+    </section>
+
+    <section class="section privacy-section">
+      <div class="section-intro">
+        <p class="eyebrow">Public boundary</p>
+        <h2>The page is public. The archive is not.</h2>
+        <p>
+          GitHub Pages only gets code, docs, and sanitized visuals. Local config,
+          tokens, databases, private logs, rosters, smoke tests, and handoff notes
+          that contain real usernames stay ignored or private.
+        </p>
+      </div>
+      <div class="privacy-checks">
+        <span>no raw logs</span>
+        <span>no real quotes</span>
+        <span>no channel roster</span>
+        <span>no API secrets</span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>NoLifeChatter</span>
+    <span>Local-first Twitch bot experiments</span>
+  </footer>
+
+  <script src="assets/pages.js"></script>
+</body>
+</html>

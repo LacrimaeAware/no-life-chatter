@@ -1,5 +1,5 @@
-# GitHub Pages config. Renders README.md as the landing page and the docs/
-# markdown as browsable, themed pages at lacrimaeaware.github.io/no-life-chatter.
+# GitHub Pages config. The root index.html is the public showcase, while README
+# and docs markdown remain browsable themed pages at lacrimaeaware.github.io/no-life-chatter.
 title: NoLifeChatter
 description: >-
   A modular Twitch bot — live translation plus a chat-archive-powered persona

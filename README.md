@@ -17,6 +17,10 @@ A modular Twitch chat bot with two halves that share one local SQLite archive:
 > features operate on real chat, so see the privacy notes before pointing it at
 > anyone's logs.
 
+**Project page:** <https://lacrimaeaware.github.io/no-life-chatter/> shows a
+sanitized public overview with anonymized visuals and examples. The private
+archive, real names, quotes, config, and smoke-test notes are not published.
+
 ## What it does
 
 ### Translation
