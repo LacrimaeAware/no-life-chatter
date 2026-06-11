@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -159,28 +159,73 @@ def _save_raw(out_root: Path, channel: str, user: str, year: int, month: int,
     return path
 
 
-def _import_rows(rows: list[ParsedLine], src_path: Path) -> int:
+def _sent_at(value: str) -> datetime | None:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _substantial_match_key(content: str, min_chars: int) -> str:
+    key = chat_archive.line_match_key(content)
+    if len(key) < min_chars:
+        return ""
+    if len(key.split()) < 3:
+        return ""
+    return key
+
+
+def _duplicate_reason(conn, row: ParsedLine, window_hours: float, min_chars: int) -> str | None:
+    exact = conn.execute(
+        "SELECT 1 FROM messages "
+        "WHERE channel = ? AND author = ? AND sent_at = ? AND content = ? "
+        "LIMIT 1",
+        (row.channel, row.author, row.sent_at, row.content),
+    ).fetchone()
+    if exact:
+        return "exact"
+
+    if window_hours <= 0:
+        return None
+    key = _substantial_match_key(row.content, min_chars)
+    if not key:
+        return None
+    dt = _sent_at(row.sent_at)
+    if not dt:
+        return None
+
+    start = (dt - timedelta(hours=window_hours)).strftime("%Y-%m-%d %H:%M:%S")
+    end = (dt + timedelta(hours=window_hours)).strftime("%Y-%m-%d %H:%M:%S")
+    candidates = conn.execute(
+        "SELECT content FROM messages "
+        "WHERE channel = ? AND author = ? AND sent_at BETWEEN ? AND ?",
+        (row.channel, row.author, start, end),
+    ).fetchall()
+    for (content,) in candidates:
+        if _substantial_match_key(content, min_chars) == key:
+            return "near_time"
+    return None
+
+
+def _import_rows(rows: list[ParsedLine], src_path: Path,
+                 dedupe_window_hours: float, dedupe_min_chars: int) -> Counter:
+    counts = Counter()
     if not rows:
-        return 0
+        return counts
     conn = chat_archive.connect()
-    inserted = 0
     with conn:
         for row in rows:
-            exists = conn.execute(
-                "SELECT 1 FROM messages "
-                "WHERE channel = ? AND author = ? AND sent_at = ? AND content = ? "
-                "LIMIT 1",
-                (row.channel, row.author, row.sent_at, row.content),
-            ).fetchone()
-            if exists:
+            duplicate = _duplicate_reason(conn, row, dedupe_window_hours, dedupe_min_chars)
+            if duplicate:
+                counts[f"skipped_{duplicate}"] += 1
                 continue
             conn.execute(
                 "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
                 "VALUES (?, ?, ?, ?, 'zonian', ?)",
                 (row.channel, row.author, row.sent_at, row.content, str(src_path)),
             )
-            inserted += 1
-    return inserted
+            counts["inserted"] += 1
+    return counts
 
 
 def _summary_path(out_root: Path, channel: str) -> Path:
@@ -251,7 +296,8 @@ def archive_users(channel: str, min_messages: int, include_excluded: bool) -> tu
 
 def download_user(channel: str, user: str, out_root: Path, local_tz: ZoneInfo,
                   import_archive: bool, limit_months: int | None = None,
-                  sleep_s: float = 0.25) -> dict:
+                  sleep_s: float = 0.25, dedupe_window_hours: float = 12.0,
+                  dedupe_min_chars: int = 16) -> dict:
     api_url = f"{API_BASE}/api/{urllib.parse.quote(channel)}/{urllib.parse.quote(user)}"
     print(f"\n== {channel}/{user} ==")
     print(f"API: {api_url}")
@@ -298,6 +344,8 @@ def download_user(channel: str, user: str, out_root: Path, local_tz: ZoneInfo,
 
     total_rows = 0
     total_inserted = 0
+    total_skipped_exact = 0
+    total_skipped_near = 0
     downloaded = 0
     missing = 0
     failures = []
@@ -315,12 +363,19 @@ def download_user(channel: str, user: str, out_root: Path, local_tz: ZoneInfo,
         source_url, text = result
         raw_path = _save_raw(out_root, resolved_channel, resolved_user, year, month, text, source_url)
         rows = _parse_raw_month(text, local_tz)
-        inserted = _import_rows(rows, raw_path) if import_archive else 0
+        import_counts = (
+            _import_rows(rows, raw_path, dedupe_window_hours, dedupe_min_chars)
+            if import_archive else Counter()
+        )
+        inserted = import_counts["inserted"]
         total_rows += len(rows)
         total_inserted += inserted
+        total_skipped_exact += import_counts["skipped_exact"]
+        total_skipped_near += import_counts["skipped_near_time"]
         downloaded += 1
         if import_archive:
-            print(f" {len(rows):,} rows, +{inserted:,} new")
+            skipped = import_counts["skipped_exact"] + import_counts["skipped_near_time"]
+            print(f" {len(rows):,} rows, +{inserted:,} new, {skipped:,} duplicate")
         else:
             print(f" {len(rows):,} rows saved")
         if sleep_s > 0:
@@ -335,6 +390,8 @@ def download_user(channel: str, user: str, out_root: Path, local_tz: ZoneInfo,
         "months_missing": missing,
         "rows_parsed": total_rows,
         "rows_inserted": total_inserted,
+        "rows_skipped_exact": total_skipped_exact,
+        "rows_skipped_near_time": total_skipped_near,
         "failures": failures,
     }
 
@@ -363,6 +420,11 @@ def main() -> None:
     ap.add_argument("--out-root", default="data/unsynced/external_logs/zonian")
     ap.add_argument("--import-archive", action="store_true",
                     help="insert non-duplicate rows into data/unsynced/chat_archive.db")
+    ap.add_argument("--dedupe-window-hours", type=float, default=12.0,
+                    help="when importing, skip substantial same-author same-channel "
+                         "lines with matching normalized text within +/- this many hours")
+    ap.add_argument("--dedupe-min-chars", type=int, default=16,
+                    help="minimum normalized text length for timezone-tolerant dedupe")
     ap.add_argument("--local-tz", default="America/New_York")
     ap.add_argument("--limit-months", type=int, default=0,
                     help="debug/test mode: only newest N months")
@@ -419,12 +481,17 @@ def main() -> None:
                 import_archive=args.import_archive,
                 limit_months=args.limit_months or None,
                 sleep_s=args.sleep,
+                dedupe_window_hours=max(0.0, args.dedupe_window_hours),
+                dedupe_min_chars=max(1, args.dedupe_min_chars),
             )
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             print(f"\n!! {args.channel}/{user} failed: {exc}")
             summary = {"user": user, "error": str(exc)}
         summaries.append(summary)
-        for key in ("months_downloaded", "months_missing", "rows_parsed", "rows_inserted"):
+        for key in (
+            "months_downloaded", "months_missing", "rows_parsed", "rows_inserted",
+            "rows_skipped_exact", "rows_skipped_near_time",
+        ):
             totals[key] += int(summary.get(key) or 0)
 
     summary_doc = {
@@ -433,6 +500,11 @@ def main() -> None:
         "import_archive": args.import_archive,
         "out_root": str(out_root),
         "archive_source": archive_source,
+        "dedupe": {
+            "window_hours": max(0.0, args.dedupe_window_hours),
+            "min_chars": max(1, args.dedupe_min_chars),
+            "near_time_rule": "same channel + same author + same normalized substantial text within window",
+        },
         "totals": dict(totals),
         "users": summaries,
     }
@@ -444,7 +516,9 @@ def main() -> None:
         f"Months downloaded: {totals['months_downloaded']:,}; "
         f"months with no logs: {totals['months_missing']:,}; "
         f"rows parsed: {totals['rows_parsed']:,}; "
-        f"new archive rows: {totals['rows_inserted']:,}"
+        f"new archive rows: {totals['rows_inserted']:,}; "
+        f"duplicates skipped: "
+        f"{(totals['rows_skipped_exact'] + totals['rows_skipped_near_time']):,}"
     )
 
 

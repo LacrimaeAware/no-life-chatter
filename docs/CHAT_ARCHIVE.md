@@ -121,11 +121,16 @@ python scripts/download_zonian_user_logs.py --channel thickpoo --from-archive --
 
 The mirror's raw monthly logs use UTC timestamps; the importer converts them to
 the local archive timezone (`America/New_York` by default) before inserting.
-Duplicate protection checks `(channel, author, sent_at, content)`, so rerunning
-the downloader is safe. This same duplicate check is the right overlap strategy
-for future older local logs too: import every source into the same normalized
-schema, then skip or purge rows whose `(channel, author, sent_at, content)` is
-already present.
+Duplicate protection first checks exact `(channel, author, sent_at, content)`,
+so rerunning the downloader is safe. For overlapping logs whose timestamps may
+be shifted by timezone/source differences, import also skips substantial same
+author/channel lines with the same normalized text within a configurable window
+(`--dedupe-window-hours`, default 12). Short repeated chat/emote lines still
+need exact timestamps, so real repeated `Lemon`-style chatter is not collapsed.
+
+This same two-layer rule is the baseline overlap strategy for future older local
+logs too: import every source into the same normalized schema, then skip exact
+matches and substantial near-time text matches.
 
 ## Schema
 

@@ -66,6 +66,10 @@ the live answer was a real, in-voice answer about his mage.
   double-click `13-download-other-channel-logs-for-thickpoo-members.bat`.
   It loops over the user's target channel list, but selects the user roster
   from local `#thickpoo` via `--users-from-channel thickpoo`.
+  Import dedupe is two-layer: exact `(channel, author, sent_at, content)` first,
+  then substantial same-author/channel normalized text within
+  `--dedupe-window-hours` (default 12) so UTC/local timestamp shifts do not
+  duplicate older overlapping logs.
 - **Query archive offline**: `python scripts/ask_archive.py said|quote|stats|search ...`
 - **Preview a Markov persona (no chat post)**: `python scripts/persona_preview.py <user>`
 - **Preview LLM/RAG exemplar selection (no model/chat post)**:
