@@ -96,6 +96,16 @@ chatterino_logs = ""
 [archive.aliases]
 # old_name = "real_name"
 
+[persona]
+# Persona features (see docs/PERSONA_BOT_ROADMAP.md). ~mimic posts a
+# Markov-generated line in a chatter's style, built from their archived chat.
+mimic_enabled = true
+# Anything the bot is about to post is checked against this denylist first, so
+# recombined real chat can't get the bot banned for posting slurs/hate terms.
+# Keep the actual list in a gitignored file (one term per line, '#' comments);
+# if the file is missing, nothing is filtered.
+blocklist_file = "data/unsynced/blocklist.txt"
+
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count

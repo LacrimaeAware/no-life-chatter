@@ -52,6 +52,18 @@ def build(author: str, order: int = 2, min_messages: int = 40):
     }
 
 
+_model_cache = {}
+
+
+def get_model(author: str, order: int = 2, min_messages: int = 40):
+    """Cached build() — so the ~mimic command doesn't re-scan a user's whole
+    history on every call. Cache is per process; clears on bot restart."""
+    key = (chat_archive.normalize(author), order)
+    if key not in _model_cache:
+        _model_cache[key] = build(author, order=order, min_messages=min_messages)
+    return _model_cache[key]
+
+
 def generate(model, max_words: int = 40, rng: random.Random = None):
     """Sample one message from a model. Returns a string (may be empty-ish)."""
     if not model or not model["starts"]:

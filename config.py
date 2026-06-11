@@ -139,6 +139,16 @@ ARCHIVE_CHATTERINO_LOGS: str = _ar.get("chatterino_logs", "")
 # {"f3rnard0" = "fernardo"} merges a typo-named channel into the real one.
 ARCHIVE_ALIASES: dict = dict(_ar.get("aliases", {}))
 
+# ------------------------------- personas --------------------------------
+# Persona features (docs/PERSONA_BOT_ROADMAP.md). The ~mimic command posts a
+# Markov-generated line in a chatter's style; its output is run through the
+# blocklist below first so the bot never posts a bannable line to Twitch.
+_pe = _cfg.get("persona", {})
+MIMIC_ENABLED: bool = bool(_pe.get("mimic_enabled", True))
+# Denylist of terms the bot must never post (one per line, '#' comments).
+# Kept OUT of the repo — lives in a gitignored file. Empty/missing = no filter.
+BLOCKLIST_FILE: str = _resolve(_pe.get("blocklist_file", "data/unsynced/blocklist.txt"))
+
 # --------------------------------- secrets --------------------------------
 # Read straight from the environment so they never live in tracked files.
 TWITCH_CLIENT_ID: str | None = os.getenv("TWITCH_CLIENT_ID")

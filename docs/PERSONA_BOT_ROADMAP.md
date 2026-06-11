@@ -193,13 +193,32 @@ cheap-fast model behind a tiny adapter (`services/llm.py`, mirroring how
   per user) but one-time — a full friend-group's personas is cents to a few
   dollars. Quality for "imitate this writing style" is meaningfully better
   than small local models.
-- **Local (the tinkering path):** an 8 GB-VRAM card runs 7–9B instruct models
-  at Q4 quantization (Qwen3-8B, Llama 3.1 8B, Mistral 7B) via llama.cpp /
-  Ollama — on AMD cards that means the Vulkan backend (no CUDA), which works
-  but is the less-paved road. 12–16 GB unlocks 12–14B models. Verdict: fine
-  for experiments and total privacy, noticeably weaker at voice-mimicry than
-  hosted frontier-cheap tiers. Don't buy hardware for this project; if you buy
-  one anyway for general AI tinkering, 16 GB+ is the comfortable tier.
+- **Local (the tinkering path, and the answer for *edgy* content):** hosted
+  Claude/OpenAI **refuse** to generate slurs or speak in the voice of someone
+  who uses them, and OpenAI fine-tuning **rejects** such training data at two
+  gates (training-file moderation + a post-training safety eval). So for
+  uncensored persona content, a local open model is the route — no refusals,
+  no provider account risk, no data leaving the machine, free per call.
+  - On this machine's **AMD RX 5700 XT (8 GB, RDNA1)**: ROCm does **not**
+    support this card on Windows — use the **Vulkan** backend (standard
+    Adrenalin driver). Shortest path is **LM Studio** (pick the Vulkan
+    runtime); raw `llama.cpp` Vulkan build is the fast-but-manual alt; Ollama
+    works only via its newer Vulkan path on RDNA1 (set `OLLAMA_VULKAN=1`, or
+    use the `ollama-for-amd` fork). **Leave Flash Attention OFF on RDNA1** (it
+    ~3× slows generation here).
+  - Models that fit 8 GB at Q4_K_M and won't refuse (abliterated / dolphin):
+    **Llama-3.1-8B-Instruct-abliterated** (~4.9 GB, strong default),
+    **dolphin-2.9.4-llama3.1-8b**, **Mistral-7B-Instruct-v0.3-abliterated**
+    (smallest/fastest), **Qwen2.5-7B-Instruct-abliterated**. Expect ~25–45
+    tok/s on Vulkan — comfortably past reading speed. Keep context 4–8k so the
+    model + KV cache fit in 8 GB.
+  - **Less-restricted hosted** middle ground (no local setup): OpenRouter hosts
+    uncensored models (e.g. Dolphin-Mistral-24B "Venice", a free rate-limited
+    tier exists; paid uncensored ~$0.25–$1 / M tokens). Generates freely — but
+    see the Twitch note below; generating is not the hard part, posting is.
+  - Verdict: local is fine for experiments + total privacy + edgy content,
+    a bit weaker at mimicry than frontier-cheap hosted. Don't buy hardware for
+    this; the 5700 XT already works via Vulkan.
 - **No-LLM fallback that's still funny — BUILT:** `utils/persona_markov.py`
   (order-N word chains from a user's archived messages) +
   `scripts/persona_preview.py <user>` (terminal-only preview, posts nothing).
@@ -221,6 +240,15 @@ design, not left to discretion:
 - Random reactions are off by default and enabled per channel by a
   super-admin — the streamer should know their chat has a roleplay gremlin.
 - Bot output is always marked as bot output (`🎭` prefix).
+- **Twitch output is the real constraint, separate from any model's policy.**
+  Posting slurs/hate to Twitch is zero-tolerance and bans the bot *and* the
+  operator's main account — there's no compliant channel (chat, whisper, or
+  private) for it. The durable design is **generate → filter → maybe-send**: a
+  denylist/classifier gates every message before it's posted (built today:
+  `utils/output_filter.py`, gitignored blocklist, applied by `~mimic`). "Edgy"
+  survives the filter; slurs don't. Cleanest of all is to redact slurs from the
+  source text *before* it reaches the model, so personas carry the cadence and
+  humor without the bannable words.
 
 ## Open questions (decide when building)
 

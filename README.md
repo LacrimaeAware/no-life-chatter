@@ -65,6 +65,7 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~quote <user>` | anyone | Random real quote from the chat archive. |
 | `~firstseen <user>` | anyone | A user's first archived message. |
 | `~chatstats <user>` | anyone | Archive stats: count, first/last seen, busiest hour. |
+| `~mimic <user>` | anyone | Post a bot-made line in a chatter's style (local Markov; output is denylist-filtered). |
 | `~autotl` | admin | Toggle auto-translate for yourself. |
 | `~setlang <LANG>` | admin | Set your translation target language (e.g. `EN`). |
 | `~tloutput local\|whisper\|channel <name>` | admin | Where your translations are sent. |
