@@ -1,0 +1,22 @@
+# GitHub Pages config. Renders README.md as the landing page and the docs/
+# markdown as browsable, themed pages at lacrimaeaware.github.io/no-life-chatter.
+title: NoLifeChatter
+description: >-
+  A modular Twitch bot — live translation plus a chat-archive-powered persona
+  engine (Markov + local-LLM personas, FTS5 search, a fine-tuning pipeline).
+theme: jekyll-theme-cayman
+# Don't publish source/config noise as site pages.
+exclude:
+  - "*.py"
+  - "*.bat"
+  - "*.vbs"
+  - "*.toml"
+  - "*.txt"
+  - requirements.txt
+  - commands/
+  - services/
+  - utils/
+  - scripts/
+  - data/
+  - _private/
+  - .gitignore
