@@ -12,7 +12,8 @@ background. As of 2026-06-11 the following is **built, live, committed, and
 pushed** to `github.com/LacrimaeAware/no-life-chatter` (`main`):
 
 - A searchable **chat archive** (SQLite + FTS5) of 741k+ real messages.
-- **Markov** personas (`~mimic`) — instant, no model.
+- **Markov** personas (`~markov`, alias `~mimic`) — instant,
+  explicit-command only, no model.
 - **LLM** personas (`~persona`, `~hyper`) — context-aware, run on a **local
   LM Studio** model (free, private).
 - **Retrieval/RAG exemplars** - each LLM reply blends random signature lines
@@ -51,7 +52,8 @@ pilot, and archive/general-knowledge Q&A. See "Next work" below.
 | `~quote <user>` | Random real quote from their history |
 | `~firstseen <user>` | Their first archived message |
 | `~chatstats <user>` | Count, first/last seen, busiest hour |
-| `~mimic <user>` | Markov line in their style (instant, no model) |
+| `~markov <user>` | Markov line in their style (instant, no model) |
+| `~mimic <user>` | Alias for `~markov` |
 | `~persona <user> [msg]` | LLM persona, natural mode, context-aware |
 | `~hyper <user> [msg]` | LLM persona, traits exaggerated for comedy |
 
@@ -89,8 +91,8 @@ pilot, and archive/general-knowledge Q&A. See "Next work" below.
   name-stripped / single-line.
 - `services/llm.py` — async client for any OpenAI-compatible `/v1/chat/completions`
   (LM Studio default). Returns None on failure (graceful).
-- `services/message_service.py` — `maybe_react()` (random persona reaction,
-  LLM or Markov per `reaction_use_llm`) called at the top of
+- `services/message_service.py` — `maybe_react()` (random LLM persona reaction;
+  Markov is explicit-command only via `~mimic`/`~markov`) called at the top of
   `handle_regular_message`; plus the translation pipeline.
 - `utils/output_filter.py` — denylist gate (`is_clean`) applied before posting
   any persona text. Denylist in gitignored `data/unsynced/blocklist.txt`.
@@ -140,7 +142,7 @@ pilot, and archive/general-knowledge Q&A. See "Next work" below.
   repeats faster. This is expected on this hardware, not a bug.
 - The user currently runs the **non-abliterated** Llama 3.1 — it will refuse
   hard slurs (fine; the filter would block them anyway). Swap GGUF for edgy.
-- `~mimic`/Markov can be too terse and has no context (by design); the LLM
+- `~markov`/`~mimic` can be too terse and has no context (by design); the LLM
   personas fixed the terseness.
 
 ## Next work (priority order, with the user's latest asks)

@@ -104,7 +104,7 @@ chatterino_logs = ""
 # old_channel = "current_channel"
 
 [persona]
-# Persona features (see docs/PERSONA_BOT_ROADMAP.md). ~mimic posts a
+# Persona features (see docs/PERSONA_BOT_ROADMAP.md). ~markov/~mimic post a
 # Markov-generated line in a chatter's style, built from their archived chat.
 mimic_enabled = true
 # Random reactions: chance per message the bot spontaneously posts a persona
@@ -125,9 +125,9 @@ reaction_continue_delay = 1.5
 command_continue_chance = 0.0
 command_max_continuations = 1
 command_continue_delay = 1.5
-# Use the LLM (context-aware) for reactions instead of Markov. Needs an [llm]
-# endpoint (LM Studio) running; falls back gracefully if it's unreachable.
-reaction_use_llm = false
+# Random reactions use the LLM persona engine. Markov stays explicit-command
+# only via ~mimic/~markov.
+reaction_use_llm = true
 # Anything the bot is about to post is checked against this denylist first, so
 # recombined real chat can't get the bot banned for posting slurs/hate terms.
 # Keep the actual list in a gitignored file (one term per line, '#' comments);

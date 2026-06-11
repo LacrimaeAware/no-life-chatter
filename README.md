@@ -65,7 +65,8 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~quote <user>` | anyone | Random real quote from the chat archive. |
 | `~firstseen <user>` | anyone | A user's first archived message. |
 | `~chatstats <user>` | anyone | Archive stats: count, first/last seen, busiest hour. |
-| `~mimic <user>` | anyone | Quick bot-made line in a chatter's style (local Markov, instant, no model needed). |
+| `~markov <user>` | anyone | Quick Markov-chain line in a chatter's style (explicit-command only; no model needed). |
+| `~mimic <user>` | anyone | Alias for `~markov`. |
 | `~persona <user> [msg]` | anyone | Talk to an AI persona of a chatter (LLM, context-aware, natural). |
 | `~hyper <user> [msg]` | anyone | Same, but their traits exaggerated for comedy. |
 | `~autotl` | admin | Toggle auto-translate for yourself. |

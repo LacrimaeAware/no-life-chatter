@@ -3,16 +3,16 @@ from utils import persona_markov
 from utils.output_filter import is_clean
 
 description = (
-    "Generate a fake message in a chatter's style, from their chat history.\n"
-    "  ~mimic <user>   posts a bot-made line that sounds like them"
+    "Generate a Markov-chain line in a chatter's style, from their chat history.\n"
+    "  ~mimic <user>   alias of ~markov <user>"
 )
 
 
-async def handle_mimic(bot, message, params):
+async def run_markov(message, params, command_name="markov"):
     if not getattr(config, "MIMIC_ENABLED", True):
         return
     if not params:
-        await message.channel.send("Usage: ~mimic <user>")
+        await message.channel.send(f"Usage: ~{command_name} <user>")
         return
 
     user = params[0].lstrip("@")
@@ -30,9 +30,13 @@ async def handle_mimic(bot, message, params):
             line = cand
             break
     if not line:
-        await message.channel.send(f"Couldn't make a clean {user}-style line — try again.")
+        await message.channel.send(f"Couldn't make a clean {user}-style line - try again.")
         return
 
     if len(line) > 280:
-        line = line[:279] + "…"
+        line = line[:279] + "..."
     await message.channel.send(f"🎭 {user}-bot: {line}")
+
+
+async def handle_mimic(bot, message, params):
+    await run_markov(message, params, command_name="mimic")

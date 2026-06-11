@@ -58,7 +58,7 @@ async def chat(messages, max_tokens: int = 120, temperature: float = 0.85,
 
 
 async def available() -> bool:
-    """Quick reachability check (used to decide LLM vs Markov fallback)."""
+    """Quick reachability check for local/remote OpenAI-compatible endpoints."""
     base = config.LLM_ENDPOINT.split("/v1/")[0]
     try:
         timeout = aiohttp.ClientTimeout(total=3)

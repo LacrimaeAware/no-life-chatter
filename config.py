@@ -144,13 +144,13 @@ ARCHIVE_USER_ALIASES: dict = dict(_ar.get("user_aliases", {}))
 ARCHIVE_CHANNEL_ALIASES: dict = dict(_ar.get("channel_aliases", {}))
 
 # ------------------------------- personas --------------------------------
-# Persona features (docs/PERSONA_BOT_ROADMAP.md). The ~mimic command posts a
-# Markov-generated line in a chatter's style; its output is run through the
+# Persona features (docs/PERSONA_BOT_ROADMAP.md). The ~markov/~mimic commands
+# post a Markov-generated line in a chatter's style; output is run through the
 # blocklist below first so the bot never posts a bannable line to Twitch.
 _pe = _cfg.get("persona", {})
 MIMIC_ENABLED: bool = bool(_pe.get("mimic_enabled", True))
-# Chance (0..1) that any given chat message triggers a random persona reaction
-# (the bot posts a Markov line of a random recent chatter). 0 = off.
+# Chance (0..1) that any given chat message triggers a random persona reaction.
+# Ambient reactions use the LLM persona engine; Markov is explicit-command only.
 # e.g. 0.002 ~= 1 in 500 messages. A cooldown stops it bunching up.
 REACTION_CHANCE: float = float(_pe.get("reaction_chance", 0.0))
 REACTION_DIRECTED_CHANCE: float = float(_pe.get("reaction_directed_chance", 0.0))
@@ -162,7 +162,7 @@ PERSONA_COMMAND_CONTINUE_CHANCE: float = float(_pe.get("command_continue_chance"
 PERSONA_COMMAND_MAX_CONTINUATIONS: int = int(_pe.get("command_max_continuations", 1))
 PERSONA_COMMAND_CONTINUE_DELAY: float = float(_pe.get("command_continue_delay", 1.5))
 # Usernames random reactions should never mimic (command/stats bots produce
-# junk). Explicit ~mimic still works on them if you really ask.
+# junk). Explicit ~markov/~mimic still works on them if you really ask.
 EXCLUDE_USERS: set[str] = {
     u.lower() for u in _pe.get("exclude_users", [
         "streamelements", "nightbot", "fossabot", "moobot", "wizebot",
@@ -190,8 +190,8 @@ LLM_RELEVANT_EXEMPLARS: int = int(
 LLM_CONTEXT: int = int(_llm.get("context_messages", 25))  # recent chat lines for context
 LLM_RETRY_EXEMPLARS: int = int(_llm.get("retry_exemplars", min(60, LLM_EXEMPLARS)))
 LLM_RETRY_CONTEXT: int = int(_llm.get("retry_context_messages", min(12, LLM_CONTEXT)))
-# Use the LLM (context-aware) for random reactions instead of Markov.
-REACTION_USE_LLM: bool = bool(_pe.get("reaction_use_llm", False))
+# Ambient random reactions are LLM-only. Markov stays behind ~mimic/~markov.
+REACTION_USE_LLM: bool = bool(_pe.get("reaction_use_llm", True))
 
 # --------------------------------- secrets --------------------------------
 # Read straight from the environment so they never live in tracked files.

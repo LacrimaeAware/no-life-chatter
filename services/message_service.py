@@ -165,24 +165,13 @@ class MessageService:
                     break
         return directed
 
-    async def _persona_line(self, target, channel, use_llm, is_clean, persona_markov, persona_llm):
-        if use_llm:
-            cand = await persona_llm.generate_with_retry(target, channel, mode="normal")
-            if cand and len(cand.split()) >= 2 and is_clean(cand):
-                return cand
-            return None
-
-        model = persona_markov.get_model(target)
-        if not model:
-            return None
-        for _ in range(15):
-            cand = persona_markov.generate(model)
-            if cand and len(cand.split()) >= 2 and is_clean(cand):
-                return cand
+    async def _persona_line(self, target, channel, is_clean, persona_llm):
+        cand = await persona_llm.generate_with_retry(target, channel, mode="normal")
+        if cand and len(cand.split()) >= 2 and is_clean(cand):
+            return cand
         return None
 
-    async def _maybe_continue_reaction(self, message, target, first_line, use_llm,
-                                       is_clean, persona_markov, persona_llm):
+    async def _maybe_continue_reaction(self, message, target, first_line, is_clean, persona_llm):
         chance = getattr(config, "REACTION_CONTINUE_CHANCE", 0.0)
         max_lines = max(0, getattr(config, "REACTION_MAX_CONTINUATIONS", 0))
         if chance <= 0 or max_lines <= 0:
@@ -193,26 +182,21 @@ class MessageService:
             if random.random() >= chance:
                 break
             await asyncio.sleep(getattr(config, "REACTION_CONTINUE_DELAY", 1.5))
-            if use_llm:
-                follow_prompt = (
-                    f'You just said: "{last_line}". Decide if {target} would '
-                    f"naturally send one immediate second chat message that "
-                    f"continues the SAME thought. If yes, output only that "
-                    f"short follow-up. If no coherent follow-up is natural, "
-                    f"output exactly STOP. Do not change topic."
-                )
-                line = await persona_llm.generate(
-                    target,
-                    message.channel.name,
-                    follow_prompt,
-                    mode="normal",
-                    exemplar_count=getattr(config, "LLM_RETRY_EXEMPLARS", 60),
-                    context_count=getattr(config, "LLM_RETRY_CONTEXT", 12),
-                )
-            else:
-                # Markov can make a funny standalone line, but it cannot make a
-                # coherent second line tied to the first one.
-                break
+            follow_prompt = (
+                f'You just said: "{last_line}". Decide if {target} would '
+                f"naturally send one immediate second chat message that "
+                f"continues the SAME thought. If yes, output only that "
+                f"short follow-up. If no coherent follow-up is natural, "
+                f"output exactly STOP. Do not change topic."
+            )
+            line = await persona_llm.generate(
+                target,
+                message.channel.name,
+                follow_prompt,
+                mode="normal",
+                exemplar_count=getattr(config, "LLM_RETRY_EXEMPLARS", 60),
+                context_count=getattr(config, "LLM_RETRY_CONTEXT", 12),
+            )
             if not line or is_stop_followup(line) or not is_clean(line):
                 break
             if len(line) > 280:
@@ -222,15 +206,15 @@ class MessageService:
             last_line = line
 
     async def maybe_react(self, message):
-        """Rarely, post a persona line of a random recent chatter — the "the bot
-        randomly does a bit" feature. Markov-based (free, no LLM); a future LLM
-        version will react to the actual conversation. Off unless
-        persona.reaction_chance > 0. Cooldown stops it clustering in a busy spell.
+        """Rarely, post an LLM persona line of a random recent chatter.
+
+        This is the "the bot randomly does a bit" feature. Markov is kept
+        explicit-command only via ~mimic/~markov.
         """
         channel = message.channel.name
         try:
             from utils.chat_archive import recent_authors
-            from utils import persona_markov, persona_llm
+            from utils import persona_llm
             from utils.output_filter import is_clean
 
             skip = config.EXCLUDE_USERS | {(self.bot.nick or "").lower()}
@@ -247,10 +231,12 @@ class MessageService:
 
             targets = directed or authors
             random.shuffle(targets)
-            use_llm = getattr(config, "REACTION_USE_LLM", False)
+            if not getattr(config, "REACTION_USE_LLM", True):
+                logging.warning("Persona reactions skipped: reaction_use_llm=false; Markov is command-only.")
+                return
             for target in targets[:8]:
                 line = await self._persona_line(
-                    target, channel, use_llm, is_clean, persona_markov, persona_llm
+                    target, channel, is_clean, persona_llm
                 )
                 if line:
                     if len(line) > 280:
@@ -259,7 +245,7 @@ class MessageService:
                     logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
                     await message.channel.send(f"🎲 {target}: {line}")
                     await self._maybe_continue_reaction(
-                        message, target, line, use_llm, is_clean, persona_markov, persona_llm
+                        message, target, line, is_clean, persona_llm
                     )
                     return
         except Exception as e:

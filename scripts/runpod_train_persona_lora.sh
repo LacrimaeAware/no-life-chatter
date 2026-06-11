@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run this inside the RunPod terminal after unzipping persona_sft_runpod.zip:
+# Run this inside the RunPod terminal after extracting persona_sft_runpod.zip:
 #
 #   cd /workspace
-#   mkdir -p nlc_persona
-#   unzip persona_sft_runpod.zip -d nlc_persona
+#   python -m zipfile -e persona_sft_runpod.zip nlc_persona
 #   bash /workspace/nlc_persona/runpod_train_persona_lora.sh
 
 cd "$(dirname "$0")"
@@ -25,7 +24,7 @@ echo
 
 if [ ! -f persona_train.jsonl ] || [ ! -f persona_val.jsonl ]; then
   echo "ERROR: persona_train.jsonl/persona_val.jsonl not found next to this script."
-  echo "Make sure you unzipped persona_sft_runpod.zip into /workspace/nlc_persona."
+  echo "Make sure you extracted persona_sft_runpod.zip into /workspace/nlc_persona."
   exit 1
 fi
 

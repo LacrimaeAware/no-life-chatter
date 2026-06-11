@@ -7,7 +7,7 @@ one tuned for comedy — plus rare spontaneous in-character reactions, playful
 psychometrics, and trivia.
 
 **Status (2026-06-11): phases 0–3 built and live** — archive + query commands,
-Markov `~mimic`, LLM `~persona`/`~hyper` (local LM Studio), lightweight
+Markov `~markov`/`~mimic`, LLM `~persona`/`~hyper` (local LM Studio), lightweight
 retrieval/RAG exemplars, and random reactions. Fine-tuning + the new ideas
 (reply-frequency, Turing-test game) are next. **For a full pick-up-and-continue
 brief, read [HANDOFF.md](HANDOFF.md).** Companion docs:
@@ -255,7 +255,7 @@ design, not left to discretion:
   operator's main account — there's no compliant channel (chat, whisper, or
   private) for it. The durable design is **generate → filter → maybe-send**: a
   denylist/classifier gates every message before it's posted (built today:
-  `utils/output_filter.py`, gitignored blocklist, applied by `~mimic`). "Edgy"
+  `utils/output_filter.py`, gitignored blocklist, applied by `~markov`/`~mimic`). "Edgy"
   survives the filter; slurs don't. Cleanest of all is to redact slurs from the
   source text *before* it reaches the model, so personas carry the cadence and
   humor without the bannable words.

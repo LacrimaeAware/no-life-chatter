@@ -33,8 +33,7 @@ This avoids Hugging Face gated-model login friction for the first paid run.
 In RunPod terminal:
 
   cd /workspace
-  mkdir -p nlc_persona
-  unzip persona_sft_runpod.zip -d nlc_persona
+  python -m zipfile -e persona_sft_runpod.zip nlc_persona
   bash /workspace/nlc_persona/runpod_train_persona_lora.sh
 
 When it finishes, download:
