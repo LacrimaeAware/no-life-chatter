@@ -149,6 +149,14 @@ context_messages = 25
 # If the full prompt times out/fails, retry once with this smaller prompt.
 retry_exemplars = 60
 retry_context_messages = 12
+# Top retrieval hits expanded into small "chat moment" snippets (the line plus
+# 2 messages before/after) so the model sees how the author responds, not just
+# their vocabulary. Each snippet costs ~5 lines of the relevant budget.
+snippet_hits = 8
+# How many samples to draw per reply; the best valid candidate is posted
+# (copies, URLs, and echoes of other chatters' lines are rejected). The big
+# prompt is processed once and cached, so 2 is cheap. 1 = single draw.
+candidates = 2
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count

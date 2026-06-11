@@ -190,6 +190,14 @@ LLM_RELEVANT_EXEMPLARS: int = int(
 LLM_CONTEXT: int = int(_llm.get("context_messages", 25))  # recent chat lines for context
 LLM_RETRY_EXEMPLARS: int = int(_llm.get("retry_exemplars", min(60, LLM_EXEMPLARS)))
 LLM_RETRY_CONTEXT: int = int(_llm.get("retry_context_messages", min(12, LLM_CONTEXT)))
+# Top retrieval hits expanded into ±2-line "chat moment" snippets — evidence of
+# how the author RESPONDS, not just their vocabulary. Each costs ~5 lines of
+# the relevant budget. 0 disables snippets.
+LLM_SNIPPET_HITS: int = int(_llm.get("snippet_hits", 8))
+# Samples per reply; the best valid one is posted (copies/URLs/echoes of other
+# chatters' lines are rejected). The big prompt is server-cached, so extra
+# samples are much cheaper than the first.
+LLM_CANDIDATES: int = int(_llm.get("candidates", 2))
 # Ambient random reactions are LLM-only. Markov stays behind ~mimic/~markov.
 REACTION_USE_LLM: bool = bool(_pe.get("reaction_use_llm", True))
 

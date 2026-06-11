@@ -22,9 +22,29 @@ pushed** to `github.com/LacrimaeAware/no-life-chatter` (`main`):
   directed-at-persona chance, cooldowns, and optional one-line follow-ups.
 - **Random reactions** — the bot rarely speaks up in a chatter's persona.
 
-What's NOT done yet (the work to pick up): a **Turing-test game**, a proper
-LoRA+RAG evaluation/merge path for the RunPod fine-tuning pilot, and
+What's NOT done yet (the work to pick up): a **Turing-test game**, a **frozen
+scored eval** over the smoke cases, a re-train on an **abliterated base** (the
+Qwen pilot used a non-abliterated base by mistake; adapters are not portable
+across model families, so that run is a fresh train), and
 archive/general-knowledge Q&A. See "Next work" below.
+
+**2026-06-11 (late): retrieval/diagnosis fixes landed** — addressing the
+smoke-test findings: (1) query hygiene (question-scaffolding stopwords,
+@mention/emote-token stripping, context-author exclusion) so retrieval anchors
+on TOPIC words instead of echoing the question ("hows/treating/you" no longer
+retrieve the author asking how things are going); (2) post-ranking of hits
+(topic-term overlap + conversation-sized shape, junk dropped); (3) **evidence
+snippets** — top hits expanded into ±2-line chat moments with the author's
+line marked `>>`, teaching how they RESPOND, not just vocabulary; (4) stable
+seeded signature core (80%) + fresh tail (20%) — kills the random-sample
+lottery that made the same persona great one day and mush the next; junk
+exemplars (other-bot `<` commands, links, ping+emote-only lines) filtered;
+(5) engage rule in the prompt (react to direct questions in-character, never
+ignore) + anti-bleed rule and guard (candidates echoing another chatter's
+context line ≥0.9 similarity are rejected); (6) **candidate selection** —
+`[llm] candidates = 2` samples per reply, best valid one posted. Verified on
+the exact failing smoke case: ebbel/WoW retrieval now returns WoW opinions and
+the live answer was a real, in-voice answer about his mage.
 
 ## How to run / verify
 

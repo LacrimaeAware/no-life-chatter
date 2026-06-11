@@ -310,7 +310,34 @@ _QUERY_STOPWORDS = {
     # Bot/persona scaffolding words are common in commands but poor retrieval
     # anchors for a chatter's actual voice.
     "bot", "chat", "hyper", "mimic", "persona", "twitch",
+    # Question/smalltalk scaffolding. Lesson from the LoRA/RAG smoke tests:
+    # for "hows world of warcraft been treating you?" retrieval matched the
+    # QUESTION's words (hows/treating/you) and returned the author asking
+    # other people how things are going — query-term echo. Only topic words
+    # should anchor retrieval.
+    "hows", "whats", "whos", "whens", "wheres", "whys", "why", "who",
+    "going", "treating", "think", "thinks", "thinking", "thought", "thoughts",
+    "feel", "feels", "felt", "tell", "tells", "telling", "says", "saying",
+    "know", "knows", "knew", "mean", "means", "meant",
+    "you", "yall", "guys", "dude", "anyone", "everyone", "someone",
+    "something", "anything", "nothing", "ever", "never", "still", "even",
+    "yeah", "yep", "nah", "lol", "lmao", "omegalul", "kekw",
+    "gonna", "wanna", "kinda", "sorta", "honestly", "literally", "actually",
+    "right", "okay", "today", "tonight", "yesterday", "tomorrow",
 }
+
+
+def _emote_like_token(raw: str) -> bool:
+    """True for tokens that look like emote names, not words.
+
+    CamelCase with an internal capital (FeelsOkayMan, PauseChamp) or a long
+    all-caps mash (WAYTOODANK). These dominate FTS ranking when left in the
+    query — the smoke tests retrieved 'PauseChamp ?' as "relevant" purely
+    because the live context contained the emote.
+    """
+    if re.search(r"[a-z][A-Z]", raw):
+        return True
+    return len(raw) >= 6 and raw.isupper() and raw.isalpha()
 
 _QUERY_ALIASES = {
     "world of warcraft": ["wow"],
@@ -321,17 +348,20 @@ _QUERY_ALIASES = {
 }
 
 
-def _fts_query(text: str, max_terms: int = 12, exclude_terms=None) -> str | None:
-    """Build a safe, broad FTS query from natural chat text.
+def query_terms(text: str, max_terms: int = 12, exclude_terms=None) -> list[str]:
+    """Topic terms worth anchoring retrieval on, from natural chat text.
 
-    FTS5 treats spaces as AND, which is too strict for noisy live chat context,
-    so we OR a small set of useful terms. Each term is quoted to keep user text
-    out of the FTS query syntax.
+    Drops @mentions, emote-like tokens, stopwords/question scaffolding, and
+    any caller-supplied excludes (usernames in the conversation). What's left
+    is the actual subject matter.
     """
     exclude_terms = {t.lower() for t in (exclude_terms or set())}
     counts = Counter()
     first_seen = {}
-    for raw in re.findall(r"\w+", text or "", flags=re.UNICODE):
+    cleaned = re.sub(r"@\w+", " ", text or "")  # pings are addressing, not topic
+    for raw in re.findall(r"\w+", cleaned, flags=re.UNICODE):
+        if _emote_like_token(raw.strip("_")):
+            continue
         term = raw.strip("_").lower()
         if len(term) < 3 or term in _QUERY_STOPWORDS or term in exclude_terms:
             continue
@@ -346,23 +376,33 @@ def _fts_query(text: str, max_terms: int = 12, exclude_terms=None) -> str | None
                 if alias not in exclude_terms:
                     counts[alias] += 1
                     first_seen.setdefault(alias, len(first_seen))
+    return sorted(counts, key=lambda t: (-counts[t], first_seen[t]))[:max_terms]
 
-    if not counts:
+
+def _fts_query(text: str, max_terms: int = 12, exclude_terms=None) -> str | None:
+    """Build a safe, broad FTS query from natural chat text.
+
+    FTS5 treats spaces as AND, which is too strict for noisy live chat context,
+    so we OR a small set of useful terms. Each term is quoted to keep user text
+    out of the FTS query syntax.
+    """
+    terms = query_terms(text, max_terms=max_terms, exclude_terms=exclude_terms)
+    if not terms:
         return None
-
-    terms = sorted(counts, key=lambda t: (-counts[t], first_seen[t]))[:max_terms]
     return " OR ".join(_fts_phrase(term) for term in terms)
 
 
-def search_author(author: str, text: str, limit: int = 40,
-                  max_chars: int = 240):
-    """Relevant messages by one author for natural-language text.
+def search_author_hits(author: str, text: str, limit: int = 40,
+                       max_chars: int = 240, exclude_terms=None):
+    """Relevant messages by one author for natural-language text, with row ids.
 
-    Returns [(sent_at, channel, content), ...] ranked by FTS5 bm25. The FTS
-    table stays first in the query plan; see said() for why CROSS JOIN matters.
+    Returns [(id, sent_at, channel, content), ...] ranked by FTS5 bm25. The id
+    lets callers expand a hit into its surrounding chat moment. The FTS table
+    stays first in the query plan; see said() for why CROSS JOIN matters.
     """
     keys = author_keys(author)
-    q = _fts_query(text, exclude_terms=set(keys))
+    excludes = set(keys) | {t.lower() for t in (exclude_terms or set())}
+    q = _fts_query(text, exclude_terms=excludes)
     if not q:
         return []
     author_placeholders, author_params = _in_clause(keys)
@@ -370,7 +410,7 @@ def search_author(author: str, text: str, limit: int = 40,
     conn = connect()
     try:
         return conn.execute(
-            "SELECT m.sent_at, m.channel, m.content FROM messages_fts f "
+            "SELECT m.id, m.sent_at, m.channel, m.content FROM messages_fts f "
             "CROSS JOIN messages m ON m.id = f.rowid "
             f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
             "AND length(m.content) <= ? "
@@ -379,8 +419,41 @@ def search_author(author: str, text: str, limit: int = 40,
             [q, *author_params, max_chars, config.PREFIX + "%", limit],
         ).fetchall()
     except sqlite3.OperationalError as e:
-        logging.warning(f"chat_archive search_author failed for {author!r}: {e}")
+        logging.warning(f"chat_archive search_author_hits failed for {author!r}: {e}")
         return []
+
+
+def search_author(author: str, text: str, limit: int = 40,
+                  max_chars: int = 240):
+    """Back-compat wrapper: [(sent_at, channel, content), ...]."""
+    return [
+        (sent_at, channel, content)
+        for _, sent_at, channel, content in search_author_hits(
+            author, text, limit=limit, max_chars=max_chars
+        )
+    ]
+
+
+def context_window(message_id: int, channel: str, before: int = 2, after: int = 2):
+    """The chat moment around one message: [(id, author, content), ...] in
+    order, including the message itself. Lets retrieval show what a line was
+    responding to instead of the line in isolation."""
+    conn = connect()
+    chan = normalize_channel(channel)
+    prev = conn.execute(
+        "SELECT id, author, content FROM messages WHERE channel = ? AND id < ? "
+        "ORDER BY id DESC LIMIT ?",
+        (chan, message_id, before),
+    ).fetchall()
+    hit = conn.execute(
+        "SELECT id, author, content FROM messages WHERE id = ?", (message_id,)
+    ).fetchall()
+    nxt = conn.execute(
+        "SELECT id, author, content FROM messages WHERE channel = ? AND id > ? "
+        "ORDER BY id LIMIT ?",
+        (chan, message_id, after),
+    ).fetchall()
+    return list(reversed(prev)) + hit + nxt
 
 
 def said(author: str, phrase: str, limit: int = 3):
