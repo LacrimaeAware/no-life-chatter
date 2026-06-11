@@ -165,6 +165,6 @@ below.
    try an abliterated 8B for edgy; or hosted cheap model for the benign Q&A.
 
 See `docs/PERSONA_BOT_ROADMAP.md` (full roadmap), `docs/CHAT_ARCHIVE.md` (data
-layer + Chatterino format spec), `docs/IDEA_BANK.md` (more ideas). Private,
-machine-specific notes (paths, hardware, decisions) are in gitignored
-`_private/PERSONA-NOTES.md`.
+layer + Chatterino format spec), `docs/FINE_TUNING.md` (LoRA pilot runbook),
+`docs/IDEA_BANK.md` (more ideas). Private, machine-specific notes (paths,
+hardware, decisions) are in gitignored `_private/PERSONA-NOTES.md`.
