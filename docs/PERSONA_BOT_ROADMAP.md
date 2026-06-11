@@ -59,7 +59,11 @@ An offline batch job (`scripts/build_persona.py <user>`) produces, per user:
    isn't hostage to one loud week; and topic-tagged clusters so runtime can
    *retrieve* their real messages about whatever chat is currently discussing.
    Stored as message ids — the bank re-materializes from the archive, always
-   verbatim.
+   verbatim. **Each exemplar carries its lead-in:** the message *plus the 2–3
+   lines it was replying to* (via `chat_archive.context_before`), because a
+   line like "exactly" or "I am black" is meaningless — or misleading — without
+   what it answered. The persona learns *what they say in what situation*, not
+   just a bag of their words.
 2. **Stats block — pure counting, no AI.** Top emotes with frequencies,
    message-length distribution, capitalization/punctuation habits, busiest
    hours, favorite @targets. Used to *validate* output (does the generated
@@ -196,10 +200,12 @@ cheap-fast model behind a tiny adapter (`services/llm.py`, mirroring how
   for experiments and total privacy, noticeably weaker at voice-mimicry than
   hosted frontier-cheap tiers. Don't buy hardware for this project; if you buy
   one anyway for general AI tinkering, 16 GB+ is the comfortable tier.
-- **No-LLM fallback that's still funny:** a per-user Markov chain generator
-  (order-2 word chains from their messages) is zero-cost, fully local, and
-  produces surreal-but-recognizable output — a good Phase-2.5 toy and a
-  fallback when the API is down.
+- **No-LLM fallback that's still funny — BUILT:** `utils/persona_markov.py`
+  (order-N word chains from a user's archived messages) +
+  `scripts/persona_preview.py <user>` (terminal-only preview, posts nothing).
+  Zero-cost, fully local, no provider content policy in play. Surreal but
+  unmistakably them. It does *not* use conversation context — that's the LLM
+  version's job — but it's the always-available, TOS-free warm-up and fallback.
 
 ## Consent & privacy (read before building Phase 2+)
 

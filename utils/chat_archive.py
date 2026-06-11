@@ -279,6 +279,35 @@ def stats(author: str):
     }
 
 
+def context_before(channel: str, sent_at: str, n: int = 4, within_minutes: int = 15):
+    """The up-to-n messages just before sent_at in channel (oldest first).
+
+    Reconstructs what a message was responding to — a line like "exactly" or
+    "I am black" is meaningless alone but clear with the two lines above it.
+    Bounded by a time window so it doesn't reach back into an unrelated session.
+    """
+    conn = connect()
+    # 'YYYY-MM-DD HH:MM:SS' sorts and subtracts lexically only within a day;
+    # for a short window, datetime() math in SQL is exact and simple.
+    rows = conn.execute(
+        "SELECT sent_at, author, content FROM messages "
+        "WHERE channel = ? AND sent_at < ? "
+        "AND sent_at >= datetime(?, ?) "
+        "ORDER BY sent_at DESC LIMIT ?",
+        (normalize(channel), sent_at, sent_at, f"-{within_minutes} minutes", n),
+    ).fetchall()
+    return list(reversed(rows))
+
+
+def messages_for(author: str):
+    """All archived message texts by author (for offline persona building)."""
+    conn = connect()
+    return [r[0] for r in conn.execute(
+        "SELECT content FROM messages WHERE author = ? ORDER BY sent_at",
+        (normalize(author),),
+    ).fetchall()]
+
+
 def search_all(phrase: str, limit: int = 10):
     """Full-text search across all authors: [(sent_at, channel, author, content)...]."""
     conn = connect()
