@@ -103,6 +103,7 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~quote <user>` | anyone | Random real quote from the chat archive. |
 | `~firstseen <user>` | anyone | A user's first archived message. |
 | `~chatstats <user>` | anyone | Archive stats: count, first/last seen, busiest hour. |
+| `~whosaid <sentence>` | anyone | Guess which archived chatter is most likely to have said a line (works on novel sentences). |
 | `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |
 | `~persona <user> [msg]` | anyone | Talk to an AI persona of a chatter (local LLM, context-aware). |
 | `~hyper <user> [msg]` | anyone | Same, but their traits exaggerated for comedy. |

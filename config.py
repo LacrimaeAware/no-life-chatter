@@ -202,6 +202,9 @@ LLM_CANDIDATES: int = int(_llm.get("candidates", 2))
 # with rejection reasons, final output, timing. Lives in a gitignored dir.
 PERSONA_LOG: bool = bool(_pe.get("log_enabled", True))
 PERSONA_LOG_FILE: str = _resolve(_pe.get("log_file", "data/unsynced/persona_logs.jsonl"))
+# Authorship classifier (powers ~whosaid + persona eval). Trained offline by
+# scripts/train_classifier.py; model file is gitignored.
+CLASSIFIER_FILE: str = _resolve(_pe.get("classifier_file", "data/unsynced/persona_classifier.pkl"))
 # Ambient random reactions are LLM-only. Markov stays behind ~mimic/~markov.
 REACTION_USE_LLM: bool = bool(_pe.get("reaction_use_llm", True))
 
