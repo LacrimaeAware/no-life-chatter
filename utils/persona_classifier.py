@@ -168,43 +168,135 @@ def classify(text, top_k=5, restrict_to=None):
     return [(a, float(p)) for a, p in ranked[:top_k]]
 
 
-def build_centroids(per_author=2500, seed=7):
-    """Precompute each author's mean (L2-normalized) TF-IDF vector and store it
-    in the model pickle. Cosine between two centroids = how alike two people
-    write — the basis for ~like. Run once after training (or it's recomputed
-    by train()). Stored float32 to keep the pickle reasonable."""
-    import numpy as np
-    model = load()
-    feats = model["pipe"].named_steps["feats"]
+_URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+_KNOWN_USERS = None
+
+
+def _known_usernames():
+    """Archive authors (>=1000 msgs) — tokens to exclude from voice profiles.
+    Mentioning another chatter isn't a 'signature word', it's addressing. Names
+    here are username-shaped, so no real-vocabulary collateral."""
+    global _KNOWN_USERS
+    if _KNOWN_USERS is None:
+        conn = chat_archive.connect()
+        rows = conn.execute(
+            "SELECT author FROM messages GROUP BY author HAVING COUNT(*) >= 1000"
+        ).fetchall()
+        _KNOWN_USERS = {a for a, in rows}
+        _KNOWN_USERS |= {u.lower() for u in getattr(config, "EXCLUDE_USERS", set())}
+    return _KNOWN_USERS
+
+
+def _count_words(msgs):
+    """Word counts for voice profiles. Three classes of non-voice tokens are
+    dropped: URL shrapnel (https/com/youtube/status...), digit-bearing tokens
+    (@usernames like name_12), and known chatter usernames (addressing, not
+    vocabulary). Emotes and foreign-language tics are voice — they stay."""
+    from collections import Counter
+    users = _known_usernames()
+    c = Counter()
+    for m in msgs:
+        for w in _WORD_RE.findall(_URL_RE.sub(" ", (m or "")).lower()):
+            if len(w) >= 2 and not any(ch.isdigit() for ch in w) and w not in users:
+                c[w] += 1
+    return c
+
+
+def _logodds_profile(ac, na, bc, nb, top, min_count=3):
+    """Fightin' Words log-odds of an author's word counts (ac/na) vs a shared
+    background (bc/nb); keep the top `top` positive (distinctive) terms,
+    L2-normalized into a {word: weight} vector."""
+    import math
+    scored = []
+    for w, ya in ac.items():
+        if ya < min_count:
+            continue
+        yb = bc.get(w, 0)
+        num_a, den_a = ya + 0.5, na - ya + 0.5
+        num_b, den_b = yb + 0.5, nb - yb + 0.5
+        z = (math.log(num_a / den_a) - math.log(num_b / den_b)) / \
+            math.sqrt(1.0 / num_a + 1.0 / num_b)
+        if z > 0:
+            scored.append((w, z))
+    scored.sort(key=lambda kv: -kv[1])
+    scored = scored[:top]
+    norm = math.sqrt(sum(z * z for _, z in scored)) or 1.0
+    return {w: z / norm for w, z in scored}
+
+
+def build_style_profiles(roster=None, top=400, author_cap=4000, bg_cap=80000,
+                         min_messages=2000, max_roster=80, seed=13):
+    """Per-author DISTINCTIVE-vocabulary profile for ~like.
+
+    Raw TF-IDF centroids put every chatter at ~0.85 cosine because shared chat
+    swamps the signal. Instead each person is the set of words they use far more
+    than the average chatter (Fightin' Words log-odds vs one shared background —
+    the same signal as ~markers), L2-normalized. Two people are 'alike' when
+    those DISTINCTIVE vocabularies overlap, and we can name the shared markers.
+    Covers a broad roster (top chatters by volume), not just the classifier
+    classes — so bilingual/low-volume regulars get profiles too."""
+    conn = chat_archive.connect()
     rng = random.Random(seed)
-    cents = {}
-    for a in model["pipe"].classes_:
+    if roster is None:
+        exclude = {u.lower() for u in getattr(config, "EXCLUDE_USERS", set())}
+        rows = conn.execute(
+            "SELECT author, COUNT(*) c FROM messages GROUP BY author "
+            "HAVING c >= ? ORDER BY c DESC LIMIT ?", (min_messages, max_roster * 2)).fetchall()
+        roster = [a for a, _ in rows if a not in exclude and "bot" not in a][:max_roster]
+    roster = _dedupe_canonical(roster)
+    # One shared background so every author's log-odds are on the same scale.
+    bg = [r[0] for r in conn.execute(
+        "SELECT content FROM messages ORDER BY RANDOM() LIMIT ?", (bg_cap,)).fetchall()]
+    bc = _count_words(bg)
+    nb = sum(bc.values())
+    profiles = {}
+    for a in roster:
         msgs = [m for m in chat_archive.messages_for(a) if _usable(m)]
         rng.shuffle(msgs)
-        msgs = msgs[:per_author]
-        if not msgs:
+        msgs = msgs[:author_cap]
+        ac = _count_words(msgs)
+        na = sum(ac.values())
+        if na < 500:
             continue
-        v = np.asarray(feats.transform(msgs).mean(axis=0)).ravel()
-        cents[a] = (v / (np.linalg.norm(v) + 1e-9)).astype("float32")
-    model["centroids"] = cents
+        profiles[a] = _logodds_profile(ac, na, bc, nb, top)
+    model = load()
+    model["profiles"] = profiles
+    model.pop("style", None)
+    model.pop("centroids", None)
     with open(config.CLASSIFIER_FILE, "wb") as fh:
         pickle.dump(model, fh)
     global _MODEL
     _MODEL = model
-    return len(cents)
+    return len(profiles)
 
 
 def most_like(author, n=6):
-    """Chatters who write most like `author` — cosine similarity of mean
-    TF-IDF style vectors (0..1; higher = more alike). Near-twins are likely
-    alts. Only covers authors in the trained classifier."""
+    """Chatters who share `author`'s DISTINCTIVE vocabulary — cosine of
+    log-odds marker profiles (0..1; higher = more shared distinctive habits,
+    likely same crowd / alts). Returns [(author, score, [shared markers]), ...].
+    Works for any roster member; for others, the profile is computed live."""
     model = load()
-    cents = model.get("centroids")
-    canon = chat_archive.normalize_author(author)
-    if not cents or canon not in cents:
+    profiles = model.get("profiles")
+    if not profiles:
         return []
-    v = cents[canon]
-    sims = [(c, float(v.dot(w))) for c, w in cents.items() if c != canon]
+    canon = chat_archive.normalize_author(author)
+    target = profiles.get(canon)
+    if target is None:
+        terms = signature_words(canon, n=400)
+        if not terms:
+            return []
+        import math
+        pos = [(w, z) for w, z in terms if z > 0]
+        nm = math.sqrt(sum(z * z for _, z in pos)) or 1.0
+        target = {w: z / nm for w, z in pos}
+    sims = []
+    for c, prof in profiles.items():
+        if c == canon:
+            continue
+        shared = [(w, target[w] * prof[w]) for w in target if w in prof]
+        score = sum(s for _, s in shared)
+        shared.sort(key=lambda kv: -kv[1])
+        sims.append((c, score, [w for w, _ in shared[:5]]))
     sims.sort(key=lambda kv: -kv[1])
     return sims[:n]
 
@@ -230,17 +322,7 @@ def signature_words(author, n=12, author_cap=5000, bg_cap=40000, min_count=3, se
     bg = [r[0] for r in conn.execute(
         "SELECT content FROM messages ORDER BY RANDOM() LIMIT ?", (bg_cap,)).fetchall()]
 
-    def counts(msgs):
-        c = Counter()
-        for m in msgs:
-            for w in _WORD_RE.findall((m or "").lower()):
-                # drop digit-bearing tokens (mostly @usernames like name_12 /
-                # user99) so markers are actual vocabulary, not who they ping
-                if len(w) >= 2 and not any(ch.isdigit() for ch in w):
-                    c[w] += 1
-        return c
-
-    ac, bc = counts(amsgs), counts(bg)
+    ac, bc = _count_words(amsgs), _count_words(bg)
     na, nb = sum(ac.values()), sum(bc.values())
     if na == 0 or nb == 0:
         return []
