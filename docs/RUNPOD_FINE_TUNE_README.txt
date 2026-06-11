@@ -44,6 +44,19 @@ In RunPod terminal:
   python -m zipfile -e persona_sft_runpod.zip nlc_persona
   bash nlc_persona/RUN_ME_ON_RUNPOD.sh
 
+Resume after accidental Ctrl+C:
+
+  cd /workspace/nlc_persona
+  bash RUN_ME_ON_RUNPOD.sh
+
+Do not run rm -rf nlc_persona when resuming; that deletes checkpoints.
+
+Expected duration on RTX 4090:
+
+  about 2 hours after setup/tokenization for the curated pilot
+  2,580 optimizer steps
+  saves/resumes every 100 steps
+
 When it finishes, download:
 
   /workspace/nlc_persona/persona_lora_result.zip

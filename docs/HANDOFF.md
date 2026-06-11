@@ -22,8 +22,9 @@ pushed** to `github.com/LacrimaeAware/no-life-chatter` (`main`):
   directed-at-persona chance, cooldowns, and optional one-line follow-ups.
 - **Random reactions** — the bot rarely speaks up in a chatter's persona.
 
-What's NOT done yet (the work to pick up): a **Turing-test game**, fine-tuning
-pilot, and archive/general-knowledge Q&A. See "Next work" below.
+What's NOT done yet (the work to pick up): a **Turing-test game**, integrating
+the RunPod fine-tuning pilot after it finishes, and archive/general-knowledge
+Q&A. See "Next work" below.
 
 ## How to run / verify
 
@@ -159,7 +160,13 @@ pilot, and archive/general-knowledge Q&A. See "Next work" below.
    selected high-value chatters, bot accounts excluded, known alt accounts
    merged, max 5,000 examples per author. Train a LoRA using
    `docs/FINE_TUNING.md` and `scripts/train_persona_lora_unsloth.py`, then
-   compare against RAG-only.
+   compare against RAG-only. Current pilot shape: 41,278 train examples,
+   2,186 validation examples, 2,580 optimizer steps on
+   `unsloth/Qwen2.5-7B-Instruct-bnb-4bit`, LoRA rank 16, bf16 on RTX 4090,
+   prompt+completion SFT. Observed runtime reached 191/2580 steps in 7:30
+   before a manual Ctrl+C, implying roughly 1.5 to 2.25 hours for the training
+   phase including eval overhead. Current scripts save every 100 steps and
+   auto-resume from the newest `persona_lora/checkpoint-*`.
 3. **Archive/general-knowledge Q&A** — a separate `~askchat`-style route for
    questions like "do we have an emote of the bottle dog?", using archive/emote
    retrieval plus a stronger answer model. Do not solve this via fine-tuning.
@@ -187,4 +194,5 @@ See `docs/PERSONA_BOT_ROADMAP.md` (full roadmap), `docs/CHAT_ARCHIVE.md` (data
 layer + Chatterino format spec), `docs/FINE_TUNING.md` (LoRA pilot runbook),
 `docs/CHAT_PERSONALITY_RESEARCH.md` (psychometrics/personality-map plan), and
 `docs/IDEA_BANK.md` (more ideas). Private, machine-specific notes (paths,
-hardware, decisions) are in gitignored `_private/PERSONA-NOTES.md`.
+hardware, live RunPod state, and next-session handoff details) are in gitignored
+`_private/PERSONA-NOTES.md` and `_private/AI-HANDOFF-PERSONA-RUNPOD.md`.

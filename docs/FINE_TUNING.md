@@ -41,8 +41,11 @@ Manual equivalent, only if the batch file fails:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\export_persona_sft.py `
-  --min-author-messages 1000 `
-  --max-examples-per-author 8000
+  --channels thickpoo `
+  --authors earnestsinceresugmamale,gero_30,apu_wrc,forsenstares,99froxy,ebbel,satanisteen,normanbiz,bluepigman5000,bander423,crais1n,danklipse,huni4president,poggerooskii,theobr0mine `
+  --user-aliases fernardo=earnestsinceresugmamale,q0z3=earnestsinceresugmamale,danklipseofthemind=danklipse `
+  --exclude-users supibot,nightbot,potatbotat,bluepagmanbot,weirdfarts1ave `
+  --max-examples-per-author 5000
 ```
 
 The exporter writes OpenAI-style chat JSONL:
@@ -71,6 +74,30 @@ bash nlc_persona/RUN_ME_ON_RUNPOD.sh
 
 When it finishes, download `/workspace/nlc_persona/persona_lora_result.zip`.
 Then stop/terminate the pod.
+
+If training is interrupted, do **not** delete `nlc_persona` before resuming.
+The training script saves checkpoints under `/workspace/nlc_persona/persona_lora`
+every 100 optimizer steps and automatically resumes from the newest
+`checkpoint-*` directory. To resume after an interruption:
+
+```bash
+cd /workspace/nlc_persona
+bash RUN_ME_ON_RUNPOD.sh
+```
+
+If the scripts were updated after the zip was extracted, refresh only the
+scripts and keep the dataset/checkpoints:
+
+```bash
+cd /workspace/nlc_persona && python - <<'PY'
+from urllib.request import urlopen
+base = "https://raw.githubusercontent.com/LacrimaeAware/no-life-chatter/main/scripts/"
+for name in ["train_persona_lora_unsloth.py", "runpod_train_persona_lora.sh", "RUN_ME_ON_RUNPOD.sh"]:
+    print("fetching", name)
+    open(name, "wb").write(urlopen(base + name, timeout=60).read())
+PY
+bash RUN_ME_ON_RUNPOD.sh
+```
 
 ## GPU choice
 
@@ -137,16 +164,47 @@ and idle runtime can keep costing money.
 
 Use LoRA or QLoRA, not full fine-tuning.
 
-Suggested first hyperparameters:
+Current pilot hyperparameters:
 
-- epochs: 1 to 2
-- LoRA rank: 16 or 32
-- learning rate: around `2e-4` for LoRA/QLoRA
-- context length: 2048 or 4096
+- epochs: 1
+- LoRA rank: 16
+- learning rate: `2e-4`
+- context length: 2048
+- effective batch size: 16 (`batch_size=2`, `grad_accum=8`)
 - validation split: exporter default 5%
+- checkpoint/save interval: every 100 optimizer steps
+
+Observed pilot shape on an RTX 4090:
+
+- 41,278 train examples
+- 2,186 validation examples
+- 2,580 optimizer steps
+- prompt+completion training, so loss is focused on persona replies
+- bf16 precision on RTX 4090
+- observed speed at step 191: about 2.36 seconds/step including one eval
+
+Expected duration for this exact pilot is roughly 1.5 to 2.25 hours after setup
+and tokenization. Eval/checkpoint overhead makes exact ETA wobble; the progress
+bar after the first 50 to 100 steps is the best source of truth.
 
 Evaluate before spending more. If the model gets worse or starts overfitting,
 lower epochs or clean the export filters.
+
+## RunPod troubleshooting notes
+
+- `unzip: command not found`: use `python -m zipfile -e ...` as documented.
+- `evaluation_strategy` / `eval_strategy` errors: fixed in
+  `scripts/train_persona_lora_unsloth.py` by checking the installed
+  Transformers/TRL signatures.
+- `fp16` vs `bf16` Unsloth error: fixed by detecting CUDA bf16 support and using
+  bf16 on RTX 4090.
+- `.nfs... Device or resource busy` during tokenization: caused by temporary
+  multiprocessing files on RunPod Network Volume. The current wrapper puts
+  temp files under `/tmp/nlc_train_tmp` and caps TRL dataset preprocessing to
+  one worker when supported.
+- `Ctrl+C` / `KeyboardInterrupt`: training stops. If it happened before the
+  first checkpoint save, progress is lost. With current scripts, reruns resume
+  from the newest checkpoint once at least step 100 has saved.
 
 ## Safety and output
 

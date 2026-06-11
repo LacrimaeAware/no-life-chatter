@@ -14,6 +14,7 @@ import inspect
 import importlib.metadata as metadata
 import math
 import os
+import re
 
 
 def main() -> None:
@@ -31,6 +32,16 @@ def main() -> None:
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
+
+    def latest_checkpoint(path: str) -> str | None:
+        best = None
+        for name in os.listdir(path):
+            match = re.fullmatch(r"checkpoint-(\d+)", name)
+            if match:
+                step = int(match.group(1))
+                if best is None or step > best[0]:
+                    best = (step, os.path.join(path, name))
+        return best[1] if best else None
 
     import unsloth  # noqa: F401
     from unsloth import FastLanguageModel
@@ -106,7 +117,7 @@ def main() -> None:
         f"{len(data['train']):,} train examples, {len(data['validation']):,} validation examples, "
         f"effective batch {effective_batch}, about {total_steps:,} optimizer steps. "
         f"precision {'bf16' if use_bf16 else 'fp16'}, warmup {warmup_steps} steps. "
-        "Logs every 10 steps, eval every 100 steps, save every 250 steps.",
+        "Logs every 10 steps, eval every 100 steps, save every 100 steps.",
         flush=True,
     )
 
@@ -121,7 +132,7 @@ def main() -> None:
         logging_steps=10,
         logging_first_step=True,
         eval_steps=100,
-        save_steps=250,
+        save_steps=100,
         save_total_limit=2,
         optim="adamw_8bit",
         fp16=not use_bf16,
@@ -163,7 +174,10 @@ def main() -> None:
     if "max_seq_length" in trainer_params:
         trainer_kwargs["max_seq_length"] = args.max_seq_length
     trainer = SFTTrainer(**trainer_kwargs)
-    trainer.train()
+    resume_from = latest_checkpoint(args.out)
+    if resume_from:
+        print(f"Resuming from checkpoint: {resume_from}", flush=True)
+    trainer.train(resume_from_checkpoint=resume_from)
     model.save_pretrained(args.out)
     tokenizer.save_pretrained(args.out)
     print(f"Saved LoRA adapter to {args.out}")
