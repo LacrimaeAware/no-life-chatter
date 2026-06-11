@@ -10,6 +10,8 @@ Studio is a separate step after the pilot looks good.
 from __future__ import annotations
 
 import argparse
+import inspect
+import importlib.metadata as metadata
 import math
 import os
 
@@ -36,6 +38,26 @@ def main() -> None:
     import torch
     from transformers import TrainingArguments
     from trl import SFTTrainer
+    try:
+        from trl import SFTConfig
+    except Exception:
+        SFTConfig = None
+
+    def package_version(name: str) -> str:
+        try:
+            return metadata.version(name)
+        except Exception:
+            return "unknown"
+
+    print(
+        "Versions: "
+        f"torch={torch.__version__}, "
+        f"unsloth={package_version('unsloth')}, "
+        f"transformers={package_version('transformers')}, "
+        f"trl={package_version('trl')}, "
+        f"datasets={package_version('datasets')}",
+        flush=True,
+    )
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.model,
@@ -62,18 +84,18 @@ def main() -> None:
         data_files={"train": args.train, "validation": args.val},
     )
 
-    def format_batch(batch):
-        texts = [
-            tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=False,
-            )
-            for messages in batch["messages"]
-        ]
-        return {"text": texts}
+    def prompt_completion_batch(batch):
+        prompts, completions = [], []
+        for messages in batch["messages"]:
+            prompts.append(messages[:-1])
+            completions.append([messages[-1]])
+        return {"prompt": prompts, "completion": completions}
 
-    data = data.map(format_batch, batched=True, remove_columns=data["train"].column_names)
+    data = data.map(
+        prompt_completion_batch,
+        batched=True,
+        remove_columns=data["train"].column_names,
+    )
     effective_batch = max(1, args.batch_size * args.grad_accum)
     steps_per_epoch = math.ceil(len(data["train"]) / effective_batch)
     total_steps = math.ceil(steps_per_epoch * args.epochs)
@@ -108,20 +130,37 @@ def main() -> None:
         seed=1337,
         disable_tqdm=False,
     )
-    try:
-        training_args = TrainingArguments(**training_kwargs, eval_strategy="steps")
-    except TypeError:
-        training_args = TrainingArguments(**training_kwargs, evaluation_strategy="steps")
+    args_cls = SFTConfig or TrainingArguments
+    args_params = inspect.signature(args_cls).parameters
+    if "eval_strategy" in args_params:
+        training_kwargs["eval_strategy"] = "steps"
+    elif "evaluation_strategy" in args_params:
+        training_kwargs["evaluation_strategy"] = "steps"
+    if SFTConfig is not None:
+        if "max_length" in args_params:
+            training_kwargs["max_length"] = args.max_seq_length
+        if "packing" in args_params:
+            training_kwargs["packing"] = False
+        if "completion_only_loss" in args_params:
+            training_kwargs["completion_only_loss"] = True
+        if "eos_token" in args_params:
+            training_kwargs["eos_token"] = "<|im_end|>"
+    training_args = args_cls(**training_kwargs)
 
-    trainer = SFTTrainer(
+    trainer_kwargs = dict(
         model=model,
-        tokenizer=tokenizer,
         train_dataset=data["train"],
         eval_dataset=data["validation"],
-        dataset_text_field="text",
-        max_seq_length=args.max_seq_length,
         args=training_args,
     )
+    trainer_params = inspect.signature(SFTTrainer.__init__).parameters
+    if "processing_class" in trainer_params:
+        trainer_kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in trainer_params:
+        trainer_kwargs["tokenizer"] = tokenizer
+    if "max_seq_length" in trainer_params:
+        trainer_kwargs["max_seq_length"] = args.max_seq_length
+    trainer = SFTTrainer(**trainer_kwargs)
     trainer.train()
     model.save_pretrained(args.out)
     tokenizer.save_pretrained(args.out)
