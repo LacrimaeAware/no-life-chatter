@@ -254,6 +254,14 @@ _QUERY_STOPWORDS = {
     "bot", "chat", "hyper", "mimic", "persona", "twitch",
 }
 
+_QUERY_ALIASES = {
+    "world of warcraft": ["wow"],
+    "world warcraft": ["wow"],
+    "league of legends": ["league"],
+    "counter strike": ["counterstrike"],
+    "counter-strike": ["counterstrike"],
+}
+
 
 def _fts_query(text: str, max_terms: int = 12, exclude_terms=None) -> str | None:
     """Build a safe, broad FTS query from natural chat text.
@@ -273,6 +281,14 @@ def _fts_query(text: str, max_terms: int = 12, exclude_terms=None) -> str | None
             continue
         counts[term] += 1
         first_seen.setdefault(term, len(first_seen))
+    lowered = (text or "").lower()
+    for phrase, aliases in _QUERY_ALIASES.items():
+        if phrase in lowered:
+            for alias in aliases:
+                if alias not in exclude_terms:
+                    counts[alias] += 1
+                    first_seen.setdefault(alias, len(first_seen))
+
     if not counts:
         return None
 
