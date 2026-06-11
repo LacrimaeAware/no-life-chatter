@@ -23,7 +23,7 @@
 
   <main id="top">
     <section class="hero" aria-labelledby="hero-title">
-      <canvas id="hero-network" class="hero-canvas" aria-label="Animated anonymized chat network"></canvas>
+      <canvas id="hero-network" class="hero-canvas" aria-label="Animated chat network"></canvas>
       <div class="hero-shade" aria-hidden="true"></div>
       <div class="hero-content">
         <p class="eyebrow">Local archive. Live chat. Persona lab.</p>
@@ -47,8 +47,8 @@
           <span class="metric-label">archive search and persona context</span>
         </div>
         <div>
-          <span class="metric-value">private</span>
-          <span class="metric-label">no public logs, names, quotes, or tokens</span>
+          <span class="metric-value">retrieval</span>
+          <span class="metric-label">topic matches, recent context, voice exemplars</span>
         </div>
         <div>
           <span class="metric-value">modular</span>
@@ -66,10 +66,9 @@
         <p class="eyebrow">Runtime shape</p>
         <h2>From one chat line to one careful reply</h2>
         <p>
-          The public repo shows the system architecture without publishing the
-          private archive. Commands share the same local database, while LLM
-          features can stay pointed at LM Studio or any OpenAI-compatible local
-          endpoint.
+          A single local archive feeds search, retrieval, stylometry, and persona
+          context. The generation layer can point at LM Studio or any
+          OpenAI-compatible endpoint.
         </p>
       </div>
 
@@ -99,21 +98,20 @@
 
     <section class="section visual-section" id="archive-map">
       <div class="section-intro">
-        <p class="eyebrow">Anonymized visualization</p>
-        <h2>A map of voices, not a leak of names</h2>
+        <p class="eyebrow">Voice map</p>
+        <h2>A graph of nearby voices</h2>
         <p>
-          This network is a representative, anonymized sketch of what the archive
-          analysis is for: finding nearby voices, active clusters, and odd edges
-          worth inspecting. Labels and values are rounded placeholders.
+          The archive can be explored as a set of clusters: nearby voices, active
+          posters, recurring topics, and strange edges worth inspecting.
         </p>
       </div>
 
       <div class="visual-grid">
         <figure class="canvas-panel">
-          <canvas id="cluster-map" width="960" height="640" aria-label="Anonymized persona network graph"></canvas>
+          <canvas id="cluster-map" width="960" height="640" aria-label="Persona network graph"></canvas>
           <figcaption>
             Node size hints at activity. Edge strength hints at shared topics,
-            markers, or embedding similarity. Public labels are anonymized.
+            markers, or embedding similarity.
           </figcaption>
         </figure>
 
@@ -176,12 +174,11 @@
 
     <section class="section examples-section" id="examples">
       <div class="section-intro">
-        <p class="eyebrow">Sanitized examples</p>
-        <h2>Commands without publishing private chat</h2>
+        <p class="eyebrow">Command examples</p>
+        <h2>Archive tools in motion</h2>
         <p>
-          The real bot works against real local logs. These examples use fake
-          names and invented lines so the public page can show behavior without
-          exposing the archive.
+          Search, persona, and similarity commands share the same archive, so a
+          small chat prompt can branch into quotes, context, or voice comparisons.
         </p>
       </div>
 
@@ -194,24 +191,6 @@ bot: [persona] chatter_04: it works but the vibes are suspicious</code></pre>
 bot: closest voices: chatter_06, chatter_22, chatter_31</code></pre>
         <pre><code>user_02: ~regex anyone "\\bseason [0-9]+\\b"
 bot: found matches across the local archive.</code></pre>
-      </div>
-    </section>
-
-    <section class="section privacy-section">
-      <div class="section-intro">
-        <p class="eyebrow">Public boundary</p>
-        <h2>The page is public. The archive is not.</h2>
-        <p>
-          GitHub Pages only gets code, docs, and sanitized visuals. Local config,
-          tokens, databases, private logs, rosters, smoke tests, and handoff notes
-          that contain real usernames stay ignored or private.
-        </p>
-      </div>
-      <div class="privacy-checks">
-        <span>no raw logs</span>
-        <span>no real quotes</span>
-        <span>no channel roster</span>
-        <span>no API secrets</span>
       </div>
     </section>
   </main>

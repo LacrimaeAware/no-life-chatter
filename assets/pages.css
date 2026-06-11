@@ -413,25 +413,6 @@ code {
   font: 14px/1.5 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
 
-.privacy-section {
-  background: #fffaf1;
-}
-
-.privacy-checks {
-  width: min(1040px, 100%);
-  margin: 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.privacy-checks span {
-  border: 1px solid var(--line);
-  padding: 10px 12px;
-  background: #fffdf8;
-  font-weight: 700;
-}
-
 .site-footer {
   display: flex;
   flex-wrap: wrap;
