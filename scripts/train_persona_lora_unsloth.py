@@ -10,6 +10,7 @@ Studio is a separate step after the pilot looks good.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 
 
@@ -72,6 +73,41 @@ def main() -> None:
         return {"text": texts}
 
     data = data.map(format_batch, batched=True, remove_columns=data["train"].column_names)
+    effective_batch = max(1, args.batch_size * args.grad_accum)
+    steps_per_epoch = math.ceil(len(data["train"]) / effective_batch)
+    total_steps = math.ceil(steps_per_epoch * args.epochs)
+    print(
+        "Training plan: "
+        f"{len(data['train']):,} train examples, {len(data['validation']):,} validation examples, "
+        f"effective batch {effective_batch}, about {total_steps:,} optimizer steps. "
+        "Logs every 10 steps, eval every 100 steps, save every 250 steps.",
+        flush=True,
+    )
+
+    training_kwargs = dict(
+        output_dir=args.out,
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.grad_accum,
+        num_train_epochs=args.epochs,
+        learning_rate=args.lr,
+        warmup_ratio=0.03,
+        lr_scheduler_type="cosine",
+        logging_steps=10,
+        logging_first_step=True,
+        eval_steps=100,
+        save_steps=250,
+        save_total_limit=2,
+        optim="adamw_8bit",
+        fp16=True,
+        bf16=False,
+        report_to="none",
+        seed=1337,
+        disable_tqdm=False,
+    )
+    try:
+        training_args = TrainingArguments(**training_kwargs, eval_strategy="steps")
+    except TypeError:
+        training_args = TrainingArguments(**training_kwargs, evaluation_strategy="steps")
 
     trainer = SFTTrainer(
         model=model,
@@ -80,25 +116,7 @@ def main() -> None:
         eval_dataset=data["validation"],
         dataset_text_field="text",
         max_seq_length=args.max_seq_length,
-        args=TrainingArguments(
-            output_dir=args.out,
-            per_device_train_batch_size=args.batch_size,
-            gradient_accumulation_steps=args.grad_accum,
-            num_train_epochs=args.epochs,
-            learning_rate=args.lr,
-            warmup_ratio=0.03,
-            lr_scheduler_type="cosine",
-            logging_steps=10,
-            evaluation_strategy="steps",
-            eval_steps=100,
-            save_steps=250,
-            save_total_limit=2,
-            optim="adamw_8bit",
-            fp16=True,
-            bf16=False,
-            report_to="none",
-            seed=1337,
-        ),
+        args=training_args,
     )
     trainer.train()
     model.save_pretrained(args.out)
