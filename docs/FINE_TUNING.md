@@ -31,20 +31,21 @@ Outputs:
 
 These files contain real chat and are gitignored. Do not commit them.
 
-The batch file currently exports a curated ThickPoo-focused pilot:
-`thickpoo` channel only, selected high-value chatters, known same-person aliases
-merged, bot accounts excluded, and maximum 5,000 training examples per author.
-That is the recommended first real pilot: focused enough to improve the people
-we care about, but still small enough to run on a single RTX 4090.
+The pilot launcher (kept privately in `_private/finetune/`, since it names real
+channels and chatters) exports a curated single-channel pilot: one channel,
+selected high-value chatters, known same-person aliases merged, bot accounts
+excluded, and maximum 5,000 training examples per author. That is the
+recommended first real pilot: focused enough to improve the people you care
+about, but still small enough to run on a single RTX 4090.
 
-Manual equivalent, only if the batch file fails:
+Manual equivalent (substitute your own channel/users):
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\export_persona_sft.py `
-  --channels thickpoo `
-  --authors earnestsinceresugmamale,gero_30,apu_wrc,forsenstares,99froxy,ebbel,satanisteen,normanbiz,bluepigman5000,bander423,crais1n,danklipse,huni4president,poggerooskii,theobr0mine `
-  --user-aliases fernardo=earnestsinceresugmamale,q0z3=earnestsinceresugmamale,danklipseofthemind=danklipse `
-  --exclude-users supibot,nightbot,potatbotat,bluepagmanbot,weirdfarts1ave `
+  --channels yourchannel `
+  --authors user1,user2,user3 `
+  --user-aliases altaccount=user1 `
+  --exclude-users nightbot,yourbotaccount `
   --max-examples-per-author 5000
 ```
 

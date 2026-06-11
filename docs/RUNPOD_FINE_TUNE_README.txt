@@ -3,11 +3,12 @@ NoLifeChatter RunPod fine-tuning pilot
 
 Use this after double-clicking:
 
-  4-export-finetune-pilot.bat
+  _private\finetune\4-export-finetune-pilot.bat
+  (kept private because it names real channels/chatters)
 
-That creates a curated ThickPoo-focused pilot:
+That creates a curated single-channel pilot:
 
-  thickpoo channel only
+  one pilot channel only
   known alt accounts merged
   bot accounts excluded
   max 5,000 examples per author

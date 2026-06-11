@@ -167,7 +167,8 @@ class MessageService:
 
     async def _persona_line(self, target, channel, is_clean, persona_llm):
         cand = await persona_llm.generate(
-            target, channel, mode="normal", copy_strategy="drop"
+            target, channel, mode="normal", copy_strategy="drop",
+            invoked_by="ambient-reaction",
         )
         if cand and len(cand.split()) >= 2 and is_clean(cand):
             return cand

@@ -1,7 +1,7 @@
 """Preview the LLM persona retrieval step without calling the model.
 
     python scripts/persona_rag_preview.py <user> "topic or message"
-    python scripts/persona_rag_preview.py <user> --channel thickpoo
+    python scripts/persona_rag_preview.py <user> --channel yourchannel
 
 This is a local interpretability/debug tool. It prints which author keys are
 being searched, how many random signature vs. relevant examples were selected,

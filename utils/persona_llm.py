@@ -12,13 +12,37 @@ Runs against any OpenAI-compatible endpoint (services/llm.py) — LM Studio's
 local server by default, so edgy content stays on the machine.
 """
 
+import json
+import logging
+import os
 import random
 import re
-import logging
+import time
 
 import config
 from services import llm
 from utils import chat_archive
+
+
+def log_event(event: dict) -> None:
+    """Append one persona event to the private JSONL log (never raises).
+
+    Every ~persona/~hyper/reaction generation gets recorded — the evidence
+    that was fed, every candidate with its rejection reason, and the final
+    line — so quality problems can be diagnosed from real usage instead of
+    hand-built smoke cases. The file lives in gitignored data/unsynced/.
+    """
+    if not getattr(config, "PERSONA_LOG", True):
+        return
+    try:
+        path = getattr(config, "PERSONA_LOG_FILE",
+                       os.path.join("data", "unsynced", "persona_logs.jsonl"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        event.setdefault("ts", time.strftime("%Y-%m-%d %H:%M:%S"))
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logging.debug(f"persona log write failed: {e}")
 
 _exemplar_cache = {}
 _archive_line_cache = {}
@@ -361,7 +385,9 @@ async def generate(author: str, channel: str, user_message: str = None,
                    mode: str = "normal", exemplar_count: int = None,
                    context_count: int = None,
                    copy_strategy: str = "drop",
-                   candidates: int = None) -> str | None:
+                   candidates: int = None,
+                   invoked_by: str = None) -> str | None:
+    t0 = time.time()
     exemplar_count = exemplar_count or config.LLM_EXEMPLARS
     context_count = context_count or config.LLM_CONTEXT
     recent = chat_archive.latest(channel, context_count)
@@ -374,7 +400,22 @@ async def generate(author: str, channel: str, user_message: str = None,
         author, _retrieval_text(recent, user_message), n=exemplar_count,
         exclude_terms=ctx_names,
     )
+    event = {
+        "author": chat_archive.normalize_author(author),
+        "channel": chat_archive.normalize_channel(channel),
+        "mode": mode,
+        "invoked_by": invoked_by,
+        "user_message": user_message,
+        "context_tail": [f"{a}: {c}" for _, a, c in ctx_rows[-6:]],
+        "n_signature": len(signature),
+        "relevant": relevant,
+        "snippets": snippets,
+        "candidates": [],
+    }
     if not signature and not relevant and not snippets:
+        event["final"] = None
+        event["outcome"] = "no evidence (no archived messages?)"
+        log_event(event)
         return None
 
     exemplar_sections = []
@@ -434,6 +475,7 @@ async def generate(author: str, channel: str, user_message: str = None,
     for _ in range(n_candidates):
         raw = await llm.chat(messages, max_tokens=160, temperature=temperature)
         if not raw:
+            event["candidates"].append({"text": None, "status": "llm failed/timeout"})
             continue
         out = _clean_output(raw, author)
         copied_example = _copied_source(author, out, all_examples)
@@ -442,6 +484,8 @@ async def generate(author: str, channel: str, user_message: str = None,
                 "Rejected copied persona output for %s: %r copied from %r",
                 author, out, copied_example,
             )
+            event["candidates"].append(
+                {"text": out, "status": "rejected", "reason": f"copy of: {copied_example}"})
             if first_copy is None:
                 first_copy = (out, copied_example)
             continue
@@ -449,12 +493,19 @@ async def generate(author: str, channel: str, user_message: str = None,
         if issue:
             logging.info("Rejected persona candidate for %s (%s): %r",
                          author, issue, out)
+            event["candidates"].append(
+                {"text": out, "status": "rejected", "reason": issue})
             continue
         score = _candidate_score(out, engage_terms)
+        event["candidates"].append({"text": out, "status": "valid", "score": score})
         if score > best_score:
             best, best_score = out, score
 
+    event["elapsed_ms"] = int((time.time() - t0) * 1000)
     if best:
+        event["final"] = best
+        event["outcome"] = "ok"
+        log_event(event)
         return best
     if first_copy:
         out, copied_example = first_copy
@@ -464,13 +515,23 @@ async def generate(author: str, channel: str, user_message: str = None,
                 signature, relevant, ctx,
             )
             if repaired:
+                event["final"] = repaired
+                event["outcome"] = "ok (copy repaired)"
+                log_event(event)
                 return repaired
+            event["final"] = None
+            event["outcome"] = "copied line; repair failed"
+            log_event(event)
             raise _CopiedPersonaOutput
+    event["final"] = None
+    event["outcome"] = "no valid candidate"
+    log_event(event)
     return None
 
 
 async def generate_with_retry(author: str, channel: str, user_message: str = None,
-                              mode: str = "normal") -> str | None:
+                              mode: str = "normal",
+                              invoked_by: str = None) -> str | None:
     """Generate once with the full prompt, then retry compactly on failure.
 
     Local LM Studio can time out on heavy prompts, especially when two commands
@@ -480,7 +541,8 @@ async def generate_with_retry(author: str, channel: str, user_message: str = Non
     _set_rejection(None)
     try:
         out = await generate(
-            author, channel, user_message, mode=mode, copy_strategy="repair"
+            author, channel, user_message, mode=mode, copy_strategy="repair",
+            invoked_by=invoked_by,
         )
     except _CopiedPersonaOutput:
         _set_rejection("model copied an archived line and the cheap repair failed")
@@ -503,4 +565,5 @@ async def generate_with_retry(author: str, channel: str, user_message: str = Non
         exemplar_count=retry_exemplars,
         context_count=retry_context,
         copy_strategy="drop",
+        invoked_by=invoked_by,
     )

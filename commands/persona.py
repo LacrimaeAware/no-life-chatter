@@ -24,7 +24,9 @@ async def _run(bot, message, params, mode):
 
     user = params[0].lstrip("@")
     said = " ".join(params[1:]) or None
-    out = await persona_llm.generate_with_retry(user, message.channel.name, said, mode=mode)
+    invoker = message.author.name if message.author else None
+    out = await persona_llm.generate_with_retry(
+        user, message.channel.name, said, mode=mode, invoked_by=invoker)
     if not out:
         history_count = len(chat_archive.messages_for(user))
         rejection = persona_llm.last_rejection()
@@ -40,8 +42,20 @@ async def _run(bot, message, params, mode):
         return
 
     if not is_clean(out):
-        out = await persona_llm.generate_with_retry(user, message.channel.name, said, mode=mode)
+        persona_llm.log_event({
+            "type": "output_filtered", "author": user, "mode": mode,
+            "channel": message.channel.name, "invoked_by": invoker,
+            "user_message": said, "text": out,
+        })
+        out = await persona_llm.generate_with_retry(
+            user, message.channel.name, said, mode=mode, invoked_by=invoker)
         if not out or not is_clean(out):
+            if out:
+                persona_llm.log_event({
+                    "type": "output_filtered", "author": user, "mode": mode,
+                    "channel": message.channel.name, "invoked_by": invoker,
+                    "user_message": said, "text": out,
+                })
             await message.channel.send(f"({user}-bot said something I won't repeat - try again.)")
             return
 

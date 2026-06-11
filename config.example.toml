@@ -133,6 +133,11 @@ reaction_use_llm = true
 # Keep the actual list in a gitignored file (one term per line, '#' comments);
 # if the file is missing, nothing is filtered.
 blocklist_file = "data/unsynced/blocklist.txt"
+# Log every persona generation (evidence fed, candidates + rejection reasons,
+# final output, timing) to a private JSONL — invaluable for diagnosing voice
+# quality from real usage. Lives in a gitignored directory.
+log_enabled = true
+log_file = "data/unsynced/persona_logs.jsonl"
 
 [llm]
 # Persona engine backend — any OpenAI-compatible chat endpoint. LM Studio's

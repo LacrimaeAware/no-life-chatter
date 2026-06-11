@@ -198,6 +198,10 @@ LLM_SNIPPET_HITS: int = int(_llm.get("snippet_hits", 8))
 # chatters' lines are rejected). The big prompt is server-cached, so extra
 # samples are much cheaper than the first.
 LLM_CANDIDATES: int = int(_llm.get("candidates", 2))
+# Private JSONL log of every persona generation: evidence fed, all candidates
+# with rejection reasons, final output, timing. Lives in a gitignored dir.
+PERSONA_LOG: bool = bool(_pe.get("log_enabled", True))
+PERSONA_LOG_FILE: str = _resolve(_pe.get("log_file", "data/unsynced/persona_logs.jsonl"))
 # Ambient random reactions are LLM-only. Markov stays behind ~mimic/~markov.
 REACTION_USE_LLM: bool = bool(_pe.get("reaction_use_llm", True))
 
