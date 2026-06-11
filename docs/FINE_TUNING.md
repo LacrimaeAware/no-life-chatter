@@ -77,8 +77,11 @@ Start with an 8B instruct model and LoRA/QLoRA.
 
 - Pilot: RTX 4090 / RTX 3090 / A5000 class GPU, 24 GB VRAM.
 - More comfortable/faster: A100 40/80 GB or H100.
-- Base model target: Llama 3.1 8B Instruct or another 7B-9B model that runs
-  well locally after quantization.
+- Pilot base model target: `unsloth/Qwen2.5-7B-Instruct-bnb-4bit`.
+  This avoids Hugging Face gated-model login friction for the first run and
+  still has GGUF/local-runtime paths for later testing.
+- Later comparison target: Llama 3.1/3.2 8B Instruct or another 7B-9B model
+  that runs well locally after quantization.
 
 Do not start with a huge 70B model. The user's local RX 5700 XT is best suited
 to running an 8B-ish quantized model in LM Studio, so a giant trained model
@@ -102,7 +105,7 @@ Use this for the first paid run:
 11. Deploy the pod.
 12. Open JupyterLab or Web Terminal.
 
-Why this exact choice: RTX 4090 has enough VRAM for an 8B QLoRA run, is much
+Why this exact choice: RTX 4090 has enough VRAM for a 7B/8B QLoRA run, is much
 cheaper than A100/H100, and trains the same kind of LoRA that can later run
 locally after merge/quantization.
 

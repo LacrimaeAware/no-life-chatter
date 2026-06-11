@@ -24,6 +24,12 @@ RunPod setup:
 11. Open JupyterLab
 12. Upload persona_sft_runpod.zip into /workspace/
 
+Pilot model:
+
+  unsloth/Qwen2.5-7B-Instruct-bnb-4bit
+
+This avoids Hugging Face gated-model login friction for the first paid run.
+
 In RunPod terminal:
 
   cd /workspace

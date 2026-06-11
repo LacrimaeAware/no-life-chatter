@@ -18,7 +18,7 @@ def main() -> None:
     ap.add_argument("--train", default="/workspace/nlc_persona/persona_train.jsonl")
     ap.add_argument("--val", default="/workspace/nlc_persona/persona_val.jsonl")
     ap.add_argument("--out", default="/workspace/nlc_persona/persona_lora")
-    ap.add_argument("--model", default="unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit")
+    ap.add_argument("--model", default="unsloth/Qwen2.5-7B-Instruct-bnb-4bit")
     ap.add_argument("--max-seq-length", type=int, default=2048)
     ap.add_argument("--epochs", type=float, default=1.0)
     ap.add_argument("--batch-size", type=int, default=2)
