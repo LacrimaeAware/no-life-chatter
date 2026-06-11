@@ -204,7 +204,8 @@ Other options if you'd rather self-host: **LibreTranslate** (open source) or
 
 ## Roadmap & ideas
 
-Design docs live in [`docs/`](docs/): a searchable
+Design docs live in [`docs/`](docs/) — start with [HANDOFF.md](docs/HANDOFF.md)
+for the current state of the persona/archive work. Also: a searchable
 [chat archive](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 over Chatterino logs and
 live chat — built; it powers the `~said`/`~quote`/`~firstseen`/`~chatstats`
 commands), a [persona bot roadmap](docs/PERSONA_BOT_ROADMAP.md) (per-user chat

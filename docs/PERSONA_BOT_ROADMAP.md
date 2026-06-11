@@ -6,9 +6,20 @@ emulates a chatter's tendencies, vocabulary and rhythms, and a *hyperbolic*
 one tuned for comedy — plus rare spontaneous in-character reactions, playful
 psychometrics, and trivia.
 
-**Status: phases 0–1 built** (the archive and its query commands are live);
-phases 2–5 are roadmap. Companion docs: [CHAT_ARCHIVE.md](CHAT_ARCHIVE.md)
-(the data layer), [IDEA_BANK.md](IDEA_BANK.md) (smaller ideas, parked things).
+**Status (2026-06-11): phases 0–3 built and live** — archive + query commands,
+Markov `~mimic`, LLM `~persona`/`~hyper` (local LM Studio), and random
+reactions. Phases 3.5–5 (retrieval/RAG, fine-tune) + the new ideas
+(reply-frequency, Turing-test game) are next. **For a full pick-up-and-continue
+brief, read [HANDOFF.md](HANDOFF.md).** Companion docs:
+[CHAT_ARCHIVE.md](CHAT_ARCHIVE.md) (data layer + Chatterino format),
+[IDEA_BANK.md](IDEA_BANK.md) (ideas, incl. the Turing game & reply-frequency).
+
+Two clarifications that came up: (a) **exemplars are sampled RANDOMLY across a
+user's whole history**, not "recent only" — recent messages are used solely as
+the live conversation context. (b) **Personas never merge** — only the target
+author's own messages go in; v1 uses a plain random sample, and *retrieval*
+(picking the most-relevant of their full history per reply) is the next
+accuracy upgrade.
 
 ## Feasibility verdict
 

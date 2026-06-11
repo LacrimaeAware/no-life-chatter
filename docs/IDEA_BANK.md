@@ -30,6 +30,50 @@ Sketch when picked up: `services/letterboxd.py` (RSS fetch + parse, cached
 ~15 min), `~lb <user>` command, optional "new diary entry" announcements for
 registered users. LLM not required.
 
+## "Real or AI?" — Turing-test game (wanted, high priority)
+
+A guessing game, and the chat literally invented it live (earnest: *"ok turing
+test, was that a message i wrote or ai generated"*). Command e.g.
+`~realorai [user]`:
+
+1. Pick a chatter (named, or random recent regular).
+2. Coin-flip: either **pull a real line** from their archive, or **generate** a
+   persona line (`persona_llm.generate`).
+3. Post it as a quoted line; chat guesses "real" or "AI"; first/most correct
+   wins; then reveal.
+
+The whole game is in the **heuristics that pick the line** — a boring quote
+ruins it:
+- **Skip** single emotes, 1-word lines, pure links/mentions, and ultra-short
+  fragments (no fun to guess).
+- **Skip** very long / hyper-specific lines (too identifiable, or obviously
+  generated).
+- **Prefer** lines that "make a statement" — declarative, has a verb, a real
+  opinion or claim (`re` heuristic on the real pull; instruct the generator the
+  same way). "Legavish is stating a fact"-energy, not a stray reaction.
+- Keep a scoreboard table (SQLite) for points.
+
+Both halves reuse what's built: real pull = `chat_archive` query with the
+length/shape filter; AI half = the persona engine. Needs only the picker
+heuristics + a scoreboard.
+
+## Organic reply-frequency (conversation/reaction refinement — wanted)
+
+Right now reactions fire on a flat per-message probability and `~persona`
+replies whenever invoked. A real person in a 5-way conversation doesn't reply to
+every line — they answer what's **directed at them** or what continues a thread
+they're already in. Make "how often it responds" a real parameter and bias it:
+
+- Detect **directed-at-persona**: the message @-mentions the persona, says their
+  name, or is a direct reply in a thread the persona was just in.
+- Response = `directed?` (high chance) vs `ambient?` (low chance) + a cooldown,
+  instead of uniform random.
+- Optional: a lightweight "is this a conversational opening" check so it jumps in
+  on questions/hot-takes more than on one-word spam.
+
+This generalizes the current `reaction_chance`; the autonomous "bot hangs out in
+chat as personas" mode becomes far more natural.
+
 ## Trivia & games
 
 - **Who-said-it** — post a real archive quote, chat guesses the author,
