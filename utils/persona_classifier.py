@@ -114,7 +114,14 @@ def train(authors=None, per_author=3000, test_frac=0.1, seed=1337,
         if p == y:
             per_author[y][0] += 1
 
-    model = {"pipe": pipe, "authors": list(pipe.classes_)}
+    # Preserve non-classifier keys (voice profiles, prevalence) — retraining
+    # the who-said pipe must not wipe the ~markers/~like data living in the
+    # same pickle.
+    try:
+        model = load()
+    except FileNotFoundError:
+        model = {}
+    model.update({"pipe": pipe, "authors": list(pipe.classes_)})
     os.makedirs(os.path.dirname(config.CLASSIFIER_FILE), exist_ok=True)
     with open(config.CLASSIFIER_FILE, "wb") as fh:
         pickle.dump(model, fh)

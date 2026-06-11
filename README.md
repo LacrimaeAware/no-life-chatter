@@ -118,7 +118,8 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~markers <user> [chat=] [year=]` | anyone | A chatter's voice profile — favorite words + word-pairs vs the average chatter. Scoped to the current chat by default. |
 | `~like <user> [chat=] [year=]` | anyone | Who shares their distinctive voice, with the shared markers as evidence — also a decent alt-account detector. |
 | `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |
-| `~persona <user> [msg]` | anyone | Talk to an AI persona of a chatter (local LLM, context-aware). |
+| `~persona <user> [msg] [model=x]` | anyone | Talk to an AI persona of a chatter (local LLM, context-aware). `model=` picks a configured model shortcut. |
+| `~vibes <user>` | anyone | Semantic twins — embedding-space similarity (same topics/energy, no shared words needed). |
 | `~hyper <user> [msg]` | anyone | Same, but their traits exaggerated for comedy. |
 | `~autotl` | admin | Toggle auto-translate for yourself. |
 | `~setlang <LANG>` | admin | Set your translation target language (e.g. `EN`). |

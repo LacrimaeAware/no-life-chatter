@@ -22,11 +22,24 @@ async def _run(bot, message, params, mode):
         await message.channel.send(f"Usage: ~{'hyper' if mode=='hyper' else 'persona'} <user> [message]")
         return
 
+    # model=lora / model=llama (or a full LM Studio id) forces the model
+    override = None
+    kept = []
+    for p in params:
+        if p.lower().startswith("model="):
+            override = persona_llm.resolve_model(p.split("=", 1)[1])
+        else:
+            kept.append(p)
+    params = kept
+    if not params:
+        await message.channel.send(f"Usage: ~{'hyper' if mode=='hyper' else 'persona'} <user> [message] [model=lora]")
+        return
     user = params[0].lstrip("@")
     said = " ".join(params[1:]) or None
     invoker = message.author.name if message.author else None
     out = await persona_llm.generate_with_retry(
-        user, message.channel.name, said, mode=mode, invoked_by=invoker)
+        user, message.channel.name, said, mode=mode, invoked_by=invoker,
+        model_override=override)
     if not out:
         history_count = len(chat_archive.messages_for(user))
         rejection = persona_llm.last_rejection()
@@ -48,7 +61,8 @@ async def _run(bot, message, params, mode):
             "user_message": said, "text": out,
         })
         out = await persona_llm.generate_with_retry(
-            user, message.channel.name, said, mode=mode, invoked_by=invoker)
+            user, message.channel.name, said, mode=mode, invoked_by=invoker,
+            model_override=override)
         if not out or not is_clean(out):
             if out:
                 persona_llm.log_event({

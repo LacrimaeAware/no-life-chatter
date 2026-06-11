@@ -295,10 +295,26 @@ def last_model_tag() -> str | None:
     return _last_model_tag
 
 
-def _roll_ab_model(invoked_by: str | None) -> str | None:
-    """Pick a model for this generation when live A/B is configured.
-    The compare script drives models explicitly, so it never rolls."""
+def resolve_model(name: str) -> str | None:
+    """Resolve a user-supplied model= value: a configured shortcut (llama/lora),
+    or a real id passed through. None if blank."""
+    if not name:
+        return None
+    name = name.strip()
+    return getattr(config, "LLM_MODEL_SHORTCUTS", {}).get(name.lower(), name)
+
+
+def _roll_ab_model(invoked_by: str | None, override: str = None) -> str | None:
+    """Pick a model for this generation: an explicit override (model= in the
+    command) wins; otherwise the live A/B roll when configured. The compare
+    script drives models explicitly, so it never rolls."""
     global _last_model_tag
+    if override:
+        low = override.lower()
+        _last_model_tag = ("lora" if "lora" in low
+                           else "llama" if "llama" in low
+                           else low.split("/")[-1][:10])
+        return override
     pool = getattr(config, "LLM_AB_MODELS", None)
     if not pool or invoked_by == "compare":
         _last_model_tag = None
@@ -417,7 +433,8 @@ async def generate(author: str, channel: str, user_message: str = None,
                    context_count: int = None,
                    copy_strategy: str = "drop",
                    candidates: int = None,
-                   invoked_by: str = None) -> str | None:
+                   invoked_by: str = None,
+                   model_override: str = None) -> str | None:
     t0 = time.time()
     exemplar_count = exemplar_count or config.LLM_EXEMPLARS
     context_count = context_count or config.LLM_CONTEXT
@@ -431,7 +448,7 @@ async def generate(author: str, channel: str, user_message: str = None,
         author, _retrieval_text(recent, user_message), n=exemplar_count,
         exclude_terms=ctx_names,
     )
-    ab_model = _roll_ab_model(invoked_by)
+    ab_model = _roll_ab_model(invoked_by, model_override)
     event = {
         "author": chat_archive.normalize_author(author),
         "channel": chat_archive.normalize_channel(channel),
@@ -565,7 +582,8 @@ async def generate(author: str, channel: str, user_message: str = None,
 
 async def generate_with_retry(author: str, channel: str, user_message: str = None,
                               mode: str = "normal",
-                              invoked_by: str = None) -> str | None:
+                              invoked_by: str = None,
+                              model_override: str = None) -> str | None:
     """Generate once with the full prompt, then retry compactly on failure.
 
     Local LM Studio can time out on heavy prompts, especially when two commands
@@ -576,7 +594,7 @@ async def generate_with_retry(author: str, channel: str, user_message: str = Non
     try:
         out = await generate(
             author, channel, user_message, mode=mode, copy_strategy="repair",
-            invoked_by=invoked_by,
+            invoked_by=invoked_by, model_override=model_override,
         )
     except _CopiedPersonaOutput:
         _set_rejection("model copied an archived line and the cheap repair failed")
@@ -600,4 +618,5 @@ async def generate_with_retry(author: str, channel: str, user_message: str = Non
         context_count=retry_context,
         copy_strategy="drop",
         invoked_by=invoked_by,
+        model_override=model_override,
     )

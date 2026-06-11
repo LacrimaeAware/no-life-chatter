@@ -5,6 +5,47 @@ behavior, and persona dimensions. This is not a clinical or diagnostic system.
 The useful version is a private research/art tool first, with public output only
 after consent and careful anonymization.
 
+## Research questions (2026-06 — what we actually want to know)
+
+The token-statistics era (log-odds markers, TF-IDF stylometry) is built and
+live; these are the questions it raised. Most need embeddings (a local
+embedding model is already served next to the chat models) because they're
+about MEANING, where token overlap is structurally blind.
+
+1. **Style vs topic vs language.** A bilingual chatter's strongest "marker" is
+   their other language; a person's hobby dominates their vocabulary. Can we
+   factor a chatter into independent style / topic / language components, so
+   "who writes like X" stops conflating "who also speaks German"? (Embedding
+   spaces make language a direction that can be projected out; token stats
+   can't.)
+2. **First-order words vs second-order traits.** Two people never share a
+   single catchphrase yet read as the same KIND of person (both contrarian,
+   both sincere-poster, both doomer). Define trait axes by embedding example
+   sentences for each pole, project chatters onto them — do the axes recover
+   what chat intuitively knows? Which traits are even recoverable from text?
+3. **Alt detection, properly scored.** Token profiles already surface alts
+   with shared-catchphrase evidence. Build a labeled set (known alts from
+   config aliases), measure precision/recall of token-similarity vs
+   embedding-similarity vs both. Which finds alts that changed their
+   vocabulary on the new account?
+4. **Temporal drift.** "My markers are polluted by what I spammed 5 years
+   ago" — measure how much a person's profile moves per year. Is voice
+   stable while topics churn? Do people converge on a community's voice the
+   longer they stay (and can we measure who assimilates vs who stays
+   distinct)?
+5. **Community fingerprints.** The same person scoped to two channels yields
+   two visibly different profiles. How much of a person is portable vs
+   channel-induced? Does each channel have an "accent" everyone there picks up?
+6. **Personality clusters/maps.** Cluster person-vectors; do the clusters
+   match the social groups, or cut across them (the interesting case)? A 2D
+   map of the community is the flagship deliverable — people love seeing
+   where they land.
+7. **The judge problem.** The authorship classifier doubles as a persona
+   metric ("does the generated line read as them"), but it rewards lexical
+   tics, so an unreactive model that spams catchphrases can score well.
+   Does an embedding-based judge (semantic similarity to their real replies
+   in similar moments) track human funniness judgments better?
+
 ## What this is trying to measure
 
 The user is interested in whether high-volume chat logs can reveal stable,
