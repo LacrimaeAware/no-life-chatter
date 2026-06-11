@@ -1,10 +1,9 @@
-from utils.persona_classifier import classify
 from utils.chat_archive import recent_authors
+from utils.persona_classifier import classify
 
 description = (
-    "Guess which chatter who's HERE is most likely to have said a line (works "
-    "on novel sentences, not just real quotes). Ranks only people active in "
-    "this channel; add 'anyone' to rank across the whole archive.\n"
+    "Guess which chatter who's here is most likely to have said a line. "
+    "Ranks only people active in this channel; add 'anyone' for the whole archive.\n"
     "  ~whosaid <sentence>   |   ~whosaid anyone <sentence>"
 )
 
@@ -21,10 +20,9 @@ async def handle_whosaid(bot, message, params):
     if anyone:
         ranked, scope = classify(text, top_k=3), "anyone"
     else:
-        # Only consider people active in THIS chat, renormalized among them.
         present = recent_authors(message.channel.name, scan=1500)
         ranked, scope = classify(text, top_k=3, restrict_to=present), "in chat"
-        if not ranked:  # nobody currently here is in the classifier
+        if not ranked:
             ranked, scope = classify(text, top_k=3), "anyone"
 
     if not ranked:
@@ -34,4 +32,4 @@ async def handle_whosaid(bot, message, params):
         )
         return
     parts = [f"{author} ({prob:.0%})" for author, prob in ranked]
-    await message.channel.send(f"🎯 sounds most like ({scope}) " + " · ".join(parts))
+    await message.channel.send(f"Sounds most like ({scope}) " + " | ".join(parts))

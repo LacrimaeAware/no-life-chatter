@@ -1,14 +1,14 @@
 from utils.chat_archive import regex_search
 
 description = (
-    "Regex-search the chat archive (case-insensitive). User can be a name, or "
-    "'*'/'anyone' for everyone.\n"
-    "  ~regex <user|anyone> <pattern>   e.g. ~regex someuser fi+d  |  ~regex anyone lo+l"
+    "Regex-search the chat archive, case-insensitive. User can be a name, "
+    "or '*'/'anyone' for everyone.\n"
+    "  ~regex <user|anyone> <pattern>   e.g. ~regex fernardo fi+d"
 )
 
 
 def _clip(text, n=140):
-    return text if len(text) <= n else text[: n - 1] + "…"
+    return text if len(text) <= n else text[: n - 1] + "..."
 
 
 async def handle_regex(bot, message, params):
@@ -26,7 +26,7 @@ async def handle_regex(bot, message, params):
         await message.channel.send(f"No match for /{_clip(pattern, 60)}/ by {who}.")
         return
     if everyone:
-        parts = [f"{a}: \"{_clip(c, 90)}\"" for _s, _ch, a, c in rows]
+        parts = [f"{a}#{ch} {s[:10]}: \"{_clip(c, 80)}\"" for s, ch, a, c in rows]
     else:
-        parts = [f"\"{_clip(c, 120)}\"" for _s, _ch, _a, c in rows]
-    await message.channel.send("🔎 " + " | ".join(parts))
+        parts = [f"#{ch} {s[:10]}: \"{_clip(c, 100)}\"" for s, ch, _a, c in rows]
+    await message.channel.send("Regex: " + " | ".join(parts))

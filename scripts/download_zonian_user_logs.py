@@ -249,7 +249,8 @@ def _is_noise_user(author: str, canonical: str, excluded: set[str]) -> bool:
     )
 
 
-def archive_users(channel: str, min_messages: int, include_excluded: bool) -> tuple[list[str], list[dict]]:
+def archive_users(channel: str, min_messages: int, include_excluded: bool,
+                  max_users: int = 0) -> tuple[list[str], list[dict]]:
     """Return locally-known authors for a channel, ordered by archive count."""
     conn = chat_archive.connect()
     normalized_channel = chat_archive.normalize_channel(channel)
@@ -283,9 +284,13 @@ def archive_users(channel: str, min_messages: int, include_excluded: bool) -> tu
         users.append(author)
 
     users = list(dict.fromkeys(users))
+    if max_users > 0:
+        users = users[:max_users]
+    top_note = f", top {max_users:,}" if max_users > 0 else ""
     print(
         f"Loaded {len(users)} users from local #{normalized_channel} archive "
         f"(min {min_messages:,} messages"
+        f"{top_note}"
         f"{', including excluded' if include_excluded else ', excluded bot/noise accounts skipped'})."
     )
     if users:
@@ -418,6 +423,8 @@ def main() -> None:
                     help="archive channel to select users from; defaults to --channel")
     ap.add_argument("--min-archive-messages", type=int, default=25,
                     help="minimum local messages required with --from-archive")
+    ap.add_argument("--max-archive-users", type=int, default=0,
+                    help="with --from-archive, keep only the top N users by local message count")
     ap.add_argument("--include-excluded", action="store_true",
                     help="include users from config.persona.exclude_users when using --from-archive")
     ap.add_argument("--list-users-only", action="store_true",
@@ -444,12 +451,14 @@ def main() -> None:
             source_channel,
             max(1, args.min_archive_messages),
             include_excluded=args.include_excluded,
+            max_users=max(0, args.max_archive_users),
         )
         users.extend(archive_selected)
         archive_source = {
             "enabled": True,
             "channel": source_channel,
             "min_messages": max(1, args.min_archive_messages),
+            "max_users": max(0, args.max_archive_users),
             "include_excluded": args.include_excluded,
             "selected": archive_selected,
             "skipped": archive_skipped,

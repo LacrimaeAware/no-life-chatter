@@ -603,6 +603,52 @@ def stats(author: str):
     }
 
 
+_DEFAULT_NOISE_USERS = {
+    "automod",
+    "bluepagmanbot",
+    "ebbelbot",
+    "mtgbot",
+    "nightbot",
+    "potatbotat",
+    "streamelements",
+    "streamlabs",
+    "supibot",
+    "weirdfarts1ave",
+}
+
+
+def _is_noise_author(author: str) -> bool:
+    author = normalize_author(author)
+    excluded = {normalize_author(u) for u in getattr(config, "EXCLUDE_USERS", set())}
+    return (
+        author in excluded
+        or author in _DEFAULT_NOISE_USERS
+        or author.endswith("bot")
+    )
+
+
+def channel_regulars(channel: str, min_messages: int = 5000, limit: int = 20,
+                     include_bots: bool = False):
+    """Top non-bot authors in a channel, alias-collapsed.
+
+    Returns [(author, count), ...]. Counts are canonicalized through
+    archive.user_aliases, so alt accounts merge for this rollup.
+    """
+    conn = connect()
+    channel = normalize_channel("duardo1" if channel.lower() == "duardo" else channel)
+    rows = conn.execute(
+        "SELECT author, COUNT(*) FROM messages WHERE channel = ? GROUP BY author",
+        (channel,),
+    ).fetchall()
+    counts = Counter()
+    for author, count in rows:
+        canon = normalize_author(author)
+        if not include_bots and _is_noise_author(canon):
+            continue
+        counts[canon] += count
+    return [(a, n) for a, n in counts.most_common(limit) if n >= min_messages]
+
+
 def context_before(channel: str, sent_at: str, n: int = 4, within_minutes: int = 15):
     """The up-to-n messages just before sent_at in channel (oldest first).
 
@@ -663,7 +709,7 @@ def search_all(phrase: str, limit: int = 10):
     conn = connect()
     return conn.execute(
         "SELECT m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
-        "JOIN messages m ON m.id = f.rowid WHERE f.messages_fts MATCH ? "
+        "CROSS JOIN messages m ON m.id = f.rowid WHERE f.messages_fts MATCH ? "
         "ORDER BY m.sent_at LIMIT ?",
         (_fts_phrase(phrase), limit),
     ).fetchall()
