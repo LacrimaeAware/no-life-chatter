@@ -20,8 +20,6 @@ async def handle_regulars(bot, message, params):
             min_messages = int(params[0])
         else:
             channel = params[0].lstrip("#").lower()
-            if channel == "duardo":
-                channel = "duardo1"
             if len(params) >= 2 and params[1].isdigit():
                 min_messages = int(params[1])
             if len(params) >= 3 and params[2].isdigit():

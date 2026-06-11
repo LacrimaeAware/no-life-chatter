@@ -577,22 +577,27 @@ def first_seen(author: str):
     ).fetchone()
 
 
-def stats(author: str):
-    """Summary numbers for author, or None if unseen."""
+def stats(author: str, channel: str = None):
+    """Summary numbers for author (optionally one channel), or None if unseen."""
     conn = connect()
     keys = author_keys(author)
     author_placeholders, author_params = _in_clause(keys)
+    where = f"author IN ({author_placeholders})"
+    params = list(author_params)
+    if channel:
+        where += " AND channel = ?"
+        params.append(normalize_channel(channel))
     row = conn.execute(
         "SELECT COUNT(*), MIN(sent_at), MAX(sent_at), AVG(length(content)) "
-        f"FROM messages WHERE author IN ({author_placeholders})",
-        author_params,
+        f"FROM messages WHERE {where}",
+        params,
     ).fetchone()
     if not row or row[0] == 0:
         return None
     busiest = conn.execute(
         "SELECT substr(sent_at, 12, 2) AS hh, COUNT(*) AS n FROM messages "
-        f"WHERE author IN ({author_placeholders}) GROUP BY hh ORDER BY n DESC LIMIT 1",
-        author_params,
+        f"WHERE {where} GROUP BY hh ORDER BY n DESC LIMIT 1",
+        params,
     ).fetchone()
     return {
         "messages": row[0],
@@ -603,17 +608,16 @@ def stats(author: str):
     }
 
 
+# Generic platform bots only — add your own bot account and any
+# community-specific bots via [persona] exclude_users in config.toml.
 _DEFAULT_NOISE_USERS = {
     "automod",
-    "bluepagmanbot",
-    "ebbelbot",
     "mtgbot",
     "nightbot",
     "potatbotat",
     "streamelements",
     "streamlabs",
     "supibot",
-    "weirdfarts1ave",
 }
 
 
@@ -635,7 +639,7 @@ def channel_regulars(channel: str, min_messages: int = 5000, limit: int = 20,
     archive.user_aliases, so alt accounts merge for this rollup.
     """
     conn = connect()
-    channel = normalize_channel("duardo1" if channel.lower() == "duardo" else channel)
+    channel = normalize_channel(channel)  # spelling variants via [archive.aliases]
     rows = conn.execute(
         "SELECT author, COUNT(*) FROM messages WHERE channel = ? GROUP BY author",
         (channel,),
@@ -693,9 +697,9 @@ def recent_authors(channel: str, scan: int = 400, limit: int = 60):
     return [r[0] for r in rows][:limit]
 
 
-def messages_for(author: str, channel: str = None):
+def messages_for(author: str, channel: str = None, year: int = None):
     """All archived message texts by author (for offline persona building).
-    channel limits to one chat (e.g. channel-scoped ~markers)."""
+    channel limits to one chat, year to one calendar year (scoped ~markers)."""
     conn = connect()
     keys = author_keys(author)
     author_placeholders, author_params = _in_clause(keys)
@@ -704,6 +708,9 @@ def messages_for(author: str, channel: str = None):
     if channel:
         sql += " AND channel = ?"
         params.append(normalize_channel(channel))
+    if year:
+        sql += " AND sent_at >= ? AND sent_at < ?"
+        params += [f"{int(year)}-01-01", f"{int(year) + 1}-01-01"]
     return [r[0] for r in conn.execute(sql + " ORDER BY sent_at", params).fetchall()]
 
 

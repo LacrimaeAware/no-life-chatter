@@ -1,31 +1,29 @@
 from utils.persona_classifier import most_like
-from commands.markers import _parse_chat
+from commands.markers import _parse_scope, _scope_label
 
 description = (
-    "Who shares a chatter's distinctive voice — scored on signature vocabulary "
-    "(log-odds vs the average chatter), and shows WHICH markers they share. "
-    "Compares full history by default; chat=<channel> scopes the person's "
-    "profile to one chat.\n"
-    "  ~like <user> [chat=<channel>]"
+    "Who shares a chatter's distinctive voice — scored on signature vocabulary, "
+    "shows WHICH markers they share. Defaults to THIS chat's logs; chat=all "
+    "compares their full history (best for alt-hunting), year=<YYYY> scopes "
+    "to a year.\n"
+    "  ~like <user> [chat=all|<channel>] [year=2023]"
 )
 
 
 async def handle_like(bot, message, params):
-    # default = full history: alt detection wants everything they've written
-    params, channel = _parse_chat(params, None)
+    params, channel, year = _parse_scope(params, message.channel.name)
     if not params:
-        await message.channel.send("Usage: ~like <user> [chat=<channel>]")
+        await message.channel.send("Usage: ~like <user> [chat=all|<channel>] [year=2023]")
         return
     user = params[0].lstrip("@")
-    sims = most_like(user, n=4, channel=channel)
+    sims = most_like(user, n=4, channel=channel, year=year)
     if not sims:
         await message.channel.send(
-            f"Not enough archived messages for {user} to build a voice profile."
-        )
+            f"Not enough archived messages for {user} in {_scope_label(channel, year)}.")
         return
     top_author, top_score, shared = sims[0]
-    scope = f" (in #{channel})" if channel else ""
-    msg = f"👯 {user}{scope} sounds most like {top_author} ({top_score:.2f})"
+    msg = (f"👯 {user} ({_scope_label(channel, year)}) sounds most like "
+           f"{top_author} ({top_score:.2f})")
     if shared:
         msg += f" — both overuse: {', '.join(shared[:4])}"
     rest = " · ".join(f"{a} ({s:.2f})" for a, s, _ in sims[1:])

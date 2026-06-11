@@ -74,6 +74,28 @@ they're already in. Make "how often it responds" a real parameter and bias it:
 This generalizes the current `reaction_chance`; the autonomous "bot hangs out in
 chat as personas" mode becomes far more natural.
 
+## Embedding-based voice/topic space (wanted — the next big direction)
+
+Token statistics (log-odds markers, TF-IDF stylometry) top out at "which exact
+words does this person overuse" — they can never see that two people talk
+about the same THINGS in different words, and language itself (a bilingual
+chatter) reads as one giant marker. Embeddings fix both, and the
+infrastructure is already running: LM Studio serves a local embedding model
+(`/v1/embeddings`, e.g. nomic-embed-text) next to the chat models.
+
+Plan sketch:
+1. Embed each chatter's distinctive exemplar lines (the RAG signature sample
+   is already computed) -> mean-pool into one vector per person.
+2. `~like` v3 = cosine in that space (semantic similarity), shown alongside
+   the current shared-marker evidence (lexical similarity). The disagreement
+   between the two is itself interesting (same topics, different voice = a
+   lurker-twin; same words, different topics = a copycat).
+3. Cluster the vectors -> the personality-map idea below (groups emerge from
+   geometry instead of hand-built trait lists).
+4. Stretch: project onto trait axes (define each end of an axis with example
+   sentences, embed them, measure where each chatter falls) — "second-order"
+   personality traits separated from first-order topic/word overlap.
+
 ## Chat personality maps / psychometrics research (wanted, bigger idea)
 
 Full working note: [CHAT_PERSONALITY_RESEARCH.md](CHAT_PERSONALITY_RESEARCH.md).

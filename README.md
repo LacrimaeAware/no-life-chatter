@@ -34,7 +34,14 @@ A modular Twitch chat bot with two halves that share one local SQLite archive:
 ### Chat archive & personas
 - **Searchable archive** — every message the bot sees, plus historical
   Chatterino logs, in one SQLite + FTS5 database. Powers `~said` ("did they ever
-  say X?"), `~quote`, `~firstseen`, `~chatstats` — instant, local, no API.
+  say X?"), `~regex`, `~quote`, `~firstseen`, `~chatstats`, `~regulars` —
+  instant, local, no API.
+- **Stylometry** — a TF-IDF + logistic-regression authorship classifier
+  (`~whosaid`: who would say this line?) and log-odds voice profiles
+  (`~markers`: someone's favorite words and word-pairs vs the average chatter;
+  `~like`: who shares their distinctive voice — which doubles as an
+  alt-account detector). Profiles weight overuse against rarity (a term most
+  of the panel uses can't be a marker) and can be scoped per chat or year.
 - **Markov personas** (`~markov`/`~mimic`) — a recombination of a chatter's own
   words. Instant, fully local, no model.
 - **LLM personas** (`~persona`, `~hyper`) — many-shot voice cloning: the prompt
@@ -46,7 +53,9 @@ A modular Twitch chat bot with two halves that share one local SQLite archive:
   a random recent chatter, reacting to the actual conversation.
 - **Fine-tuning pipeline** — an offline path to export distinctiveness-weighted
   training data and train a per-persona LoRA on a rented GPU. See
-  [docs/FINE_TUNING.md](docs/FINE_TUNING.md).
+  [docs/FINE_TUNING.md](docs/FINE_TUNING.md). A live A/B mode
+  (`[llm] ab_models`) rolls a model per generation and tags posted lines
+  (`#llama` / `#lora`) so chat itself judges the candidates.
 - **Output filter** — anything the bot is about to post is checked against a
   denylist first, so recombined real chat can't get the account banned.
 
@@ -99,11 +108,15 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~practice off` / `~practice show` | anyone | Stop / inspect practice mode. |
 | `~romanize on\|off\|show` | anyone | Toggle romanized readings in practice mode. |
 | `~speak <lang>` / `~speak show` | anyone | Flag your language so even your short messages translate. |
-| `~said <user> <phrase>` | anyone | Search the chat archive: exact matches first, then closest normalized match. |
+| `~said <user|anyone> <phrase>` | anyone | Search the chat archive: exact matches first, then closest normalized match. `anyone` searches every author. |
+| `~regex <user|anyone> <pattern>` | anyone | Case-insensitive regex search over the archive. |
 | `~quote <user>` | anyone | Random real quote from the chat archive. |
 | `~firstseen <user>` | anyone | A user's first archived message. |
-| `~chatstats <user>` | anyone | Archive stats: count, first/last seen, busiest hour. |
-| `~whosaid <sentence>` | anyone | Guess which archived chatter is most likely to have said a line (works on novel sentences). |
+| `~chatstats <user> [chat=ch]` | anyone | Archive stats: count, first/last seen, busiest hour. |
+| `~regulars [channel] [min] [n]` | anyone | Top chatters of a channel above a message floor, bots excluded. |
+| `~whosaid <sentence>` | anyone | Stylometry: which chatter most likely said a line (novel sentences work). Ranks people active in this chat; `anyone` ranks the whole archive. |
+| `~markers <user> [chat=] [year=]` | anyone | A chatter's voice profile — favorite words + word-pairs vs the average chatter. Scoped to the current chat by default. |
+| `~like <user> [chat=] [year=]` | anyone | Who shares their distinctive voice, with the shared markers as evidence — also a decent alt-account detector. |
 | `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |
 | `~persona <user> [msg]` | anyone | Talk to an AI persona of a chatter (local LLM, context-aware). |
 | `~hyper <user> [msg]` | anyone | Same, but their traits exaggerated for comedy. |

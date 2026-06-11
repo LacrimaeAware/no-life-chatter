@@ -3,7 +3,7 @@ from utils.chat_archive import regex_search
 description = (
     "Regex-search the chat archive, case-insensitive. User can be a name, "
     "or '*'/'anyone' for everyone.\n"
-    "  ~regex <user|anyone> <pattern>   e.g. ~regex fernardo fi+d"
+    "  ~regex <user|anyone> <pattern>   e.g. ~regex someuser fi+d"
 )
 
 

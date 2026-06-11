@@ -33,7 +33,7 @@ def _usable(msg):
 
 
 def _dedupe_canonical(names, max_authors=None):
-    """Collapse alias accounts to one canonical label (e.g. fernardo→earnest),
+    """Collapse alias accounts to one canonical label (e.g. altaccount→mainaccount),
     preserving order. Without this, an aliased account becomes a second class
     trained on the SAME merged messages — splitting its own votes."""
     seen, out = set(), []
@@ -189,6 +189,11 @@ def _known_usernames():
 
 
 _MENTION_RE = re.compile(r"@([\w']+)")
+# Invisible characters chat clients hide inside words — most commonly the
+# anti-ping trick "@z<U+E0000>yrwoot", which would otherwise split into
+# "z" + "yrwoot" and leak a decapitated username into voice profiles.
+_INVISIBLE_RE = re.compile(
+    "[​-‏⁠﻿󠀀-󠁿]")
 
 
 def _count_tokens(msgs):
@@ -205,7 +210,7 @@ def _count_tokens(msgs):
     words, pairs = Counter(), Counter()
     mentioned = set()
     for m in msgs:
-        low = _URL_RE.sub(" ", (m or "")).lower()
+        low = _URL_RE.sub(" ", _INVISIBLE_RE.sub("", m or "")).lower()
         mentioned.update(_MENTION_RE.findall(low))
         toks = [w for w in _WORD_RE.findall(low)
                 if len(w) >= 2 and not any(ch.isdigit() for ch in w) and w not in users]
@@ -373,22 +378,24 @@ def build_style_profiles(roster=None, words_top=300, phrases_top=150,
 _scoped_cache = {}
 
 
-def profile_for(author, channel=None, author_cap=20000):
+def profile_for(author, channel=None, year=None, author_cap=20000):
     """The voice profile for `author`. Stored full-history profile by default;
-    with `channel`, computed live from their messages IN THAT CHAT against
-    that chat's own background — 'my markers are polluted with what I spammed
-    five years ago in another community' is exactly what this scopes away."""
+    with `channel` and/or `year`, computed live from just those messages,
+    against the (channel-scoped) background — 'my markers are polluted with
+    what I spammed five years ago in another community' is what this scopes
+    away."""
     model = load()
     profiles = model.get("profiles") or {}
     canon = chat_archive.normalize_author(author)
-    if not channel:
+    if not channel and not year:
         prof = profiles.get(canon)
         if prof and "words" in prof:
             return prof
-    key = (canon, chat_archive.normalize_channel(channel) if channel else None)
+    key = (canon, chat_archive.normalize_channel(channel) if channel else None, year)
     if key in _scoped_cache:
         return _scoped_cache[key]
-    msgs = [m for m in chat_archive.messages_for(canon, channel=channel) if _usable(m)]
+    msgs = [m for m in chat_archive.messages_for(canon, channel=channel, year=year)
+            if _usable(m)]
     if not msgs:
         return None
     rng = random.Random(13)
@@ -401,7 +408,7 @@ def profile_for(author, channel=None, author_cap=20000):
     return prof
 
 
-def most_like(author, n=6, channel=None):
+def most_like(author, n=6, channel=None, year=None):
     """Chatters who share `author`'s distinctive voice — overlap of favorite
     words (60%) and favorite word-pairs (40%). Returns
     [(author, score, [shared markers]), ...] with pairs preferred as the shown
@@ -412,7 +419,7 @@ def most_like(author, n=6, channel=None):
     if not profiles:
         return []
     canon = chat_archive.normalize_author(author)
-    target = profile_for(canon, channel=channel)
+    target = profile_for(canon, channel=channel, year=year)
     if not target:
         return []
     sims = []

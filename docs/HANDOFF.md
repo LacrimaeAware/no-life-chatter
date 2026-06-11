@@ -23,10 +23,42 @@ pushed** to `github.com/LacrimaeAware/no-life-chatter` (`main`):
 - **Random reactions** — the bot rarely speaks up in a chatter's persona.
 
 What's NOT done yet (the work to pick up): a **Turing-test game**, a **frozen
-scored eval** over the smoke cases, a re-train on an **abliterated base** (the
-Qwen pilot used a non-abliterated base by mistake; adapters are not portable
-across model families, so that run is a fresh train), and
-archive/general-knowledge Q&A. See "Next work" below.
+scored eval** over the smoke cases, and archive/general-knowledge Q&A. See
+"Next work" below.
+
+**2026-06-11 (latest) — stylometry suite, live A/B, ops hardening:**
+
+- **Archive grew to ~3M messages** (24 channels) via a mirror-log import.
+- **Authorship classifier** (TF-IDF char 2-5 + word 1-2 grams -> logistic
+  regression; ~22 authors x 5k random msgs; ~51% top-1 vs 4.5% random) powers
+  `~whosaid`, which ranks only chatters active in the current channel
+  (renormalized) unless `anyone` is given.
+- **Voice profiles** power `~markers` (favorite words + word-pairs) and
+  `~like` (who shares your distinctive voice; alt-detector — it has surfaced
+  real alt accounts with shared-catchphrase evidence). Mechanics: Fightin'
+  Words log-odds vs a shared background over ALL of a person's messages,
+  weighted by panel rarity (terms >=80% of the panel uses can never be
+  markers), with URL/username/@-mention/invisible-char filtering (chat
+  clients hide U+E0000 inside mentions — strip or you mint decapitated
+  usernames as "words"). Scopable per chat (`chat=`, defaults to the current
+  channel) and per year (`year=`).
+- **LoRA v2 merged to GGUF** and A/B'd vs plain Llama 3.1 8B on the same RAG
+  prompt: plain Llama won on reactivity (~26% vs ~16% reads-as-them; the
+  adapter trained without conversation context and partially ignores it).
+  v3 must include preceding-chat context in training pairs and exclude
+  bot-command lines ($gpt etc. — now also rejected at generation time and
+  filtered from the SFT export). A **live A/B** (`[llm] ab_models`) rolls a
+  model per generation and tags posted lines #llama/#lora so chat judges.
+- **Ops**: chatbot.py holds a single-instance lock (port 48917) — the
+  keep-alive loop (`_bot-loop.bat`, login autostart) plus manual launches had
+  the bot double-posting; now extra instances exit immediately. NEVER launch
+  chatbot.py by hand: kill the python process and the loop respawns it.
+  `stop-bot-FOREVER.bat` = kill + stop loop + remove autostart. Newer LM
+  Studio rejects model id "local" — config pins a real id, with auto-detect
+  fallback. Random reactions currently OFF (`reaction_chance = 0`).
+- **Next direction:** embedding-based voice/topic space (local nomic
+  embeddings via LM Studio) -> semantic ~like, personality clusters/maps. See
+  IDEA_BANK "Embedding-based voice/topic space".
 
 **2026-06-11 (late): retrieval/diagnosis fixes landed** — addressing the
 smoke-test findings: (1) query hygiene (question-scaffolding stopwords,
