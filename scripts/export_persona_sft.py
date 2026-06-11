@@ -50,6 +50,26 @@ def _split_csv(value: str) -> list[str]:
     return [part.strip().lower().lstrip("#@") for part in (value or "").split(",") if part.strip()]
 
 
+def _parse_aliases(value: str) -> dict[str, str]:
+    aliases = {}
+    for part in (value or "").split(","):
+        if not part.strip():
+            continue
+        if "=" not in part:
+            raise SystemExit(f"Invalid alias {part!r}; use alias=canonical")
+        alias, canonical = part.split("=", 1)
+        alias = chat_archive.normalize_author(alias)
+        canonical = chat_archive.normalize_author(canonical)
+        if alias and canonical:
+            aliases[alias] = canonical
+    return aliases
+
+
+def _apply_export_aliases(value: str) -> None:
+    for alias, canonical in _parse_aliases(value).items():
+        chat_archive.USER_ALIASES[alias] = canonical
+
+
 def _clean_line(value: str, max_chars: int) -> str:
     value = re.sub(r"\s+", " ", value or "").strip()
     if len(value) > max_chars:
@@ -257,6 +277,8 @@ def main() -> None:
     ap.add_argument("--channels", default="",
                     help="comma-separated channels; default = bot.channels from config.toml")
     ap.add_argument("--exclude-users", default="", help="extra comma-separated users to skip")
+    ap.add_argument("--user-aliases", default="",
+                    help="comma-separated alias=canonical author merges for this export")
     ap.add_argument("--min-author-messages", type=int, default=500)
     ap.add_argument("--max-examples-per-author", type=int, default=8000)
     ap.add_argument("--context", type=int, default=8)
@@ -269,6 +291,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--allow-urls", action="store_true")
     args = ap.parse_args()
+    _apply_export_aliases(args.user_aliases)
 
     summary = export(args)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

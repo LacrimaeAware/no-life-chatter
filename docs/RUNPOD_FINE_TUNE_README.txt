@@ -5,7 +5,14 @@ Use this after double-clicking:
 
   4-export-finetune-pilot.bat
 
-That creates:
+That creates a curated ThickPoo-focused pilot:
+
+  thickpoo channel only
+  known alt accounts merged
+  bot accounts excluded
+  max 5,000 examples per author
+
+Output:
 
   data\unsynced\fine_tune\persona_sft_runpod.zip
 
@@ -33,8 +40,9 @@ This avoids Hugging Face gated-model login friction for the first paid run.
 In RunPod terminal:
 
   cd /workspace
+  rm -rf nlc_persona
   python -m zipfile -e persona_sft_runpod.zip nlc_persona
-  bash /workspace/nlc_persona/runpod_train_persona_lora.sh
+  bash nlc_persona/RUN_ME_ON_RUNPOD.sh
 
 When it finishes, download:
 

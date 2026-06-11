@@ -31,11 +31,11 @@ Outputs:
 
 These files contain real chat and are gitignored. Do not commit them.
 
-The batch file exports all regular chatters in the configured archive/channels:
-minimum 1,000 messages and maximum 1,000 training examples per author. That is
-the recommended first pilot: broad enough to test all-persona conditioning, but
-small enough not to waste GPU time before the pipeline is proven. A durable run
-can raise this later, e.g. 6,000 examples per author.
+The batch file currently exports a curated ThickPoo-focused pilot:
+`thickpoo` channel only, selected high-value chatters, known same-person aliases
+merged, bot accounts excluded, and maximum 5,000 training examples per author.
+That is the recommended first real pilot: focused enough to improve the people
+we care about, but still small enough to run on a single RTX 4090.
 
 Manual equivalent, only if the batch file fails:
 
@@ -64,8 +64,9 @@ In the RunPod terminal, the only commands you should need are:
 
 ```bash
 cd /workspace
+rm -rf nlc_persona
 python -m zipfile -e persona_sft_runpod.zip nlc_persona
-bash /workspace/nlc_persona/runpod_train_persona_lora.sh
+bash nlc_persona/RUN_ME_ON_RUNPOD.sh
 ```
 
 When it finishes, download `/workspace/nlc_persona/persona_lora_result.zip`.

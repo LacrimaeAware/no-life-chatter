@@ -29,10 +29,11 @@ def main() -> None:
 
     os.makedirs(args.out, exist_ok=True)
 
+    import unsloth  # noqa: F401
+    from unsloth import FastLanguageModel
     from datasets import load_dataset
     from transformers import TrainingArguments
     from trl import SFTTrainer
-    from unsloth import FastLanguageModel
 
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.model,

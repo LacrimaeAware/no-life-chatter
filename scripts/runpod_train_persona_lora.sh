@@ -4,8 +4,9 @@ set -euo pipefail
 # Run this inside the RunPod terminal after extracting persona_sft_runpod.zip:
 #
 #   cd /workspace
+#   rm -rf nlc_persona
 #   python -m zipfile -e persona_sft_runpod.zip nlc_persona
-#   bash /workspace/nlc_persona/runpod_train_persona_lora.sh
+#   bash nlc_persona/RUN_ME_ON_RUNPOD.sh
 
 cd "$(dirname "$0")"
 

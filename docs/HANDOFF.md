@@ -155,9 +155,11 @@ pilot, and archive/general-knowledge Q&A. See "Next work" below.
    single emotes / 1-word / pure-link / too-short and too-long lines; prefer
    lines that "make a statement" (declarative, has a verb) so it's a fun guess,
    not a boring quote. Add a scoreboard table.
-2. **Fine-tuning pilot** — export SFT JSONL with `scripts/export_persona_sft.py`,
-   rent a RunPod RTX 4090, train a LoRA using `docs/FINE_TUNING.md` and
-   `scripts/train_persona_lora_unsloth.py`, then compare against RAG-only.
+2. **Fine-tuning pilot** — current pilot export is ThickPoo-only and curated:
+   selected high-value chatters, bot accounts excluded, known alt accounts
+   merged, max 5,000 examples per author. Train a LoRA using
+   `docs/FINE_TUNING.md` and `scripts/train_persona_lora_unsloth.py`, then
+   compare against RAG-only.
 3. **Archive/general-knowledge Q&A** — a separate `~askchat`-style route for
    questions like "do we have an emote of the bottle dog?", using archive/emote
    retrieval plus a stronger answer model. Do not solve this via fine-tuning.
