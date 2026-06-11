@@ -667,3 +667,35 @@ def search_all(phrase: str, limit: int = 10):
         "ORDER BY m.sent_at LIMIT ?",
         (_fts_phrase(phrase), limit),
     ).fetchall()
+
+
+def regex_search(pattern, author=None, limit=5, scan_cap=300000):
+    """Regex-search archived messages (case-insensitive).
+
+    author = a name → only their lines (scans all of them, indexed by author).
+    author None / '*' / 'anyone' → everyone, but bounded to the most recent
+    `scan_cap` messages so a live ~regex can't scan all 3M rows.
+    Returns [(sent_at, channel, author, content), ...], or None on a bad pattern.
+    """
+    import re as _re
+    try:
+        rx = _re.compile(pattern, _re.IGNORECASE | _re.UNICODE)
+    except _re.error:
+        return None
+    conn = connect()
+    if author and str(author).lower() not in ("*", "anyone", "everyone"):
+        ph, params = _in_clause(author_keys(author))
+        cur = conn.execute(
+            f"SELECT sent_at, channel, author, content FROM messages "
+            f"WHERE author IN ({ph}) ORDER BY sent_at DESC", params)
+    else:
+        cur = conn.execute(
+            "SELECT sent_at, channel, author, content FROM messages "
+            "ORDER BY id DESC LIMIT ?", (scan_cap,))
+    out = []
+    for row in cur:
+        if rx.search(row[3] or ""):
+            out.append(tuple(row))
+            if len(out) >= limit:
+                break
+    return out

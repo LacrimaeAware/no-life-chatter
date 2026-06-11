@@ -143,8 +143,13 @@ def load():
     return _MODEL
 
 
-def classify(text, top_k=5):
-    """[(author, probability), ...] most-likely first, or [] if unusable/untrained."""
+def classify(text, top_k=5, restrict_to=None):
+    """[(author, probability), ...] most-likely first, or [] if unusable/untrained.
+
+    restrict_to: optional iterable of authors to consider (e.g. the people
+    currently in a channel) — others are dropped and the probabilities
+    renormalized among the rest, so ~whosaid only names chatters who are here.
+    """
     if not text or not text.strip():
         return []
     try:
@@ -153,8 +158,55 @@ def classify(text, top_k=5):
         return []
     pipe = model["pipe"]
     probs = pipe.predict_proba([text])[0]
-    ranked = sorted(zip(pipe.classes_, probs), key=lambda kv: -kv[1])
+    pairs = list(zip(pipe.classes_, probs))
+    if restrict_to is not None:
+        keep = {chat_archive.normalize_author(a) for a in restrict_to}
+        pairs = [(a, p) for a, p in pairs if a in keep]
+        z = sum(p for _, p in pairs) or 1.0
+        pairs = [(a, p / z) for a, p in pairs]
+    ranked = sorted(pairs, key=lambda kv: -kv[1])
     return [(a, float(p)) for a, p in ranked[:top_k]]
+
+
+def build_centroids(per_author=2500, seed=7):
+    """Precompute each author's mean (L2-normalized) TF-IDF vector and store it
+    in the model pickle. Cosine between two centroids = how alike two people
+    write — the basis for ~like. Run once after training (or it's recomputed
+    by train()). Stored float32 to keep the pickle reasonable."""
+    import numpy as np
+    model = load()
+    feats = model["pipe"].named_steps["feats"]
+    rng = random.Random(seed)
+    cents = {}
+    for a in model["pipe"].classes_:
+        msgs = [m for m in chat_archive.messages_for(a) if _usable(m)]
+        rng.shuffle(msgs)
+        msgs = msgs[:per_author]
+        if not msgs:
+            continue
+        v = np.asarray(feats.transform(msgs).mean(axis=0)).ravel()
+        cents[a] = (v / (np.linalg.norm(v) + 1e-9)).astype("float32")
+    model["centroids"] = cents
+    with open(config.CLASSIFIER_FILE, "wb") as fh:
+        pickle.dump(model, fh)
+    global _MODEL
+    _MODEL = model
+    return len(cents)
+
+
+def most_like(author, n=6):
+    """Chatters who write most like `author` — cosine similarity of mean
+    TF-IDF style vectors (0..1; higher = more alike). Near-twins are likely
+    alts. Only covers authors in the trained classifier."""
+    model = load()
+    cents = model.get("centroids")
+    canon = chat_archive.normalize_author(author)
+    if not cents or canon not in cents:
+        return []
+    v = cents[canon]
+    sims = [(c, float(v.dot(w))) for c, w in cents.items() if c != canon]
+    sims.sort(key=lambda kv: -kv[1])
+    return sims[:n]
 
 
 def signature_words(author, n=12, author_cap=5000, bg_cap=40000, min_count=3, seed=13):
