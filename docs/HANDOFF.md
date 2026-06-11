@@ -17,11 +17,12 @@ pushed** to `github.com/LacrimaeAware/no-life-chatter` (`main`):
   LM Studio** model (free, private).
 - **Retrieval/RAG exemplars** - each LLM reply blends random signature lines
   with author-only messages relevant to the current chat/topic.
+- **Organic reaction knobs** — random reactions can use ambient chance, higher
+  directed-at-persona chance, cooldowns, and optional one-line follow-ups.
 - **Random reactions** — the bot rarely speaks up in a chatter's persona.
 
-What's NOT done yet (the work to pick up): an **organic reply-frequency**
-system, a **Turing-test game**, and optional **fine-tuning**. See "Next work"
-below.
+What's NOT done yet (the work to pick up): a **Turing-test game**, fine-tuning
+pilot, and archive/general-knowledge Q&A. See "Next work" below.
 
 ## How to run / verify
 
@@ -98,6 +99,9 @@ below.
   the public template). Relevant sections: `[archive]`, `[persona]`, `[llm]`.
   `[archive.user_aliases]` can merge alt accounts for persona/archive queries
   without renaming channels.
+- `services/llm.py` — serializes local LLM calls through one async lock so
+  simultaneous `~persona` commands don't queue into LM Studio timeouts. Tracks
+  `last_error()` for clearer in-chat failures.
 
 ## Key design facts (don't re-litigate these)
 
@@ -140,13 +144,7 @@ below.
 
 ## Next work (priority order, with the user's latest asks)
 
-1. **Organic reply-frequency for conversation/reactions** — a persona shouldn't
-   answer every line. Make "how often it responds" a parameter, and prefer
-   replying when a message is **directed at it** (@mention / name) or continues
-   a loop it's already in, rather than uniformly random. Generalize
-   `reaction_chance` into: directed-at-persona detection + a response
-   probability + cooldown.
-2. **"Real or AI?" Turing-test game** (user's idea, and chat literally played it
+1. **"Real or AI?" Turing-test game** (user's idea, and chat literally played it
    — earnest: "ok turing test, was that a message i wrote or ai generated").
    A command (e.g. `~realorai [user]`): pick a chatter, 50/50 either pull a real
    archived line or generate a persona line, post it, players guess, then
@@ -154,14 +152,23 @@ below.
    single emotes / 1-word / pure-link / too-short and too-long lines; prefer
    lines that "make a statement" (declarative, has a verb) so it's a fun guess,
    not a boring quote. Add a scoreboard table.
-3. **Fine-tuning** (later) — one model, all personas via a `<persona=user>`
+2. **Fine-tuning pilot** — export SFT JSONL with `scripts/export_persona_sft.py`,
+   rent a RunPod RTX 4090, train a LoRA using `docs/FINE_TUNING.md` and
+   `scripts/train_persona_lora_unsloth.py`, then compare against RAG-only.
+3. **Archive/general-knowledge Q&A** — a separate `~askchat`-style route for
+   questions like "do we have an emote of the bottle dog?", using archive/emote
+   retrieval plus a stronger answer model. Do not solve this via fine-tuning.
+4. **Fine-tuning durable run** — one model, all personas via a `<persona=user>`
    prefix per training row; LoRA on a rented cloud GPU (hours, ~$5–20), then run
    the GGUF locally. "Train once, top up later" = re-run with new archive rows.
    Optionally distill/synthetic-data from an uncensored teacher for edgy voice.
-4. **Retrieval polish** — the lightweight FTS RAG is built. Future upgrades:
+5. **Organic reply polish** — basic ambient/directed chances and follow-ups are
+   built. Future improvements: sleep hours, per-person activity weights, and
+   thread memory so a persona continues a loop it recently joined.
+6. **Retrieval polish** — the lightweight FTS RAG is built. Future upgrades:
    include lead-in context around retrieved lines (`context_before`) and/or add
    embeddings when plain keyword search misses semantic matches.
-5. **Bigger context / model options** — LM Studio at 16k ctx for more exemplars;
+7. **Bigger context / model options** — LM Studio at 16k ctx for more exemplars;
    try an abliterated 8B for edgy; or hosted cheap model for the benign Q&A.
 
 See `docs/PERSONA_BOT_ROADMAP.md` (full roadmap), `docs/CHAT_ARCHIVE.md` (data

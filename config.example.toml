@@ -111,7 +111,20 @@ mimic_enabled = true
 # line of a random recent chatter (0 = off; 0.002 is about 1 in 500). A
 # cooldown (seconds) keeps it from bunching up during a busy stretch.
 reaction_chance = 0.0
+# Higher chance when a message appears directed at a recent chatter persona
+# (@name or bare name like "gero"). Still subject to reaction_cooldown.
+reaction_directed_chance = 0.0
 reaction_cooldown = 90
+# Chance that an autonomous reaction sends one extra short follow-up line,
+# like a real chatter double-texting. Keep max low to avoid spam.
+reaction_continue_chance = 0.0
+reaction_max_continuations = 1
+reaction_continue_delay = 1.5
+# Same idea, but for explicit ~persona/~hyper commands. Commands always try to
+# answer once; this only controls occasional extra follow-up messages.
+command_continue_chance = 0.0
+command_max_continuations = 1
+command_continue_delay = 1.5
 # Use the LLM (context-aware) for reactions instead of Markov. Needs an [llm]
 # endpoint (LM Studio) running; falls back gracefully if it's unreachable.
 reaction_use_llm = false
@@ -127,12 +140,15 @@ blocklist_file = "data/unsynced/blocklist.txt"
 # server, or point this at llama.cpp / Ollama / a hosted API.
 endpoint = "http://127.0.0.1:1234/v1/chat/completions"
 model = "local"
-timeout = 45
+timeout = 90
 exemplars = 150
 # Of those exemplars, try to fill this many with author-only messages retrieved
 # for the current chat topic. 0 restores the old random-only prompt.
 relevant_exemplars = 90
 context_messages = 25
+# If the full prompt times out/fails, retry once with this smaller prompt.
+retry_exemplars = 60
+retry_context_messages = 12
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count

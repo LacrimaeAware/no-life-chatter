@@ -141,18 +141,88 @@ class MessageService:
             return decode_html_entities(g.get('translatedText', '') or '')
         return None
 
+    def _persona_name_variants(self, target):
+        variants = {target.lower()}
+        if "_" in target:
+            short = target.split("_", 1)[0].lower()
+            if len(short) >= 4:
+                variants.add(short)
+        return variants
+
+    def _directed_persona_targets(self, content, authors):
+        text = (content or "").lower()
+        directed = []
+        for target in authors:
+            for variant in self._persona_name_variants(target):
+                if f"@{variant}" in text:
+                    directed.append(target)
+                    break
+                if re.search(rf"(?<![a-z0-9_]){re.escape(variant)}(?![a-z0-9_])", text):
+                    directed.append(target)
+                    break
+        return directed
+
+    async def _persona_line(self, target, channel, use_llm, is_clean, persona_markov, persona_llm):
+        if use_llm:
+            cand = await persona_llm.generate_with_retry(target, channel, mode="normal")
+            if cand and len(cand.split()) >= 2 and is_clean(cand):
+                return cand
+            return None
+
+        model = persona_markov.get_model(target)
+        if not model:
+            return None
+        for _ in range(15):
+            cand = persona_markov.generate(model)
+            if cand and len(cand.split()) >= 2 and is_clean(cand):
+                return cand
+        return None
+
+    async def _maybe_continue_reaction(self, message, target, first_line, use_llm,
+                                       is_clean, persona_markov, persona_llm):
+        chance = getattr(config, "REACTION_CONTINUE_CHANCE", 0.0)
+        max_lines = max(0, getattr(config, "REACTION_MAX_CONTINUATIONS", 0))
+        if chance <= 0 or max_lines <= 0:
+            return
+
+        last_line = first_line
+        for _ in range(max_lines):
+            if random.random() >= chance:
+                break
+            await asyncio.sleep(getattr(config, "REACTION_CONTINUE_DELAY", 1.5))
+            if use_llm:
+                follow_prompt = (
+                    f'You just said: "{last_line}". Send one natural short '
+                    f"follow-up chat message as {target}, like a real chatter "
+                    f"double-texting."
+                )
+                line = await persona_llm.generate(
+                    target,
+                    message.channel.name,
+                    follow_prompt,
+                    mode="normal",
+                    exemplar_count=getattr(config, "LLM_RETRY_EXEMPLARS", 60),
+                    context_count=getattr(config, "LLM_RETRY_CONTEXT", 12),
+                )
+            else:
+                line = await self._persona_line(
+                    target, message.channel.name, use_llm, is_clean, persona_markov, persona_llm
+                )
+            if not line or not is_clean(line):
+                break
+            if len(line) > 280:
+                line = line[:279] + "..."
+            logging.info(f"Persona reaction follow-up in #{message.channel.name} as {target}: {line!r}")
+            await message.channel.send(f"🎭 {target}: {line}")
+            last_line = line
+
     async def maybe_react(self, message):
         """Rarely, post a persona line of a random recent chatter — the "the bot
         randomly does a bit" feature. Markov-based (free, no LLM); a future LLM
         version will react to the actual conversation. Off unless
         persona.reaction_chance > 0. Cooldown stops it clustering in a busy spell.
         """
-        chance = getattr(config, "REACTION_CHANCE", 0.0)
-        if chance <= 0 or random.random() >= chance:
-            return
         channel = message.channel.name
-        if time.time() - self._last_reaction.get(channel, 0) < config.REACTION_COOLDOWN:
-            return
         try:
             from utils.chat_archive import recent_authors
             from utils import persona_markov, persona_llm
@@ -160,29 +230,32 @@ class MessageService:
 
             skip = config.EXCLUDE_USERS | {(self.bot.nick or "").lower()}
             authors = [a for a in recent_authors(channel) if a not in skip]
-            random.shuffle(authors)
+            directed = self._directed_persona_targets(message.content, authors)
+            chance = (
+                getattr(config, "REACTION_DIRECTED_CHANCE", 0.0)
+                if directed else getattr(config, "REACTION_CHANCE", 0.0)
+            )
+            if chance <= 0 or random.random() >= chance:
+                return
+            if time.time() - self._last_reaction.get(channel, 0) < config.REACTION_COOLDOWN:
+                return
+
+            targets = directed or authors
+            random.shuffle(targets)
             use_llm = getattr(config, "REACTION_USE_LLM", False)
-            for target in authors[:8]:
-                line = None
-                if use_llm:
-                    # Context-aware: reacts to the actual current conversation.
-                    cand = await persona_llm.generate(target, channel, mode="normal")
-                    if cand and len(cand.split()) >= 2 and is_clean(cand):
-                        line = cand
-                else:
-                    model = persona_markov.get_model(target)
-                    if model:
-                        for _ in range(15):
-                            cand = persona_markov.generate(model)
-                            if cand and len(cand.split()) >= 2 and is_clean(cand):
-                                line = cand
-                                break
+            for target in targets[:8]:
+                line = await self._persona_line(
+                    target, channel, use_llm, is_clean, persona_markov, persona_llm
+                )
                 if line:
                     if len(line) > 280:
-                        line = line[:279] + "…"
+                        line = line[:279] + "..."
                     self._last_reaction[channel] = time.time()
                     logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
                     await message.channel.send(f"🎭 {target}: {line}")
+                    await self._maybe_continue_reaction(
+                        message, target, line, use_llm, is_clean, persona_markov, persona_llm
+                    )
                     return
         except Exception as e:
             logging.warning(f"maybe_react failed: {e}")

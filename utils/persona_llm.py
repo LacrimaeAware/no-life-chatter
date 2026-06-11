@@ -79,10 +79,15 @@ def relevant_exemplars(author: str, query_text: str, n: int = None):
     return _unique_messages((content for _, _, content in rows), n)
 
 
-def select_exemplars(author: str, query_text: str, n: int = None):
+def select_exemplars(author: str, query_text: str, n: int = None,
+                     relevant_n: int = None):
     """Blend stable random voice samples with per-call retrieved examples."""
     n = n or config.LLM_EXEMPLARS
-    relevant_target = min(n, max(0, getattr(config, "LLM_RELEVANT_EXEMPLARS", 0)))
+    relevant_budget = (
+        getattr(config, "LLM_RELEVANT_EXEMPLARS", 0)
+        if relevant_n is None else relevant_n
+    )
+    relevant_target = min(n, max(0, relevant_budget), max(0, int(n * 0.6)))
     relevant = relevant_exemplars(author, query_text, relevant_target)
 
     seen = set(relevant)
@@ -118,12 +123,15 @@ def _clean_output(text: str, author: str) -> str:
 
 
 async def generate(author: str, channel: str, user_message: str = None,
-                   mode: str = "normal") -> str | None:
-    recent = chat_archive.latest(channel, config.LLM_CONTEXT)
+                   mode: str = "normal", exemplar_count: int = None,
+                   context_count: int = None) -> str | None:
+    exemplar_count = exemplar_count or config.LLM_EXEMPLARS
+    context_count = context_count or config.LLM_CONTEXT
+    recent = chat_archive.latest(channel, context_count)
     ctx_rows = _conversation_rows(recent)
     ctx = "\n".join(f"{a}: {c}" for _, a, c in ctx_rows) or "(quiet right now)"
     signature, relevant = select_exemplars(
-        author, _retrieval_text(recent, user_message)
+        author, _retrieval_text(recent, user_message), n=exemplar_count
     )
     if not signature and not relevant:
         return None
@@ -164,3 +172,32 @@ async def generate(author: str, channel: str, user_message: str = None,
         return None
     out = _clean_output(raw, author)
     return out or None
+
+
+async def generate_with_retry(author: str, channel: str, user_message: str = None,
+                              mode: str = "normal") -> str | None:
+    """Generate once with the full prompt, then retry compactly on failure.
+
+    Local LM Studio can time out on heavy prompts, especially when two commands
+    land close together. The compact retry keeps commands responsive without
+    disabling the richer default prompt for normal cases.
+    """
+    out = await generate(author, channel, user_message, mode=mode)
+    if out:
+        return out
+    if not chat_archive.messages_for(author):
+        return None
+    retry_exemplars = getattr(config, "LLM_RETRY_EXEMPLARS", 0)
+    retry_context = getattr(config, "LLM_RETRY_CONTEXT", 0)
+    if retry_exemplars <= 0:
+        return None
+    if retry_exemplars >= config.LLM_EXEMPLARS and retry_context >= config.LLM_CONTEXT:
+        return None
+    return await generate(
+        author,
+        channel,
+        user_message,
+        mode=mode,
+        exemplar_count=retry_exemplars,
+        context_count=retry_context,
+    )

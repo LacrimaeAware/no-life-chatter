@@ -153,7 +153,14 @@ MIMIC_ENABLED: bool = bool(_pe.get("mimic_enabled", True))
 # (the bot posts a Markov line of a random recent chatter). 0 = off.
 # e.g. 0.002 ~= 1 in 500 messages. A cooldown stops it bunching up.
 REACTION_CHANCE: float = float(_pe.get("reaction_chance", 0.0))
+REACTION_DIRECTED_CHANCE: float = float(_pe.get("reaction_directed_chance", 0.0))
 REACTION_COOLDOWN: float = float(_pe.get("reaction_cooldown", 90))
+REACTION_CONTINUE_CHANCE: float = float(_pe.get("reaction_continue_chance", 0.0))
+REACTION_MAX_CONTINUATIONS: int = int(_pe.get("reaction_max_continuations", 1))
+REACTION_CONTINUE_DELAY: float = float(_pe.get("reaction_continue_delay", 1.5))
+PERSONA_COMMAND_CONTINUE_CHANCE: float = float(_pe.get("command_continue_chance", 0.0))
+PERSONA_COMMAND_MAX_CONTINUATIONS: int = int(_pe.get("command_max_continuations", 1))
+PERSONA_COMMAND_CONTINUE_DELAY: float = float(_pe.get("command_continue_delay", 1.5))
 # Usernames random reactions should never mimic (command/stats bots produce
 # junk). Explicit ~mimic still works on them if you really ask.
 EXCLUDE_USERS: set[str] = {
@@ -175,12 +182,14 @@ BLOCKLIST_FILE: str = _resolve(
 # default (free, local, private). Leave it; just run LM Studio with a model.
 LLM_ENDPOINT: str = _llm.get("endpoint", "http://127.0.0.1:1234/v1/chat/completions")
 LLM_MODEL: str = _llm.get("model", "local")  # LM Studio uses whatever's loaded
-LLM_TIMEOUT: float = float(_llm.get("timeout", 45))
+LLM_TIMEOUT: float = float(_llm.get("timeout", 90))
 LLM_EXEMPLARS: int = int(_llm.get("exemplars", 150))   # real lines put in the prompt
 LLM_RELEVANT_EXEMPLARS: int = int(
     _llm.get("relevant_exemplars", min(90, max(0, int(LLM_EXEMPLARS * 0.6))))
 )
 LLM_CONTEXT: int = int(_llm.get("context_messages", 25))  # recent chat lines for context
+LLM_RETRY_EXEMPLARS: int = int(_llm.get("retry_exemplars", min(60, LLM_EXEMPLARS)))
+LLM_RETRY_CONTEXT: int = int(_llm.get("retry_context_messages", min(12, LLM_CONTEXT)))
 # Use the LLM (context-aware) for random reactions instead of Markov.
 REACTION_USE_LLM: bool = bool(_pe.get("reaction_use_llm", False))
 

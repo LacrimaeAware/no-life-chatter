@@ -46,6 +46,59 @@ The exporter writes OpenAI-style chat JSONL:
 - `user`: `<persona=name>` plus recent chat context
 - `assistant`: the real next message that persona wrote
 
+For the first paid pilot, use this exact Windows sequence:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\export_persona_sft.py `
+  --authors earnestsinceresugmamale,gero_30,forsenstares,ebbel `
+  --max-examples-per-author 6000
+
+Compress-Archive `
+  -Path data\unsynced\fine_tune\persona_train.jsonl,data\unsynced\fine_tune\persona_val.jsonl `
+  data\unsynced\fine_tune\persona_sft.zip -Force
+```
+
+Then upload `data\unsynced\fine_tune\persona_sft.zip` to the RunPod Jupyter
+file browser, into `/workspace/`.
+
+In the RunPod terminal:
+
+```bash
+cd /workspace
+mkdir -p nlc_persona
+unzip persona_sft.zip -d nlc_persona
+find nlc_persona -maxdepth 3 -type f -print
+```
+
+At that point the dataset is on the GPU machine. The next step is installing
+Unsloth/TRL and running the trainer. Prefer the official Unsloth install path
+for the selected template, because PyTorch/CUDA versions must match.
+
+Clone the public repo and install the training dependencies:
+
+```bash
+cd /workspace
+git clone https://github.com/LacrimaeAware/no-life-chatter.git NoLifeChatter
+python -m venv /workspace/nlc_train_env
+source /workspace/nlc_train_env/bin/activate
+python -m pip install --upgrade pip
+python -m pip install unsloth datasets trl
+```
+
+Run the pilot:
+
+```bash
+python /workspace/NoLifeChatter/scripts/train_persona_lora_unsloth.py \
+  --train /workspace/nlc_persona/persona_train.jsonl \
+  --val /workspace/nlc_persona/persona_val.jsonl \
+  --out /workspace/nlc_persona/persona_lora \
+  --epochs 1 \
+  --rank 16
+```
+
+If `find nlc_persona` shows the JSONL files nested under extra folders, adjust
+the `--train` and `--val` paths to the exact printed paths.
+
 ## GPU choice
 
 Start with an 8B instruct model and LoRA/QLoRA.
@@ -58,6 +111,35 @@ Start with an 8B instruct model and LoRA/QLoRA.
 Do not start with a huge 70B model. The user's local RX 5700 XT is best suited
 to running an 8B-ish quantized model in LM Studio, so a giant trained model
 would be expensive to train and awkward to use.
+
+## Exact pilot rental
+
+Use this for the first paid run:
+
+1. Go to `https://www.runpod.io/`.
+2. Create/log into an account and add about `$25` credit. Do not add `$100`
+   for the pilot.
+3. Go to Pods -> Deploy.
+4. Choose **Secure Cloud**.
+5. Choose **RTX 4090, 24 GB VRAM**.
+6. Choose the official **PyTorch / Jupyter** template.
+7. Set container disk / volume to at least `80 GB`.
+8. Deploy the pod.
+9. Open JupyterLab or Web Terminal.
+
+Why this exact choice: RTX 4090 has enough VRAM for an 8B QLoRA run, is much
+cheaper than A100/H100, and trains the same kind of LoRA that can later run
+locally after merge/quantization.
+
+If no RTX 4090 is available, pick this fallback order:
+
+1. RTX 3090 24 GB
+2. RTX A5000 24 GB
+3. L40S 48 GB
+4. A100 40 GB
+
+Do not use CPU-only pods. Stop/terminate the pod when training is done; storage
+and idle runtime can keep costing money.
 
 ## Training shape
 
