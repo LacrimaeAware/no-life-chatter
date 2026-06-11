@@ -19,11 +19,13 @@ numbers as confidence.
 import os
 import pickle
 import random
+import re
 
 import config
 from utils import chat_archive
 
 _MODEL = None
+_WORD_RE = re.compile(r"[\w']+", re.UNICODE)
 
 
 def _usable(msg):
@@ -153,6 +155,55 @@ def classify(text, top_k=5):
     probs = pipe.predict_proba([text])[0]
     ranked = sorted(zip(pipe.classes_, probs), key=lambda kv: -kv[1])
     return [(a, float(p)) for a, p in ranked[:top_k]]
+
+
+def signature_words(author, n=12, author_cap=5000, bg_cap=40000, min_count=3, seed=13):
+    """Most distinctive words for ANY author (not just classifier classes).
+
+    Log-odds-ratio of the author's word use vs a random background sample
+    (Fightin' Words). Works for anyone in the archive — the reverse of
+    ~whosaid. Reveals e.g. that a bilingual chatter's signature is German.
+    Returns [(word, z), ...] highest-z first.
+    """
+    import math
+    import random as _random
+    from collections import Counter
+    conn = chat_archive.connect()
+    amsgs = chat_archive.messages_for(author)
+    if not amsgs:
+        return []
+    rng = _random.Random(seed)
+    rng.shuffle(amsgs)
+    amsgs = amsgs[:author_cap]
+    bg = [r[0] for r in conn.execute(
+        "SELECT content FROM messages ORDER BY RANDOM() LIMIT ?", (bg_cap,)).fetchall()]
+
+    def counts(msgs):
+        c = Counter()
+        for m in msgs:
+            for w in _WORD_RE.findall((m or "").lower()):
+                # drop digit-bearing tokens (mostly @usernames like gero_30,
+                # skyprime_17) so markers are actual vocabulary, not who they ping
+                if len(w) >= 2 and not any(ch.isdigit() for ch in w):
+                    c[w] += 1
+        return c
+
+    ac, bc = counts(amsgs), counts(bg)
+    na, nb = sum(ac.values()), sum(bc.values())
+    if na == 0 or nb == 0:
+        return []
+    scored = []
+    for w, ya in ac.items():
+        if ya < min_count:
+            continue
+        yb = bc.get(w, 0)
+        num_a, den_a = ya + 0.5, na - ya + 0.5
+        num_b, den_b = yb + 0.5, nb - yb + 0.5
+        z = (math.log(num_a / den_a) - math.log(num_b / den_b)) / \
+            math.sqrt(1.0 / num_a + 1.0 / num_b)
+        scored.append((w, z))
+    scored.sort(key=lambda kv: -kv[1])
+    return scored[:n]
 
 
 def top_signature_terms(author, n=15):
