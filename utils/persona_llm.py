@@ -22,6 +22,11 @@ from utils import chat_archive
 
 _exemplar_cache = {}
 _archive_line_cache = {}
+_last_rejection = None
+
+
+class _CopiedPersonaOutput(Exception):
+    pass
 
 MODE_INSTRUCTION = {
     "normal": (
@@ -125,11 +130,20 @@ def _clean_output(text: str, author: str) -> str:
 
 
 def _copy_key(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+    return chat_archive.line_match_key(text)
+
+
+def last_rejection() -> str | None:
+    return _last_rejection
+
+
+def _set_rejection(reason: str | None) -> None:
+    global _last_rejection
+    _last_rejection = reason
 
 
 def is_exact_archived_line(author: str, text: str) -> bool:
-    """True when generated text is a verbatim old line from this author."""
+    """True when generated text is a normalized exact old line from this author."""
     key = chat_archive.normalize_author(author)
     if key not in _archive_line_cache:
         _archive_line_cache[key] = {
@@ -140,9 +154,64 @@ def is_exact_archived_line(author: str, text: str) -> bool:
     return _copy_key(text) in _archive_line_cache[key]
 
 
+def _near_example_copy(text: str, examples) -> str | None:
+    """Return the copied example when output is too close to a prompt line."""
+    for example in examples:
+        if chat_archive.line_similarity(text, example) >= 0.94:
+            return example
+    return None
+
+
+def _copied_source(author: str, text: str, examples) -> str | None:
+    if not text:
+        return None
+    if is_exact_archived_line(author, text):
+        return text
+    return _near_example_copy(text, examples)
+
+
+async def _repair_copied_output(author: str, channel: str, user_message: str | None,
+                                mode: str, copied_output: str, copied_source: str,
+                                signature, relevant, ctx: str) -> str | None:
+    examples = _unique_messages(
+        [*relevant[:10], *signature[:10]],
+        16,
+        seen={copied_source, copied_output},
+    )
+    if not examples:
+        return None
+    system = (
+        f"You are rewriting a Twitch persona line for '{author}'. The previous "
+        f"draft copied an archived line too closely. Write ONE new chat message "
+        f"in {author}'s voice. Do not quote, paraphrase, or reuse the copied "
+        f"line. Stay in character and output only the message."
+    )
+    user = (
+        f"Current chat in #{channel}:\n{ctx}\n\n"
+        f"Message directed at the persona: {user_message or '(none)'}\n\n"
+        f"Copied draft to avoid:\n{copied_output}\n\n"
+        f"Archived line it was too close to:\n{copied_source}\n\n"
+        f"Small style sample from {author}:\n" + "\n".join(examples)
+        + f"\n\nWrite a new {author} chat line now."
+    )
+    raw = await llm.chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        max_tokens=120,
+        temperature=1.05 if mode == "hyper" else 0.95,
+    )
+    repaired = _clean_output(raw, author)
+    if not repaired:
+        return None
+    if _copied_source(author, repaired, examples):
+        logging.info("Rejected copied persona repair for %s: %r", author, repaired)
+        return None
+    return repaired
+
+
 async def generate(author: str, channel: str, user_message: str = None,
                    mode: str = "normal", exemplar_count: int = None,
-                   context_count: int = None) -> str | None:
+                   context_count: int = None,
+                   copy_strategy: str = "drop") -> str | None:
     exemplar_count = exemplar_count or config.LLM_EXEMPLARS
     context_count = context_count or config.LLM_CONTEXT
     recent = chat_archive.latest(channel, context_count)
@@ -191,8 +260,20 @@ async def generate(author: str, channel: str, user_message: str = None,
     if not raw:
         return None
     out = _clean_output(raw, author)
-    if out and is_exact_archived_line(author, out):
-        logging.info("Rejected exact archived persona copy for %s: %r", author, out)
+    copied_example = _copied_source(author, out, [*signature, *relevant])
+    if copied_example:
+        logging.info(
+            "Rejected copied persona output for %s: %r copied from %r",
+            author, out, copied_example,
+        )
+        if copy_strategy == "repair":
+            repaired = await _repair_copied_output(
+                author, channel, user_message, mode, out, copied_example,
+                signature, relevant, ctx,
+            )
+            if repaired:
+                return repaired
+            raise _CopiedPersonaOutput
         return None
     return out or None
 
@@ -205,7 +286,14 @@ async def generate_with_retry(author: str, channel: str, user_message: str = Non
     land close together. The compact retry keeps commands responsive without
     disabling the richer default prompt for normal cases.
     """
-    out = await generate(author, channel, user_message, mode=mode)
+    _set_rejection(None)
+    try:
+        out = await generate(
+            author, channel, user_message, mode=mode, copy_strategy="repair"
+        )
+    except _CopiedPersonaOutput:
+        _set_rejection("model copied an archived line and the cheap repair failed")
+        return None
     if out:
         return out
     if not chat_archive.messages_for(author):
@@ -223,4 +311,5 @@ async def generate_with_retry(author: str, channel: str, user_message: str = Non
         mode=mode,
         exemplar_count=retry_exemplars,
         context_count=retry_context,
+        copy_strategy="drop",
     )

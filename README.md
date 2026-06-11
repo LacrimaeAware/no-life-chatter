@@ -61,7 +61,7 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~practice off` / `~practice show` | anyone | Stop / inspect practice mode. |
 | `~romanize on\|off\|show` | anyone | Toggle romanized readings in practice mode. |
 | `~speak <lang>` / `~speak show` | anyone | Flag your language so even your short messages translate. |
-| `~said <user> <phrase>` | anyone | Search the chat archive: did they ever say it, and when first. |
+| `~said <user> <phrase>` | anyone | Search the chat archive: exact matches first, then closest normalized match. |
 | `~quote <user>` | anyone | Random real quote from the chat archive. |
 | `~firstseen <user>` | anyone | A user's first archived message. |
 | `~chatstats <user>` | anyone | Archive stats: count, first/last seen, busiest hour. |

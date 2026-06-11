@@ -10,7 +10,9 @@ import logging
 import os
 import re
 import sqlite3
+import unicodedata
 from collections import Counter
+from difflib import SequenceMatcher
 
 import config
 
@@ -114,6 +116,62 @@ def author_keys(author: str) -> list[str]:
 def _in_clause(values: list[str]) -> tuple[str, list[str]]:
     placeholders = ",".join("?" for _ in values)
     return placeholders, values
+
+
+_MATCH_TRANSLATION = str.maketrans({
+    "’": "'",
+    "‘": "'",
+    "´": "'",
+    "`": "'",
+    "“": '"',
+    "”": '"',
+    "„": '"',
+    "—": "-",
+    "–": "-",
+    "‐": "-",
+    "\u00a0": " ",
+})
+
+
+def line_match_key(text: str) -> str:
+    """Normalize chat text for copy/near-copy checks.
+
+    This intentionally treats curly vs straight apostrophes, punctuation, case,
+    and spacing as irrelevant. It is stricter than "same meaning", but looser
+    than byte-for-byte equality, which is what we need for copied chat lines.
+    """
+    text = unicodedata.normalize("NFKC", text or "").translate(_MATCH_TRANSLATION)
+    text = text.casefold()
+    text = text.replace("'", "")
+    text = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def line_similarity(left: str, right: str) -> float:
+    left_key = line_match_key(left)
+    right_key = line_match_key(right)
+    if not left_key or not right_key:
+        return 0.0
+    if left_key == right_key:
+        return 1.0
+    left_tokens = set(left_key.split())
+    right_tokens = set(right_key.split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    overlap = len(left_tokens & right_tokens)
+    token_dice = (2 * overlap) / (len(left_tokens) + len(right_tokens))
+    char_ratio = SequenceMatcher(None, left_key, right_key, autojunk=False).ratio()
+    # A very close substring is usually the same chat line with a mention,
+    # emote, or small tail added/removed.
+    shorter, longer = sorted((left_key, right_key), key=len)
+    substring_bonus = len(shorter) >= 24 and shorter in longer
+    if substring_bonus:
+        char_ratio = max(char_ratio, 0.97)
+    score = (char_ratio * 0.75) + (token_dice * 0.25)
+    if substring_bonus:
+        score = max(score, 0.97)
+    return score
 
 
 def connect() -> sqlite3.Connection:
@@ -366,6 +424,52 @@ def said(author: str, phrase: str, limit: int = 3):
         [q, *author_params, limit],
     ).fetchall()
     return total, rows
+
+
+def nearest_author_lines(author: str, phrase: str, limit: int = 3,
+                         min_score: float = 0.82):
+    """Closest lines by author after punctuation/case/spacing normalization.
+
+    Intended as a fallback for "did they basically say this?" It does not
+    replace exact `said()` answers; callers should show exact matches first.
+    Returns [(score, sent_at, channel, content), ...].
+    """
+    needle = line_match_key(phrase)
+    if not needle or len(needle) < 8:
+        return []
+    needle_tokens = set(needle.split())
+    conn = connect()
+    keys = author_keys(author)
+    author_placeholders, author_params = _in_clause(keys)
+    rows = conn.execute(
+        f"SELECT sent_at, channel, content FROM messages "
+        f"WHERE author IN ({author_placeholders})",
+        author_params,
+    ).fetchall()
+
+    scored = []
+    for sent_at, channel, content in rows:
+        hay = line_match_key(content)
+        if not hay:
+            continue
+        max_len = max(len(needle), len(hay))
+        if max_len and abs(len(needle) - len(hay)) / max_len > 0.65:
+            continue
+        hay_tokens = set(hay.split())
+        if not hay_tokens:
+            continue
+        overlap = len(needle_tokens & hay_tokens)
+        if overlap == 0:
+            continue
+        overlap_share = overlap / min(len(needle_tokens), len(hay_tokens))
+        if overlap_share < 0.45 and needle not in hay and hay not in needle:
+            continue
+        score = line_similarity(phrase, content)
+        if score >= min_score:
+            scored.append((score, sent_at, channel, content))
+
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return scored[:limit]
 
 
 def random_quote(author: str, min_words: int = 3):

@@ -1,6 +1,7 @@
 """Query the chat archive from the command line (full, unabridged answers).
 
     python scripts/ask_archive.py said <user> <phrase...>   # did X ever say Y
+    python scripts/ask_archive.py near <user> <phrase...>   # closest lines by X
     python scripts/ask_archive.py quote <user>              # random quote by X
     python scripts/ask_archive.py stats <user>              # summary numbers
     python scripts/ask_archive.py search <phrase...>        # all authors
@@ -37,6 +38,20 @@ def main():
         print(f"{user} said \"{phrase}\": {total} time(s)")
         for sent_at, channel, content in rows:
             print(f"  [{sent_at}] #{channel}: {content}")
+        if total == 0:
+            near = chat_archive.nearest_author_lines(user, phrase, limit=5)
+            if near:
+                print("Closest normalized matches:")
+                for score, sent_at, channel, content in near:
+                    print(f"  {score:.1%} [{sent_at}] #{channel}: {content}")
+    elif cmd == "near" and len(args) >= 3:
+        user, phrase = args[1], " ".join(args[2:])
+        near = chat_archive.nearest_author_lines(user, phrase, limit=10, min_score=0.65)
+        print(f"Closest lines by {user} to \"{phrase}\":")
+        if not near:
+            print("  no close matches")
+        for score, sent_at, channel, content in near:
+            print(f"  {score:.1%} [{sent_at}] #{channel}: {content}")
     elif cmd == "quote":
         row = chat_archive.random_quote(args[1])
         if row:

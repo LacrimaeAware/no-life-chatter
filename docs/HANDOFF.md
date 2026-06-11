@@ -89,7 +89,10 @@ Q&A. See "Next work" below.
   builds: system prompt ("you ARE <author>" + both exemplar sections) + user
   turn (recent `latest()` channel context + optional directed message) →
   `services/llm.chat`. Modes: `normal`, `hyper`. Output is de-quoted /
-  name-stripped / single-line.
+  name-stripped / single-line. If output is an exact/near copy of an archived
+  line, explicit `~persona` gets one cheap repair prompt using a small style
+  sample instead of regenerating the full 150-example prompt; ambient random
+  reactions just drop copied lines.
 - `services/llm.py` — async client for any OpenAI-compatible `/v1/chat/completions`
   (LM Studio default). Returns None on failure (graceful).
 - `services/message_service.py` — `maybe_react()` (random LLM persona reaction;
@@ -120,6 +123,10 @@ Q&A. See "Next work" below.
   preference; still implemented). Retrieval also searches the target author's
   full history, using recent chat only as the query/context, not as somebody
   else's exemplar text.
+- **RAG examples are evidence, not quotes.** `utils/chat_archive.line_match_key`
+  normalizes punctuation/case/spacing so straight/curly apostrophes and tiny
+  mention/emote tails do not bypass copy checks. `~said` also uses this as a
+  close-match fallback when exact search finds nothing.
 - **Two TOS walls:** (1) hosted Claude/OpenAI refuse slur generation & OpenAI
   fine-tuning rejects edgy data → use a **local** model for edgy content (the
   user runs LM Studio: Llama-3.1-8B-Instruct-Q4_K_M, Vulkan, 8k ctx). (2)

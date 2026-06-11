@@ -27,10 +27,12 @@ async def _run(bot, message, params, mode):
     out = await persona_llm.generate_with_retry(user, message.channel.name, said, mode=mode)
     if not out:
         history_count = len(chat_archive.messages_for(user))
-        reason = llm.last_error() or "model returned an empty response"
+        rejection = persona_llm.last_rejection()
+        reason = rejection or llm.last_error() or "model returned an empty response"
         if history_count:
+            label = "generation blocked" if rejection else "LM Studio failed"
             await message.channel.send(
-                f"Couldn't generate {user} - LM Studio failed ({reason}). "
+                f"Couldn't generate {user} - {label} ({reason}). "
                 f"{user} has {history_count:,} archived messages, so history is not the issue."
             )
         else:

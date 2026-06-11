@@ -129,6 +129,7 @@ Offline (full archive):
 
 ```
 python scripts/ask_archive.py said <user> <phrase...>    # did X ever say Y -> matching rows
+python scripts/ask_archive.py near <user> <phrase...>    # closest normalized lines by X
 python scripts/ask_archive.py quote <user>               # random quote by X
 python scripts/ask_archive.py stats <user>               # count, first/last seen, busiest hour
 python scripts/ask_archive.py search <phrase...>         # phrase search, all authors
@@ -143,7 +144,7 @@ In chat (bot commands, follow the existing `commands/` auto-discovery pattern):
 
 | Command | Does |
 | --- | --- |
-| `~said <user> <phrase>` | "user said that 3 times, first on 2025-04-02: '...'" |
+| `~said <user> <phrase>` | exact quote search first; if none, closest normalized match |
 | `~quote <user>` | random real quote from the archive |
 | `~firstseen <user>` | first recorded message + date |
 | `~chatstats <user>` | message count, top emotes, busiest hour |
@@ -153,6 +154,13 @@ an `IN (SELECT rowid ...)` subquery) so SQLite runs the FTS match once and
 probes by rowid — the innocent-looking plain `JOIN` flips the loop order and
 re-evaluates the match per candidate row, turning a 3 ms query into minutes on
 a large archive.
+
+When exact `said` search finds nothing, the command and CLI fall back to a
+normalized close-match check. That treats straight vs curly apostrophes,
+punctuation, case, and spacing as irrelevant, so copied lines are still caught
+when chat/LLM output changes typography or adds a small mention/emote tail.
+Use `scripts/ask_archive.py near <user> <line>` when you explicitly want the
+closest lines instead of an exact-first answer.
 
 ## Optional later: semantic layer
 

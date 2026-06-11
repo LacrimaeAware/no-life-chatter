@@ -166,7 +166,9 @@ class MessageService:
         return directed
 
     async def _persona_line(self, target, channel, is_clean, persona_llm):
-        cand = await persona_llm.generate_with_retry(target, channel, mode="normal")
+        cand = await persona_llm.generate(
+            target, channel, mode="normal", copy_strategy="drop"
+        )
         if cand and len(cand.split()) >= 2 and is_clean(cand):
             return cand
         return None

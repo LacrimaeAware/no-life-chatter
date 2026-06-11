@@ -1,7 +1,8 @@
-from utils.chat_archive import said
+from utils.chat_archive import nearest_author_lines, said
 
 description = (
-    "Search the chat archive: did a user ever say something?\n"
+    "Search the chat archive: did a user ever say something? Exact first, "
+    "then a normalized close-match fallback.\n"
     "  ~said <user> <phrase>   e.g. ~said someuser top 5 worst movies"
 )
 
@@ -17,6 +18,14 @@ async def handle_said(bot, message, params):
     user, phrase = params[0], " ".join(params[1:])
     total, rows = said(user, phrase, limit=1)
     if total == 0:
+        near = nearest_author_lines(user, phrase, limit=1)
+        if near:
+            score, sent_at, channel, content = near[0]
+            await message.channel.send(
+                f"No exact record for {user}. Closest ({score:.0%}) on {sent_at[:10]}: "
+                f"\"{_clip(content)}\""
+            )
+            return
         await message.channel.send(f"No record of {user} saying \"{_clip(phrase, 80)}\".")
         return
     sent_at, channel, content = rows[0]
