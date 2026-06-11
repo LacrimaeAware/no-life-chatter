@@ -173,35 +173,49 @@ _KNOWN_USERS = None
 
 
 def _known_usernames():
-    """Archive authors (>=1000 msgs) — tokens to exclude from voice profiles.
+    """Archive authors (>=25 msgs) — tokens to exclude from voice profiles.
     Mentioning another chatter isn't a 'signature word', it's addressing. Names
-    here are username-shaped, so no real-vocabulary collateral."""
+    here are username-shaped (verified: no real-vocabulary collisions in the
+    current archive), so the only 'words' lost are other people's names."""
     global _KNOWN_USERS
     if _KNOWN_USERS is None:
         conn = chat_archive.connect()
         rows = conn.execute(
-            "SELECT author FROM messages GROUP BY author HAVING COUNT(*) >= 1000"
+            "SELECT author FROM messages GROUP BY author HAVING COUNT(*) >= 25"
         ).fetchall()
         _KNOWN_USERS = {a for a, in rows}
         _KNOWN_USERS |= {u.lower() for u in getattr(config, "EXCLUDE_USERS", set())}
     return _KNOWN_USERS
 
 
+_MENTION_RE = re.compile(r"@([\w']+)")
+
+
 def _count_tokens(msgs):
     """(word counts, adjacent-pair counts) for voice profiles, in one pass.
-    Three classes of non-voice tokens are dropped: URL shrapnel
-    (https/com/youtube/status...), digit-bearing tokens (@usernames like
-    name_12), and known chatter usernames (addressing, not vocabulary).
-    Emotes and foreign-language tics are voice — they stay. Pairs ("favorite
-    word associations") only form between surviving adjacent tokens."""
+    Dropped as non-voice: URL shrapnel (https/com/youtube/status...),
+    digit-bearing tokens (@usernames like name_12), known chatter usernames,
+    and any token this corpus ever @-mentions — if you wrote "@somename" even
+    once, every bare "somename" you typed is addressing, not vocabulary (this
+    catches names that never chatted in the archive). Emotes and
+    foreign-language tics are voice — they stay. Pairs ("favorite word
+    associations") only form between surviving adjacent tokens."""
     from collections import Counter
     users = _known_usernames()
     words, pairs = Counter(), Counter()
+    mentioned = set()
     for m in msgs:
-        toks = [w for w in _WORD_RE.findall(_URL_RE.sub(" ", (m or "")).lower())
+        low = _URL_RE.sub(" ", (m or "")).lower()
+        mentioned.update(_MENTION_RE.findall(low))
+        toks = [w for w in _WORD_RE.findall(low)
                 if len(w) >= 2 and not any(ch.isdigit() for ch in w) and w not in users]
         words.update(toks)
         pairs.update(f"{a} {b}" for a, b in zip(toks, toks[1:]) if a != b)
+    if mentioned:
+        for w in mentioned:
+            words.pop(w, None)
+        pairs = Counter({p: c for p, c in pairs.items()
+                         if not (set(p.split(" ", 1)) & mentioned)})
     return words, pairs
 
 
@@ -282,10 +296,15 @@ def _voice_profile(msgs, bg_counts, prevalence=None, words_top=300, phrases_top=
                                       words_top, phrases_top)
 
 
-def _bg_counts(bg_cap=120000):
+def _bg_counts(bg_cap=120000, channel=None):
     conn = chat_archive.connect()
-    bg = [r[0] for r in conn.execute(
-        "SELECT content FROM messages ORDER BY RANDOM() LIMIT ?", (bg_cap,)).fetchall()]
+    if channel:
+        bg = [r[0] for r in conn.execute(
+            "SELECT content FROM messages WHERE channel = ? ORDER BY RANDOM() LIMIT ?",
+            (chat_archive.normalize_channel(channel), bg_cap)).fetchall()]
+    else:
+        bg = [r[0] for r in conn.execute(
+            "SELECT content FROM messages ORDER BY RANDOM() LIMIT ?", (bg_cap,)).fetchall()]
     bw, bp = _count_tokens(bg)
     return (bw, sum(bw.values())), (bp, sum(bp.values()))
 
@@ -351,35 +370,49 @@ def build_style_profiles(roster=None, words_top=300, phrases_top=150,
     return len(profiles)
 
 
-def profile_for(author, author_cap=20000):
-    """The stored voice profile for `author`, or a live-computed one (capped
-    sample, fresh background) for chatters outside the prebuilt roster."""
+_scoped_cache = {}
+
+
+def profile_for(author, channel=None, author_cap=20000):
+    """The voice profile for `author`. Stored full-history profile by default;
+    with `channel`, computed live from their messages IN THAT CHAT against
+    that chat's own background — 'my markers are polluted with what I spammed
+    five years ago in another community' is exactly what this scopes away."""
     model = load()
     profiles = model.get("profiles") or {}
     canon = chat_archive.normalize_author(author)
-    prof = profiles.get(canon)
-    if prof and "words" in prof:
-        return prof
-    msgs = [m for m in chat_archive.messages_for(canon) if _usable(m)]
+    if not channel:
+        prof = profiles.get(canon)
+        if prof and "words" in prof:
+            return prof
+    key = (canon, chat_archive.normalize_channel(channel) if channel else None)
+    if key in _scoped_cache:
+        return _scoped_cache[key]
+    msgs = [m for m in chat_archive.messages_for(canon, channel=channel) if _usable(m)]
     if not msgs:
         return None
     rng = random.Random(13)
     rng.shuffle(msgs)
-    return _voice_profile(msgs[:author_cap], _bg_counts(40000),
+    prof = _voice_profile(msgs[:author_cap], _bg_counts(40000, channel=channel),
                           prevalence=model.get("prevalence"))
+    if len(_scoped_cache) > 200:
+        _scoped_cache.clear()
+    _scoped_cache[key] = prof
+    return prof
 
 
-def most_like(author, n=6):
+def most_like(author, n=6, channel=None):
     """Chatters who share `author`'s distinctive voice — overlap of favorite
     words (60%) and favorite word-pairs (40%). Returns
     [(author, score, [shared markers]), ...] with pairs preferred as the shown
-    evidence since they read as topics, not tics."""
+    evidence since they read as topics, not tics. `channel` scopes the
+    TARGET's profile to one chat (the panel stays full-history)."""
     model = load()
     profiles = model.get("profiles")
     if not profiles:
         return []
     canon = chat_archive.normalize_author(author)
-    target = profile_for(canon)
+    target = profile_for(canon, channel=channel)
     if not target:
         return []
     sims = []

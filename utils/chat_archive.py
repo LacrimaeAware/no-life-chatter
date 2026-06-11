@@ -693,15 +693,18 @@ def recent_authors(channel: str, scan: int = 400, limit: int = 60):
     return [r[0] for r in rows][:limit]
 
 
-def messages_for(author: str):
-    """All archived message texts by author (for offline persona building)."""
+def messages_for(author: str, channel: str = None):
+    """All archived message texts by author (for offline persona building).
+    channel limits to one chat (e.g. channel-scoped ~markers)."""
     conn = connect()
     keys = author_keys(author)
     author_placeholders, author_params = _in_clause(keys)
-    return [r[0] for r in conn.execute(
-        f"SELECT content FROM messages WHERE author IN ({author_placeholders}) ORDER BY sent_at",
-        author_params,
-    ).fetchall()]
+    sql = f"SELECT content FROM messages WHERE author IN ({author_placeholders})"
+    params = list(author_params)
+    if channel:
+        sql += " AND channel = ?"
+        params.append(normalize_channel(channel))
+    return [r[0] for r in conn.execute(sql + " ORDER BY sent_at", params).fetchall()]
 
 
 def search_all(phrase: str, limit: int = 10):
