@@ -158,6 +158,40 @@ the trained adapter on RunPod with prompts that include the same author-only RAG
 exemplars used by the live bot, or merge/serve the adapter somewhere safe and
 run the existing persona prompt against it.
 
+For that missing LoRA+RAG test, use:
+
+```text
+10-export-lora-rag-smoke-cases.bat
+```
+
+That creates:
+
+```text
+data\unsynced\fine_tune\persona_lora_rag_smoke_cases.json
+```
+
+Upload that JSON to:
+
+```text
+/workspace/nlc_persona/persona_lora_rag_smoke_cases.json
+```
+
+Then double-click:
+
+```text
+11-copy-runpod-lora-rag-smoke-command.bat
+```
+
+Paste the copied command into the RunPod terminal. It fetches the LoRA+RAG
+smoke-test runner, loads `/workspace/nlc_persona/persona_lora`, and writes:
+
+```text
+/workspace/nlc_persona/persona_lora_rag_smoke_test.txt
+```
+
+This still does not touch the live bot. It is only an offline evaluation of the
+trained Qwen LoRA adapter with the bot's RAG evidence included in the prompt.
+
 If training is interrupted, do **not** delete `nlc_persona` before resuming.
 The training script saves checkpoints under `/workspace/nlc_persona/persona_lora`
 every 100 optimizer steps and automatically resumes from the newest

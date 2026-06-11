@@ -181,9 +181,15 @@ archive/general-knowledge Q&A. See "Next work" below.
    local RAG-only comparison helper now exists:
    `9-compare-lora-vs-local-rag.bat` /
    `scripts/compare_lora_smoke_with_local_rag.py`, writing the private report
-   `data/unsynced/fine_tune/persona_lora_vs_local_rag.md`. Next real eval:
-   test **LoRA+RAG** together on RunPod or after merge/quantization, then decide
-   whether to keep Qwen, rerun on Llama, or adjust the export/eval prompts.
+   `data/unsynced/fine_tune/persona_lora_vs_local_rag.md`. The actual
+   **LoRA+RAG** test path is now staged too: run
+   `10-export-lora-rag-smoke-cases.bat` locally to create
+   `data/unsynced/fine_tune/persona_lora_rag_smoke_cases.json`, upload it to
+   `/workspace/nlc_persona/persona_lora_rag_smoke_cases.json`, then run
+   `11-copy-runpod-lora-rag-smoke-command.bat` and paste the copied command in
+   RunPod. That writes `/workspace/nlc_persona/persona_lora_rag_smoke_test.txt`
+   without touching the live bot. After seeing those outputs, decide whether to
+   keep Qwen, rerun on Llama, or adjust the export/eval prompts.
 3. **Archive/general-knowledge Q&A** — a separate `~askchat`-style route for
    questions like "do we have an emote of the bottle dog?", using archive/emote
    retrieval plus a stronger answer model. Do not solve this via fine-tuning.
