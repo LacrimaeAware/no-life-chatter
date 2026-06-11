@@ -19,7 +19,11 @@ QUANT="${QUANT:-Q4_K_M}"
 
 source /workspace/nlc_train_env/bin/activate 2>/dev/null || true
 export HF_HOME=/workspace/hf_cache
-pip install -q peft transformers accelerate sentencepiece gguf
+pip install -q -U peft transformers accelerate sentencepiece gguf
+# transformers imports torchvision for vision models; on a torch-version-mismatched
+# pod that import crashes (circular import) and breaks text conversion too. We
+# don't need vision here — remove it so transformers skips that import.
+pip uninstall -y torchvision >/dev/null 2>&1 || true
 
 # Locate the adapter (folder containing adapter_config.json). Extract the
 # result zip if only that exists.
