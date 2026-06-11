@@ -85,6 +85,11 @@ def _usable_output(content: str, min_words: int, max_chars: int, allow_urls: boo
     content = (content or "").strip()
     if not content or content.startswith(config.PREFIX):
         return False
+    # Bot-command lines ($gpt/$remind/!so) are real chat habits but terrible
+    # training targets: a persona that learned them spams commands instead of
+    # talking. (v2 lesson — addressing people is "@name ...", not a command.)
+    if re.match(r"^[~$!][A-Za-z]{2,}", content):
+        return False
     if len(content) > max_chars:
         return False
     if len(content.split()) < min_words:

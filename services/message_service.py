@@ -204,8 +204,10 @@ class MessageService:
                 break
             if len(line) > 280:
                 line = line[:279] + "..."
+            tag = persona_llm.last_model_tag()
+            prefix = f"#{tag} " if tag else ""
             logging.info(f"Persona reaction follow-up in #{message.channel.name} as {target}: {line!r}")
-            await message.channel.send(f"↳ 🎲 {target}: {line}")
+            await message.channel.send(f"↳ 🎲 {prefix}{target}: {line}")
             last_line = line
 
     async def maybe_react(self, message):
@@ -245,8 +247,10 @@ class MessageService:
                     if len(line) > 280:
                         line = line[:279] + "..."
                     self._last_reaction[channel] = time.time()
+                    tag = persona_llm.last_model_tag()
+                    prefix = f"#{tag} " if tag else ""
                     logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
-                    await message.channel.send(f"🎲 {target}: {line}")
+                    await message.channel.send(f"🎲 {prefix}{target}: {line}")
                     await self._maybe_continue_reaction(
                         message, target, line, is_clean, persona_llm
                     )

@@ -61,7 +61,9 @@ async def _run(bot, message, params, mode):
 
     if len(out) > 480:
         out = out[:479] + "..."
-    await message.channel.send(f"🎭 {user}: {out}")
+    tag = persona_llm.last_model_tag()
+    prefix = f"#{tag} " if tag else ""
+    await message.channel.send(f"🎭 {prefix}{user}: {out}")
     await _maybe_continue(message, user, said, out, mode)
 
 
@@ -95,7 +97,9 @@ async def _maybe_continue(message, user, original_prompt, previous_line, mode):
             break
         if len(follow) > 480:
             follow = follow[:479] + "..."
-        await message.channel.send(f"↳ 🎭 {user}: {follow}")
+        tag = persona_llm.last_model_tag()
+        prefix = f"#{tag} " if tag else ""
+        await message.channel.send(f"↳ 🎭 {prefix}{user}: {follow}")
         last_line = follow
 
 

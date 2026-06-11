@@ -106,7 +106,26 @@ class Bot(commands.Bot):
         logging.error(f"twitchio event error: {error!r} | data={data!r}")
 
 
+def acquire_single_instance_lock():
+    """Bind a localhost port as a machine-wide mutex. A second chatbot.py —
+    from the keep-alive loop, the login autostart, or a manual launch — fails
+    the bind and exits instead of double-connecting to Twitch (which makes the
+    bot answer every command twice). The OS releases the port on ANY exit, so
+    a crash can never wedge the lock."""
+    import socket
+    import sys
+    lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        lock.bind(("127.0.0.1", 48917))
+    except OSError:
+        logging.error("Another NoLifeChatter instance is already running — exiting.")
+        sys.exit(0)
+    lock.listen(1)
+    return lock  # keep a reference so the socket lives for the process lifetime
+
+
 def main():
+    instance_lock = acquire_single_instance_lock()  # noqa: F841
     logging.info("Starting token management thread...")
     start_token_management()
     time.sleep(2)  # give the token manager a moment to refresh if needed

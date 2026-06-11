@@ -187,29 +187,38 @@ def _known_usernames():
     return _KNOWN_USERS
 
 
-def _count_words(msgs):
-    """Word counts for voice profiles. Three classes of non-voice tokens are
-    dropped: URL shrapnel (https/com/youtube/status...), digit-bearing tokens
-    (@usernames like name_12), and known chatter usernames (addressing, not
-    vocabulary). Emotes and foreign-language tics are voice — they stay."""
+def _count_tokens(msgs):
+    """(word counts, adjacent-pair counts) for voice profiles, in one pass.
+    Three classes of non-voice tokens are dropped: URL shrapnel
+    (https/com/youtube/status...), digit-bearing tokens (@usernames like
+    name_12), and known chatter usernames (addressing, not vocabulary).
+    Emotes and foreign-language tics are voice — they stay. Pairs ("favorite
+    word associations") only form between surviving adjacent tokens."""
     from collections import Counter
     users = _known_usernames()
-    c = Counter()
+    words, pairs = Counter(), Counter()
     for m in msgs:
-        for w in _WORD_RE.findall(_URL_RE.sub(" ", (m or "")).lower()):
-            if len(w) >= 2 and not any(ch.isdigit() for ch in w) and w not in users:
-                c[w] += 1
-    return c
+        toks = [w for w in _WORD_RE.findall(_URL_RE.sub(" ", (m or "")).lower())
+                if len(w) >= 2 and not any(ch.isdigit() for ch in w) and w not in users]
+        words.update(toks)
+        pairs.update(f"{a} {b}" for a, b in zip(toks, toks[1:]) if a != b)
+    return words, pairs
 
 
-def _logodds_profile(ac, na, bc, nb, top, min_count=3):
+def _count_words(msgs):
+    return _count_tokens(msgs)[0]
+
+
+def _logodds_profile(ac, na, bc, nb, top, min_count=3, exclude=None):
     """Fightin' Words log-odds of an author's word counts (ac/na) vs a shared
     background (bc/nb); keep the top `top` positive (distinctive) terms,
-    L2-normalized into a {word: weight} vector."""
+    L2-normalized into a {word: weight} vector. `exclude` drops terms outright
+    (the everyone-says-it stoplist — 'to'/'and' can't be a voice marker no
+    matter how confidently overused)."""
     import math
     scored = []
     for w, ya in ac.items():
-        if ya < min_count:
+        if ya < min_count or (exclude and w in exclude):
             continue
         yb = bc.get(w, 0)
         num_a, den_a = ya + 0.5, na - ya + 0.5
@@ -224,19 +233,45 @@ def _logodds_profile(ac, na, bc, nb, top, min_count=3):
     return {w: z / norm for w, z in scored}
 
 
-def build_style_profiles(roster=None, top=400, author_cap=4000, bg_cap=80000,
-                         min_messages=2000, max_roster=80, seed=13):
-    """Per-author DISTINCTIVE-vocabulary profile for ~like.
+def _voice_profile(msgs, bg_counts, words_top=300, phrases_top=150):
+    """{'words': {...}, 'phrases': {...}} — each category capped and
+    independently normalized, per the favorite-words / favorite-associations
+    model: a person is their top distinctive words plus their top distinctive
+    adjacent word-pairs. Words everyone says (background top-100) are never
+    markers; a pair is dropped only when BOTH halves are that common."""
+    (bw, nbw), (bp, nbp) = bg_counts
+    stop = {w for w, _ in bw.most_common(100)}
+    stop_pairs = {p for p in bp if all(t in stop for t in p.split(" ", 1))}
+    aw, ap = _count_tokens(msgs)
+    naw, nap = sum(aw.values()), sum(ap.values())
+    if naw < 500:
+        return None
+    return {
+        "words": _logodds_profile(aw, naw, bw, nbw, words_top, exclude=stop),
+        "phrases": (_logodds_profile(ap, nap, bp, nbp, phrases_top, exclude=stop_pairs)
+                    if nap else {}),
+    }
 
-    Raw TF-IDF centroids put every chatter at ~0.85 cosine because shared chat
-    swamps the signal. Instead each person is the set of words they use far more
-    than the average chatter (Fightin' Words log-odds vs one shared background —
-    the same signal as ~markers), L2-normalized. Two people are 'alike' when
-    those DISTINCTIVE vocabularies overlap, and we can name the shared markers.
-    Covers a broad roster (top chatters by volume), not just the classifier
-    classes — so bilingual/low-volume regulars get profiles too."""
+
+def _bg_counts(bg_cap=120000):
     conn = chat_archive.connect()
-    rng = random.Random(seed)
+    bg = [r[0] for r in conn.execute(
+        "SELECT content FROM messages ORDER BY RANDOM() LIMIT ?", (bg_cap,)).fetchall()]
+    bw, bp = _count_tokens(bg)
+    return (bw, sum(bw.values())), (bp, sum(bp.values()))
+
+
+def build_style_profiles(roster=None, words_top=300, phrases_top=150,
+                         bg_cap=120000, min_messages=2000, max_roster=80):
+    """Per-author voice profile for ~like / ~markers: favorite words + favorite
+    word-pairs, scored by Fightin' Words log-odds vs one shared background.
+
+    Processes ALL of each person's archived messages (no sampling) — the
+    profile itself is the cap: only the top `words_top`/`phrases_top` most
+    distinctive entries per category are kept, so a 60k-message chatter and a
+    3k-message chatter end up the same size. Covers a broad roster (top
+    chatters by volume), not just the classifier classes."""
+    conn = chat_archive.connect()
     if roster is None:
         exclude = {u.lower() for u in getattr(config, "EXCLUDE_USERS", set())}
         rows = conn.execute(
@@ -244,21 +279,13 @@ def build_style_profiles(roster=None, top=400, author_cap=4000, bg_cap=80000,
             "HAVING c >= ? ORDER BY c DESC LIMIT ?", (min_messages, max_roster * 2)).fetchall()
         roster = [a for a, _ in rows if a not in exclude and "bot" not in a][:max_roster]
     roster = _dedupe_canonical(roster)
-    # One shared background so every author's log-odds are on the same scale.
-    bg = [r[0] for r in conn.execute(
-        "SELECT content FROM messages ORDER BY RANDOM() LIMIT ?", (bg_cap,)).fetchall()]
-    bc = _count_words(bg)
-    nb = sum(bc.values())
+    bg = _bg_counts(bg_cap)   # one shared background -> comparable scales
     profiles = {}
     for a in roster:
         msgs = [m for m in chat_archive.messages_for(a) if _usable(m)]
-        rng.shuffle(msgs)
-        msgs = msgs[:author_cap]
-        ac = _count_words(msgs)
-        na = sum(ac.values())
-        if na < 500:
-            continue
-        profiles[a] = _logodds_profile(ac, na, bc, nb, top)
+        prof = _voice_profile(msgs, bg, words_top, phrases_top)
+        if prof:
+            profiles[a] = prof
     model = load()
     model["profiles"] = profiles
     model.pop("style", None)
@@ -270,33 +297,49 @@ def build_style_profiles(roster=None, top=400, author_cap=4000, bg_cap=80000,
     return len(profiles)
 
 
+def profile_for(author, author_cap=20000):
+    """The stored voice profile for `author`, or a live-computed one (capped
+    sample, fresh background) for chatters outside the prebuilt roster."""
+    model = load()
+    profiles = model.get("profiles") or {}
+    canon = chat_archive.normalize_author(author)
+    prof = profiles.get(canon)
+    if prof and "words" in prof:
+        return prof
+    msgs = [m for m in chat_archive.messages_for(canon) if _usable(m)]
+    if not msgs:
+        return None
+    rng = random.Random(13)
+    rng.shuffle(msgs)
+    return _voice_profile(msgs[:author_cap], _bg_counts(40000))
+
+
 def most_like(author, n=6):
-    """Chatters who share `author`'s DISTINCTIVE vocabulary — cosine of
-    log-odds marker profiles (0..1; higher = more shared distinctive habits,
-    likely same crowd / alts). Returns [(author, score, [shared markers]), ...].
-    Works for any roster member; for others, the profile is computed live."""
+    """Chatters who share `author`'s distinctive voice — overlap of favorite
+    words (60%) and favorite word-pairs (40%). Returns
+    [(author, score, [shared markers]), ...] with pairs preferred as the shown
+    evidence since they read as topics, not tics."""
     model = load()
     profiles = model.get("profiles")
     if not profiles:
         return []
     canon = chat_archive.normalize_author(author)
-    target = profiles.get(canon)
-    if target is None:
-        terms = signature_words(canon, n=400)
-        if not terms:
-            return []
-        import math
-        pos = [(w, z) for w, z in terms if z > 0]
-        nm = math.sqrt(sum(z * z for _, z in pos)) or 1.0
-        target = {w: z / nm for w, z in pos}
+    target = profile_for(canon)
+    if not target:
+        return []
     sims = []
     for c, prof in profiles.items():
-        if c == canon:
+        if c == canon or "words" not in prof:
             continue
-        shared = [(w, target[w] * prof[w]) for w in target if w in prof]
-        score = sum(s for _, s in shared)
-        shared.sort(key=lambda kv: -kv[1])
-        sims.append((c, score, [w for w, _ in shared[:5]]))
+        shared_w = [(k, target["words"][k] * prof["words"][k])
+                    for k in target["words"] if k in prof["words"]]
+        shared_p = [(k, target["phrases"][k] * prof["phrases"][k])
+                    for k in target.get("phrases", {}) if k in prof.get("phrases", {})]
+        score = 0.6 * sum(v for _, v in shared_w) + 0.4 * sum(v for _, v in shared_p)
+        shared_p.sort(key=lambda kv: -kv[1])
+        shared_w.sort(key=lambda kv: -kv[1])
+        evidence = [k for k, _ in shared_p[:2]] + [k for k, _ in shared_w[:4]]
+        sims.append((c, score, evidence[:5]))
     sims.sort(key=lambda kv: -kv[1])
     return sims[:n]
 

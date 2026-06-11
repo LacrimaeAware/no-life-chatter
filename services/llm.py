@@ -48,7 +48,8 @@ async def _pick_model(session) -> str:
 
 
 async def chat(messages, max_tokens: int = 120, temperature: float = 0.85,
-               stop=None) -> str | None:
+               stop=None, model: str = None) -> str | None:
+    """model: explicit model id (e.g. the live A/B roll); default = config."""
     global _last_error
     _last_error = None
     payload = {
@@ -63,7 +64,7 @@ async def chat(messages, max_tokens: int = 120, temperature: float = 0.85,
         async with _chat_lock:
             timeout = aiohttp.ClientTimeout(total=config.LLM_TIMEOUT)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                payload["model"] = await _pick_model(session)
+                payload["model"] = model or await _pick_model(session)
                 async with session.post(config.LLM_ENDPOINT, json=payload) as resp:
                     if resp.status != 200:
                         body = await resp.text()

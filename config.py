@@ -182,6 +182,10 @@ BLOCKLIST_FILE: str = _resolve(
 # default (free, local, private). Leave it; just run LM Studio with a model.
 LLM_ENDPOINT: str = _llm.get("endpoint", "http://127.0.0.1:1234/v1/chat/completions")
 LLM_MODEL: str = _llm.get("model", "local")  # LM Studio uses whatever's loaded
+# Live A/B: when non-empty, every persona generation randomly rolls one of
+# these model ids and the posted line is tagged (#llama / #lora) so chat can
+# judge them side by side. Empty list = always LLM_MODEL.
+LLM_AB_MODELS: list = list(_llm.get("ab_models", []))
 LLM_TIMEOUT: float = float(_llm.get("timeout", 90))
 LLM_EXEMPLARS: int = int(_llm.get("exemplars", 150))   # real lines put in the prompt
 LLM_RELEVANT_EXEMPLARS: int = int(

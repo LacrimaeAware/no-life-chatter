@@ -285,6 +285,32 @@ def _set_rejection(reason: str | None) -> None:
     _last_rejection = reason
 
 
+_last_model_tag = None
+
+
+def last_model_tag() -> str | None:
+    """Short tag (#llama / #lora) of the model that produced the most recent
+    generation — None when the live A/B roll is off. Posting sites prepend it
+    so chat can judge the two models on real usage."""
+    return _last_model_tag
+
+
+def _roll_ab_model(invoked_by: str | None) -> str | None:
+    """Pick a model for this generation when live A/B is configured.
+    The compare script drives models explicitly, so it never rolls."""
+    global _last_model_tag
+    pool = getattr(config, "LLM_AB_MODELS", None)
+    if not pool or invoked_by == "compare":
+        _last_model_tag = None
+        return None
+    mid = random.choice(pool)
+    low = mid.lower()
+    _last_model_tag = ("lora" if "lora" in low
+                       else "llama" if "llama" in low
+                       else low.split("/")[-1][:10])
+    return mid
+
+
 def is_exact_archived_line(author: str, text: str) -> bool:
     """True when generated text is a normalized exact old line from this author."""
     key = chat_archive.normalize_author(author)
@@ -360,6 +386,11 @@ def _candidate_issues(author: str, text: str, ctx_rows) -> str | None:
         return "empty"
     if "http://" in text or "https://" in text or "www." in text:
         return "contains a URL"
+    # Real chatters spam bot commands ($gpt/$remind/~persona), so models learn
+    # to emit them — but the bot posting a command line is noise (and can
+    # trigger OTHER bots). Personas address people with @, not with commands.
+    if re.match(r"^[~$!][A-Za-z]{2,}", text.lstrip()):
+        return "bot command line"
     if _BROKEN_MENTION_RE.search(text):
         return "broken mention"
     author_key = chat_archive.normalize_author(author)
@@ -400,10 +431,12 @@ async def generate(author: str, channel: str, user_message: str = None,
         author, _retrieval_text(recent, user_message), n=exemplar_count,
         exclude_terms=ctx_names,
     )
+    ab_model = _roll_ab_model(invoked_by)
     event = {
         "author": chat_archive.normalize_author(author),
         "channel": chat_archive.normalize_channel(channel),
         "mode": mode,
+        "model": ab_model or config.LLM_MODEL,
         "invoked_by": invoked_by,
         "user_message": user_message,
         "context_tail": [f"{a}: {c}" for _, a, c in ctx_rows[-6:]],
@@ -473,7 +506,8 @@ async def generate(author: str, channel: str, user_message: str = None,
     best, best_score = None, -1.0
     first_copy = None
     for _ in range(n_candidates):
-        raw = await llm.chat(messages, max_tokens=160, temperature=temperature)
+        raw = await llm.chat(messages, max_tokens=160, temperature=temperature,
+                             model=ab_model)
         if not raw:
             event["candidates"].append({"text": None, "status": "llm failed/timeout"})
             continue
