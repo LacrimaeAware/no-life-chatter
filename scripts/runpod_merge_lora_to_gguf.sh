@@ -53,6 +53,21 @@ AutoTokenizer.from_pretrained("$BASE").save_pretrained("$OUT")
 print("merged ->", "$OUT")
 PY
 
+# Newer transformers saves a tokenizer_class (e.g. "TokenizersBackend") that
+# llama.cpp's converter can't instantiate — normalize it to the fast class.
+python - <<PY
+import json, os
+p = os.path.join("$OUT", "tokenizer_config.json")
+try:
+    d = json.load(open(p))
+    if "Backend" in str(d.get("tokenizer_class", "")) or not d.get("tokenizer_class"):
+        d["tokenizer_class"] = "PreTrainedTokenizerFast"
+        json.dump(d, open(p, "w"))
+        print("normalized tokenizer_class for gguf conversion")
+except Exception as e:
+    print("tokenizer_config fix skipped:", e)
+PY
+
 echo "[2/3] Converting merged model to GGUF (f16)..."
 [ -d llama.cpp ] || git clone --depth 1 https://github.com/ggml-org/llama.cpp
 pip install -q -r llama.cpp/requirements.txt
