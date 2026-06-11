@@ -145,6 +145,8 @@ def main() -> None:
             training_kwargs["completion_only_loss"] = True
         if "eos_token" in args_params:
             training_kwargs["eos_token"] = "<|im_end|>"
+        if "dataset_num_proc" in args_params:
+            training_kwargs["dataset_num_proc"] = 1
     training_args = args_cls(**training_kwargs)
 
     trainer_kwargs = dict(

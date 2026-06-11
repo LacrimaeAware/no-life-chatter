@@ -16,7 +16,11 @@ export HF_HOME=/workspace/hf_cache
 export TRANSFORMERS_CACHE=/workspace/hf_cache
 export HF_DATASETS_CACHE=/workspace/hf_datasets_cache
 export PIP_CACHE_DIR=/workspace/pip_cache
-export TMPDIR=/workspace/tmp
+# Keep short-lived multiprocessing temp files off the RunPod Network Volume.
+# Network volumes can leave .nfs* cleanup files behind while worker processes
+# still hold descriptors; local /tmp avoids that noisy failure mode.
+export TMPDIR=/tmp/nlc_train_tmp
+export TOKENIZERS_PARALLELISM=false
 mkdir -p "$HF_HOME" "$HF_DATASETS_CACHE" "$PIP_CACHE_DIR" "$TMPDIR"
 
 echo "== NoLifeChatter persona LoRA pilot =="
