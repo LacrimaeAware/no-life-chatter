@@ -95,6 +95,13 @@ chatterino_logs = ""
 # (typo'd channel dirs, renamed accounts).
 [archive.aliases]
 # old_name = "real_name"
+# Optional: more precise aliases. Use user_aliases for alt accounts so a user
+# merge does not rename a channel with the same spelling. Existing archive rows
+# under either name are included at query time.
+[archive.user_aliases]
+# alt_account = "main_account"
+[archive.channel_aliases]
+# old_channel = "current_channel"
 
 [persona]
 # Persona features (see docs/PERSONA_BOT_ROADMAP.md). ~mimic posts a
@@ -108,6 +115,11 @@ reaction_cooldown = 90
 # Use the LLM (context-aware) for reactions instead of Markov. Needs an [llm]
 # endpoint (LM Studio) running; falls back gracefully if it's unreachable.
 reaction_use_llm = false
+# Anything the bot is about to post is checked against this denylist first, so
+# recombined real chat can't get the bot banned for posting slurs/hate terms.
+# Keep the actual list in a gitignored file (one term per line, '#' comments);
+# if the file is missing, nothing is filtered.
+blocklist_file = "data/unsynced/blocklist.txt"
 
 [llm]
 # Persona engine backend — any OpenAI-compatible chat endpoint. LM Studio's
@@ -117,13 +129,10 @@ endpoint = "http://127.0.0.1:1234/v1/chat/completions"
 model = "local"
 timeout = 45
 exemplars = 150
+# Of those exemplars, try to fill this many with author-only messages retrieved
+# for the current chat topic. 0 restores the old random-only prompt.
+relevant_exemplars = 90
 context_messages = 25
-# Anything the bot is about to post is checked against this denylist first, so
-# recombined real chat can't get the bot banned for posting slurs/hate terms.
-# Keep the actual list in a gitignored file (one term per line, '#' comments);
-# if the file is missing, nothing is filtered.
-blocklist_file = "data/unsynced/blocklist.txt"
-
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count

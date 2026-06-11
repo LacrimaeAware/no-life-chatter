@@ -138,6 +138,10 @@ ARCHIVE_CHATTERINO_LOGS: str = _ar.get("chatterino_logs", "")
 # Spelling variants that should count as the same channel/user, e.g.
 # {"f3rnard0" = "fernardo"} merges a typo-named channel into the real one.
 ARCHIVE_ALIASES: dict = dict(_ar.get("aliases", {}))
+# More precise aliases. These are layered on top of archive.aliases, but only
+# affect the relevant side so alt accounts do not accidentally rename channels.
+ARCHIVE_USER_ALIASES: dict = dict(_ar.get("user_aliases", {}))
+ARCHIVE_CHANNEL_ALIASES: dict = dict(_ar.get("channel_aliases", {}))
 
 # ------------------------------- personas --------------------------------
 # Persona features (docs/PERSONA_BOT_ROADMAP.md). The ~mimic command posts a
@@ -159,18 +163,23 @@ EXCLUDE_USERS: set[str] = {
         "buttsbot", "supibot", "kunszg",
     ])
 }
+_llm = _cfg.get("llm", {})
 # Denylist of terms the bot must never post (one per line, '#' comments).
 # Kept OUT of the repo — lives in a gitignored file. Empty/missing = no filter.
-BLOCKLIST_FILE: str = _resolve(_pe.get("blocklist_file", "data/unsynced/blocklist.txt"))
+BLOCKLIST_FILE: str = _resolve(
+    _pe.get("blocklist_file", _llm.get("blocklist_file", "data/unsynced/blocklist.txt"))
+)
 
 # LLM persona engine (~persona / ~hyper, and optionally the random reaction).
 # Points at any OpenAI-compatible chat endpoint — LM Studio's local server by
 # default (free, local, private). Leave it; just run LM Studio with a model.
-_llm = _cfg.get("llm", {})
 LLM_ENDPOINT: str = _llm.get("endpoint", "http://127.0.0.1:1234/v1/chat/completions")
 LLM_MODEL: str = _llm.get("model", "local")  # LM Studio uses whatever's loaded
 LLM_TIMEOUT: float = float(_llm.get("timeout", 45))
 LLM_EXEMPLARS: int = int(_llm.get("exemplars", 150))   # real lines put in the prompt
+LLM_RELEVANT_EXEMPLARS: int = int(
+    _llm.get("relevant_exemplars", min(90, max(0, int(LLM_EXEMPLARS * 0.6))))
+)
 LLM_CONTEXT: int = int(_llm.get("context_messages", 25))  # recent chat lines for context
 # Use the LLM (context-aware) for random reactions instead of Markov.
 REACTION_USE_LLM: bool = bool(_pe.get("reaction_use_llm", False))

@@ -44,7 +44,7 @@ def build(author: str, order: int = 2, min_messages: int = 40):
     if not starts:
         return None
     return {
-        "author": chat_archive.normalize(author),
+        "author": chat_archive.normalize_author(author),
         "order": order,
         "chain": dict(chain),
         "starts": starts,
@@ -58,7 +58,7 @@ _model_cache = {}
 def get_model(author: str, order: int = 2, min_messages: int = 40):
     """Cached build() — so the ~mimic command doesn't re-scan a user's whole
     history on every call. Cache is per process; clears on bot restart."""
-    key = (chat_archive.normalize(author), order)
+    key = (chat_archive.normalize_author(author), order)
     if key not in _model_cache:
         _model_cache[key] = build(author, order=order, min_messages=min_messages)
     return _model_cache[key]

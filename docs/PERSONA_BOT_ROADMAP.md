@@ -7,19 +7,18 @@ one tuned for comedy — plus rare spontaneous in-character reactions, playful
 psychometrics, and trivia.
 
 **Status (2026-06-11): phases 0–3 built and live** — archive + query commands,
-Markov `~mimic`, LLM `~persona`/`~hyper` (local LM Studio), and random
-reactions. Phases 3.5–5 (retrieval/RAG, fine-tune) + the new ideas
+Markov `~mimic`, LLM `~persona`/`~hyper` (local LM Studio), lightweight
+retrieval/RAG exemplars, and random reactions. Fine-tuning + the new ideas
 (reply-frequency, Turing-test game) are next. **For a full pick-up-and-continue
 brief, read [HANDOFF.md](HANDOFF.md).** Companion docs:
 [CHAT_ARCHIVE.md](CHAT_ARCHIVE.md) (data layer + Chatterino format),
 [IDEA_BANK.md](IDEA_BANK.md) (ideas, incl. the Turing game & reply-frequency).
 
-Two clarifications that came up: (a) **exemplars are sampled RANDOMLY across a
-user's whole history**, not "recent only" — recent messages are used solely as
-the live conversation context. (b) **Personas never merge** — only the target
-author's own messages go in; v1 uses a plain random sample, and *retrieval*
-(picking the most-relevant of their full history per reply) is the next
-accuracy upgrade.
+Two clarifications that came up: (a) **signature exemplars are sampled RANDOMLY
+across a user's whole history**, not "recent only" — recent messages are live
+conversation context and the retrieval query. (b) **Personas never merge** —
+only the target author's own messages go in as exemplars; lightweight retrieval
+now picks relevant target-author lines from their full history per reply.
 
 ## Feasibility verdict
 
@@ -107,9 +106,9 @@ prompt is dominated by the person's verbatim messages:
 
 ```
 voice spec (~5%)                      "never capitalizes, 1–6 words, ..."
-exemplar messages (~80%)              200+ real lines: their signature
-                                      phrases + lines retrieved from the
-                                      archive about the CURRENT topic
+exemplar messages (~80%)              current v1: 150 real lines: random
+                                      signature lines + up to 90 retrieved
+                                      from the archive about the CURRENT topic
 live conversation (~15%)              the last ~15 messages in the channel
 task                                  "write the next message <user> would
                                       type here"

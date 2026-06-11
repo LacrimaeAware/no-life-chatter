@@ -10,11 +10,22 @@ import logging
 import os
 import re
 import sqlite3
+from collections import Counter
 
 import config
 
-# Name-spelling variants that should count as the same channel/user.
+# Name-spelling variants that should count as the same channel/user. The legacy
+# [archive.aliases] map applies to both; the newer specific maps avoid turning
+# a user alt-account merge into a channel rename.
 ALIASES = {alias.lower(): real.lower() for alias, real in config.ARCHIVE_ALIASES.items()}
+USER_ALIASES = {
+    **ALIASES,
+    **{alias.lower(): real.lower() for alias, real in config.ARCHIVE_USER_ALIASES.items()},
+}
+CHANNEL_ALIASES = {
+    **ALIASES,
+    **{alias.lower(): real.lower() for alias, real in config.ARCHIVE_CHANNEL_ALIASES.items()},
+}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -56,10 +67,53 @@ CREATE TABLE IF NOT EXISTS ingested_files (
 _conn = None
 
 
-def normalize(name: str) -> str:
-    """Lowercase, strip @ / whitespace, and resolve known spelling aliases."""
+def _base_name(name: str) -> str:
     name = (name or "").strip().lstrip("@").rstrip(",").lower()
-    return ALIASES.get(name, name)
+    return name
+
+
+def _resolve_alias(name: str, aliases: dict) -> str:
+    """Resolve aliases, including simple chains like typo -> old -> current."""
+    name = _base_name(name)
+    seen = set()
+    while name in aliases and name not in seen:
+        seen.add(name)
+        name = _base_name(aliases[name])
+    return name
+
+
+def normalize(name: str) -> str:
+    """Lowercase, strip @ / whitespace, and resolve legacy aliases."""
+    return _resolve_alias(name, ALIASES)
+
+
+def normalize_author(name: str) -> str:
+    """Normalize a chatter username, including user-only alt-account aliases."""
+    return _resolve_alias(name, USER_ALIASES)
+
+
+def normalize_channel(name: str) -> str:
+    """Normalize a channel name, including channel-only aliases."""
+    return _resolve_alias(name, CHANNEL_ALIASES)
+
+
+def author_keys(author: str) -> list[str]:
+    """All stored author keys that should count as this person.
+
+    Existing rows may still be stored under pre-alias names, so reads query the
+    canonical name plus any configured aliases that resolve to it.
+    """
+    canonical = normalize_author(author)
+    keys = {canonical, _base_name(author)}
+    for alias in USER_ALIASES:
+        if _resolve_alias(alias, USER_ALIASES) == canonical:
+            keys.add(alias)
+    return sorted(keys)
+
+
+def _in_clause(values: list[str]) -> tuple[str, list[str]]:
+    placeholders = ",".join("?" for _ in values)
+    return placeholders, values
 
 
 def connect() -> sqlite3.Connection:
@@ -142,7 +196,7 @@ def ingest_file(path: str, channel: str, date: str) -> dict:
             kind, t, author, content = parse_line(line)
             counts[kind] += 1
             if kind == "chat":
-                batch.append((channel, normalize(author), f"{date} {t}", content,
+                batch.append((channel, normalize_author(author), f"{date} {t}", content,
                               "chatterino", key))
 
     with conn:
@@ -173,7 +227,7 @@ def record_live(channel: str, author: str, content: str, sent_at: str) -> None:
         with conn:
             conn.execute(
                 "INSERT INTO messages (channel, author, sent_at, content, source) VALUES (?,?,?,?, 'live')",
-                (normalize(channel), normalize(author), sent_at, content),
+                (normalize_channel(channel), normalize_author(author), sent_at, content),
             )
     except Exception as e:
         logging.warning(f"chat_archive live write failed: {e}")
@@ -186,6 +240,75 @@ def _fts_phrase(phrase: str) -> str:
     return '"' + phrase.replace('"', '""') + '"'
 
 
+_QUERY_STOPWORDS = {
+    "about", "after", "again", "against", "also", "because", "been", "before",
+    "being", "between", "could", "does", "doing", "dont", "from", "have",
+    "here", "into", "just", "like", "more", "most", "much", "need", "only",
+    "line", "lines", "message", "messages", "over", "really", "said",
+    "same", "should", "some", "stuff", "test", "than", "that", "their",
+    "them", "then", "there", "these", "they", "thing", "this", "very",
+    "want", "were", "what", "when", "where", "which", "while", "with",
+    "would", "write", "wrote", "your", "youre",
+    # Bot/persona scaffolding words are common in commands but poor retrieval
+    # anchors for a chatter's actual voice.
+    "bot", "chat", "hyper", "mimic", "persona", "twitch",
+}
+
+
+def _fts_query(text: str, max_terms: int = 12, exclude_terms=None) -> str | None:
+    """Build a safe, broad FTS query from natural chat text.
+
+    FTS5 treats spaces as AND, which is too strict for noisy live chat context,
+    so we OR a small set of useful terms. Each term is quoted to keep user text
+    out of the FTS query syntax.
+    """
+    exclude_terms = {t.lower() for t in (exclude_terms or set())}
+    counts = Counter()
+    first_seen = {}
+    for raw in re.findall(r"\w+", text or "", flags=re.UNICODE):
+        term = raw.strip("_").lower()
+        if len(term) < 3 or term in _QUERY_STOPWORDS or term in exclude_terms:
+            continue
+        if not any(ch.isalpha() for ch in term):
+            continue
+        counts[term] += 1
+        first_seen.setdefault(term, len(first_seen))
+    if not counts:
+        return None
+
+    terms = sorted(counts, key=lambda t: (-counts[t], first_seen[t]))[:max_terms]
+    return " OR ".join(_fts_phrase(term) for term in terms)
+
+
+def search_author(author: str, text: str, limit: int = 40,
+                  max_chars: int = 240):
+    """Relevant messages by one author for natural-language text.
+
+    Returns [(sent_at, channel, content), ...] ranked by FTS5 bm25. The FTS
+    table stays first in the query plan; see said() for why CROSS JOIN matters.
+    """
+    keys = author_keys(author)
+    q = _fts_query(text, exclude_terms=set(keys))
+    if not q:
+        return []
+    author_placeholders, author_params = _in_clause(keys)
+
+    conn = connect()
+    try:
+        return conn.execute(
+            "SELECT m.sent_at, m.channel, m.content FROM messages_fts f "
+            "CROSS JOIN messages m ON m.id = f.rowid "
+            f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
+            "AND length(m.content) <= ? "
+            "AND ltrim(m.content) NOT LIKE ? "
+            "ORDER BY bm25(messages_fts), m.sent_at DESC LIMIT ?",
+            [q, *author_params, max_chars, config.PREFIX + "%", limit],
+        ).fetchall()
+    except sqlite3.OperationalError as e:
+        logging.warning(f"chat_archive search_author failed for {author!r}: {e}")
+        return []
+
+
 def said(author: str, phrase: str, limit: int = 3):
     """All matches of phrase by author: (total_count, [(sent_at, channel, content)...]).
 
@@ -194,33 +317,37 @@ def said(author: str, phrase: str, limit: int = 3):
     match per author row (measured: 79s vs 0.003s on a 741k-row archive).
     """
     conn = connect()
-    author = normalize(author)
+    keys = author_keys(author)
+    author_placeholders, author_params = _in_clause(keys)
     searchable = re.sub(r"[^0-9A-Za-z]+", " ", phrase).strip()
     if not searchable:
         # Emoji/symbol-only phrase: the FTS tokenizer would drop everything
         # and report a confident 0 — substring search answers it correctly.
         like = "%" + phrase.replace("\\", r"\\").replace("%", r"\%").replace("_", r"\_") + "%"
         total = conn.execute(
-            r"SELECT COUNT(*) FROM messages WHERE author = ? AND content LIKE ? ESCAPE '\'",
-            (author, like),
+            f"SELECT COUNT(*) FROM messages WHERE author IN ({author_placeholders}) "
+            r"AND content LIKE ? ESCAPE '\'",
+            [*author_params, like],
         ).fetchone()[0]
         rows = conn.execute(
-            r"SELECT sent_at, channel, content FROM messages "
-            r"WHERE author = ? AND content LIKE ? ESCAPE '\' ORDER BY sent_at LIMIT ?",
-            (author, like, limit),
+            f"SELECT sent_at, channel, content FROM messages "
+            f"WHERE author IN ({author_placeholders}) "
+            r"AND content LIKE ? ESCAPE '\' ORDER BY sent_at LIMIT ?",
+            [*author_params, like, limit],
         ).fetchall()
         return total, rows
     q = _fts_phrase(phrase)
     total = conn.execute(
         "SELECT COUNT(*) FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid "
-        "WHERE f.messages_fts MATCH ? AND m.author = ?",
-        (q, author),
+        f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders})",
+        [q, *author_params],
     ).fetchone()[0]
     rows = conn.execute(
         "SELECT m.sent_at, m.channel, m.content FROM messages_fts f "
         "CROSS JOIN messages m ON m.id = f.rowid "
-        "WHERE f.messages_fts MATCH ? AND m.author = ? ORDER BY m.sent_at LIMIT ?",
-        (q, author, limit),
+        f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
+        "ORDER BY m.sent_at LIMIT ?",
+        [q, *author_params, limit],
     ).fetchall()
     return total, rows
 
@@ -228,18 +355,19 @@ def said(author: str, phrase: str, limit: int = 3):
 def random_quote(author: str, min_words: int = 3):
     """One random, reasonably substantial message by author (or None)."""
     conn = connect()
-    author = normalize(author)
+    keys = author_keys(author)
+    author_placeholders, author_params = _in_clause(keys)
     row = conn.execute(
-        "SELECT sent_at, channel, content FROM messages WHERE author = ? "
+        f"SELECT sent_at, channel, content FROM messages WHERE author IN ({author_placeholders}) "
         "AND length(content) - length(replace(content, ' ', '')) >= ? "
         "ORDER BY RANDOM() LIMIT 1",
-        (author, min_words - 1),
+        [*author_params, min_words - 1],
     ).fetchone()
     if row is None:  # fall back to any message at all
         row = conn.execute(
-            "SELECT sent_at, channel, content FROM messages WHERE author = ? "
+            f"SELECT sent_at, channel, content FROM messages WHERE author IN ({author_placeholders}) "
             "ORDER BY RANDOM() LIMIT 1",
-            (author,),
+            author_params,
         ).fetchone()
     return row
 
@@ -247,28 +375,31 @@ def random_quote(author: str, min_words: int = 3):
 def first_seen(author: str):
     """Earliest archived message by author: (sent_at, channel, content) or None."""
     conn = connect()
+    keys = author_keys(author)
+    author_placeholders, author_params = _in_clause(keys)
     return conn.execute(
-        "SELECT sent_at, channel, content FROM messages WHERE author = ? "
+        f"SELECT sent_at, channel, content FROM messages WHERE author IN ({author_placeholders}) "
         "ORDER BY sent_at LIMIT 1",
-        (normalize(author),),
+        author_params,
     ).fetchone()
 
 
 def stats(author: str):
     """Summary numbers for author, or None if unseen."""
     conn = connect()
-    author = normalize(author)
+    keys = author_keys(author)
+    author_placeholders, author_params = _in_clause(keys)
     row = conn.execute(
         "SELECT COUNT(*), MIN(sent_at), MAX(sent_at), AVG(length(content)) "
-        "FROM messages WHERE author = ?",
-        (author,),
+        f"FROM messages WHERE author IN ({author_placeholders})",
+        author_params,
     ).fetchone()
     if not row or row[0] == 0:
         return None
     busiest = conn.execute(
         "SELECT substr(sent_at, 12, 2) AS hh, COUNT(*) AS n FROM messages "
-        "WHERE author = ? GROUP BY hh ORDER BY n DESC LIMIT 1",
-        (author,),
+        f"WHERE author IN ({author_placeholders}) GROUP BY hh ORDER BY n DESC LIMIT 1",
+        author_params,
     ).fetchone()
     return {
         "messages": row[0],
@@ -294,7 +425,7 @@ def context_before(channel: str, sent_at: str, n: int = 4, within_minutes: int =
         "WHERE channel = ? AND sent_at < ? "
         "AND sent_at >= datetime(?, ?) "
         "ORDER BY sent_at DESC LIMIT ?",
-        (normalize(channel), sent_at, sent_at, f"-{within_minutes} minutes", n),
+        (normalize_channel(channel), sent_at, sent_at, f"-{within_minutes} minutes", n),
     ).fetchall()
     return list(reversed(rows))
 
@@ -306,7 +437,7 @@ def latest(channel: str, n: int = 25):
     rows = conn.execute(
         "SELECT sent_at, author, content FROM messages WHERE channel = ? "
         "ORDER BY id DESC LIMIT ?",
-        (normalize(channel), n),
+        (normalize_channel(channel), n),
     ).fetchall()
     return list(reversed(rows))
 
@@ -318,7 +449,7 @@ def recent_authors(channel: str, scan: int = 400, limit: int = 60):
     rows = conn.execute(
         "SELECT DISTINCT author FROM "
         "(SELECT author FROM messages WHERE channel = ? ORDER BY id DESC LIMIT ?)",
-        (normalize(channel), scan),
+        (normalize_channel(channel), scan),
     ).fetchall()
     return [r[0] for r in rows][:limit]
 
@@ -326,9 +457,11 @@ def recent_authors(channel: str, scan: int = 400, limit: int = 60):
 def messages_for(author: str):
     """All archived message texts by author (for offline persona building)."""
     conn = connect()
+    keys = author_keys(author)
+    author_placeholders, author_params = _in_clause(keys)
     return [r[0] for r in conn.execute(
-        "SELECT content FROM messages WHERE author = ? ORDER BY sent_at",
-        (normalize(author),),
+        f"SELECT content FROM messages WHERE author IN ({author_placeholders}) ORDER BY sent_at",
+        author_params,
     ).fetchall()]
 
 

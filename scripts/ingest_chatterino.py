@@ -20,7 +20,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config  # noqa: E402
-from utils.chat_archive import FILE_DATE_RE, connect, ingest_file, normalize  # noqa: E402
+from utils.chat_archive import FILE_DATE_RE, connect, ingest_file, normalize_channel  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -41,7 +41,7 @@ def main():
     if not os.path.isdir(root):
         ap.error(f"not a directory: {root}")
 
-    wanted = {normalize(c) for c in args.channels.split(",") if c.strip()}
+    wanted = {normalize_channel(c) for c in args.channels.split(",") if c.strip()}
 
     totals = {"files": 0, "skipped": 0, "chat": 0, "system": 0, "header": 0,
               "empty": 0, "modaction": 0}
@@ -49,7 +49,7 @@ def main():
         chan_dir = os.path.join(root, entry)
         if not os.path.isdir(chan_dir):
             continue
-        channel = normalize(entry)
+        channel = normalize_channel(entry)
         if wanted and channel not in wanted:
             continue
         chan_rows = 0

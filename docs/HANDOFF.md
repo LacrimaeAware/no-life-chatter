@@ -15,11 +15,13 @@ pushed** to `github.com/LacrimaeAware/no-life-chatter` (`main`):
 - **Markov** personas (`~mimic`) — instant, no model.
 - **LLM** personas (`~persona`, `~hyper`) — context-aware, run on a **local
   LM Studio** model (free, private).
+- **Retrieval/RAG exemplars** - each LLM reply blends random signature lines
+  with author-only messages relevant to the current chat/topic.
 - **Random reactions** — the bot rarely speaks up in a chatter's persona.
 
-What's NOT done yet (the work to pick up): **retrieval (RAG)** for exemplar
-selection, an **organic reply-frequency** system, a **Turing-test game**, and
-optional **fine-tuning**. See "Next work" below.
+What's NOT done yet (the work to pick up): an **organic reply-frequency**
+system, a **Turing-test game**, and optional **fine-tuning**. See "Next work"
+below.
 
 ## How to run / verify
 
@@ -33,6 +35,8 @@ optional **fine-tuning**. See "Next work" below.
   [--channels a,b,c] [--since YYYY-MM-DD]` — incremental & idempotent.
 - **Query archive offline**: `python scripts/ask_archive.py said|quote|stats|search ...`
 - **Preview a Markov persona (no chat post)**: `python scripts/persona_preview.py <user>`
+- **Preview LLM/RAG exemplar selection (no model/chat post)**:
+  `python scripts/persona_rag_preview.py <user> "topic or message" [--channel channel]`
 - **LLM personas need LM Studio**: load a model, Developer tab → Start Server
   (OpenAI-compatible at `http://127.0.0.1:1234`). The bot reads
   `config.LLM_ENDPOINT`.
@@ -66,17 +70,21 @@ optional **fine-tuning**. See "Next work" below.
 ## Architecture (files that matter)
 
 - `utils/chat_archive.py` — schema (WAL), Chatterino parser, queries: `said`,
-  `random_quote`, `first_seen`, `stats`, `search_all`, `context_before`,
-  `latest`, `recent_authors`, `messages_for`. **FTS queries MUST use
+  `random_quote`, `first_seen`, `stats`, `search_all`, `search_author`,
+  `context_before`, `latest`, `recent_authors`, `messages_for`. **FTS queries MUST use
   `CROSS JOIN` (FTS-first) — plain JOIN took 79s vs 0.007s.**
 - `utils/persona_markov.py` — order-2 word chains per user, cached.
-- `utils/persona_llm.py` — **many-shot LLM personas.** `exemplars(author)` =
-  ~150 of the author's real messages, **randomly sampled across their whole
-  history** (NOT recent), 2–240 chars, cached per author. `generate(author,
-  channel, user_message, mode)` builds: system prompt ("you ARE <author>" +
-  the exemplars) + user turn (recent `latest()` channel context + optional
-  directed message) → `services/llm.chat`. Modes: `normal`, `hyper`. Output is
-  de-quoted / name-stripped / single-line.
+- `utils/persona_llm.py` — **many-shot LLM personas with lightweight RAG.**
+  `exemplars(author)` is still a random signature sample across the author's
+  whole history. Per reply, `select_exemplars()` blends that with
+  `relevant_exemplars()` from `chat_archive.search_author()`, scoped strictly
+  to the target author and keyed on the current chat/topic. Default prompt mix:
+  150 total examples, up to 90 retrieved (`llm.relevant_exemplars`) and the
+  rest random signature lines. `generate(author, channel, user_message, mode)`
+  builds: system prompt ("you ARE <author>" + both exemplar sections) + user
+  turn (recent `latest()` channel context + optional directed message) →
+  `services/llm.chat`. Modes: `normal`, `hyper`. Output is de-quoted /
+  name-stripped / single-line.
 - `services/llm.py` — async client for any OpenAI-compatible `/v1/chat/completions`
   (LM Studio default). Returns None on failure (graceful).
 - `services/message_service.py` — `maybe_react()` (random persona reaction,
@@ -88,16 +96,22 @@ optional **fine-tuning**. See "Next work" below.
   command wrappers.
 - Config: `config.py` reads `config.toml` (gitignored; `config.example.toml` is
   the public template). Relevant sections: `[archive]`, `[persona]`, `[llm]`.
+  `[archive.user_aliases]` can merge alt accounts for persona/archive queries
+  without renaming channels.
 
 ## Key design facts (don't re-litigate these)
 
-- **Personas are per-author, never merged.** `exemplars(author)` and
-  `messages_for(author)` filter strictly `WHERE author = ?`. The only
+- **Personas are per-author, never merged.** `exemplars(author)`,
+  `relevant_exemplars(author, ...)`, and `messages_for(author)` all filter
+  strictly to the target author/alias group. `[archive.user_aliases]` lets known
+  alt accounts count as one person while leaving channel names alone. The only
   other-people text in a prompt is the labeled *recent conversation* the persona
   is reacting to. If output feels "merged," it's the non-abliterated base
   model's voice bleeding through or context echo — not data mixing.
-- **Exemplars are RANDOM across full history, not recent** (user preference;
-  already implemented). Recent messages are used only as live *context*.
+- **Signature exemplars are RANDOM across full history, not recent** (user
+  preference; still implemented). Retrieval also searches the target author's
+  full history, using recent chat only as the query/context, not as somebody
+  else's exemplar text.
 - **Two TOS walls:** (1) hosted Claude/OpenAI refuse slur generation & OpenAI
   fine-tuning rejects edgy data → use a **local** model for edgy content (the
   user runs LM Studio: Llama-3.1-8B-Instruct-Q4_K_M, Vulkan, 8k ctx). (2)
@@ -114,10 +128,11 @@ optional **fine-tuning**. See "Next work" below.
 
 ## Known issues / perf notes
 
-- **Prompt-processing latency**: first persona call for a user builds exemplars
-  (~1s) and the model processes the ~150-message prompt (a few seconds on the
-  RX 5700 XT, 8 GB, Vulkan). LM Studio's prompt cache makes repeats faster.
-  This is expected on this hardware, not a bug.
+- **Prompt-processing latency**: first persona call for a user builds/caches the
+  random signature sample and each call does a small FTS retrieval for relevant
+  examples. The model still has to process the ~150-message prompt (a few
+  seconds on the RX 5700 XT, 8 GB, Vulkan). LM Studio's prompt cache makes
+  repeats faster. This is expected on this hardware, not a bug.
 - The user currently runs the **non-abliterated** Llama 3.1 — it will refuse
   hard slurs (fine; the filter would block them anyway). Swap GGUF for edgy.
 - `~mimic`/Markov can be too terse and has no context (by design); the LLM
@@ -125,18 +140,13 @@ optional **fine-tuning**. See "Next work" below.
 
 ## Next work (priority order, with the user's latest asks)
 
-1. **Retrieval (RAG) for exemplars** — biggest accuracy win. Instead of 150
-   random messages, select per reply: the most-relevant of the author's *entire*
-   history to the current conversation (FTS/embedding search over their
-   messages keyed on the recent context), blended with some signature lines.
-   The archive already supports the search. User explicitly wants this.
-2. **Organic reply-frequency for conversation/reactions** — a persona shouldn't
+1. **Organic reply-frequency for conversation/reactions** — a persona shouldn't
    answer every line. Make "how often it responds" a parameter, and prefer
    replying when a message is **directed at it** (@mention / name) or continues
    a loop it's already in, rather than uniformly random. Generalize
    `reaction_chance` into: directed-at-persona detection + a response
    probability + cooldown.
-3. **"Real or AI?" Turing-test game** (user's idea, and chat literally played it
+2. **"Real or AI?" Turing-test game** (user's idea, and chat literally played it
    — earnest: "ok turing test, was that a message i wrote or ai generated").
    A command (e.g. `~realorai [user]`): pick a chatter, 50/50 either pull a real
    archived line or generate a persona line, post it, players guess, then
@@ -144,10 +154,13 @@ optional **fine-tuning**. See "Next work" below.
    single emotes / 1-word / pure-link / too-short and too-long lines; prefer
    lines that "make a statement" (declarative, has a verb) so it's a fun guess,
    not a boring quote. Add a scoreboard table.
-4. **Fine-tuning** (later) — one model, all personas via a `<persona=user>`
+3. **Fine-tuning** (later) — one model, all personas via a `<persona=user>`
    prefix per training row; LoRA on a rented cloud GPU (hours, ~$5–20), then run
    the GGUF locally. "Train once, top up later" = re-run with new archive rows.
    Optionally distill/synthetic-data from an uncensored teacher for edgy voice.
+4. **Retrieval polish** — the lightweight FTS RAG is built. Future upgrades:
+   include lead-in context around retrieved lines (`context_before`) and/or add
+   embeddings when plain keyword search misses semantic matches.
 5. **Bigger context / model options** — LM Studio at 16k ctx for more exemplars;
    try an abliterated 8B for edgy; or hosted cheap model for the benign Q&A.
 
