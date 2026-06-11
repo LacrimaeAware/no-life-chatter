@@ -126,6 +126,19 @@ SUPPORTED_LANGS: set[str] = {
     )
 }
 
+# ------------------------------- chat archive ----------------------------
+# Searchable archive of chat messages (docs/CHAT_ARCHIVE.md): historical
+# Chatterino logs ingested by scripts/ingest_chatterino.py plus, when
+# live_capture is on, every message the bot sees. Lives in a gitignored dir.
+_ar = _cfg.get("archive", {})
+ARCHIVE_DB: str = _resolve(_ar.get("database", "data/unsynced/chat_archive.db"))
+ARCHIVE_LIVE: bool = bool(_ar.get("live_capture", True))
+# Default Chatterino logs root for the ingest script (so you don't retype it).
+ARCHIVE_CHATTERINO_LOGS: str = _ar.get("chatterino_logs", "")
+# Spelling variants that should count as the same channel/user, e.g.
+# {"f3rnard0" = "fernardo"} merges a typo-named channel into the real one.
+ARCHIVE_ALIASES: dict = dict(_ar.get("aliases", {}))
+
 # --------------------------------- secrets --------------------------------
 # Read straight from the environment so they never live in tracked files.
 TWITCH_CLIENT_ID: str | None = os.getenv("TWITCH_CLIENT_ID")

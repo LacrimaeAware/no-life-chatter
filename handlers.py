@@ -1,6 +1,10 @@
 import logging
+import time
+
+import config
 from command_processor import CommandProcessor
 from services.message_service import MessageService
+from utils.chat_archive import record_live
 
 class MessageHandler:
     def __init__(self, bot):
@@ -13,6 +17,17 @@ class MessageHandler:
             return
 
         logging.info(f"Received message from {message.author.name}: {message.content}")
+
+        # Append to the searchable chat archive (docs/CHAT_ARCHIVE.md).
+        # record_live swallows its own errors — it can never break chat handling.
+        # message.channel is None for whispers (twitchio routes them here too).
+        if config.ARCHIVE_LIVE and message.channel and message.author and message.content:
+            record_live(
+                message.channel.name,
+                message.author.name,
+                message.content,
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+            )
 
         if message.content.startswith(self.bot.prefix):
             logging.info("Message is a command; processing")

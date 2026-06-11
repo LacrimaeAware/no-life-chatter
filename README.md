@@ -61,6 +61,10 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~practice off` / `~practice show` | anyone | Stop / inspect practice mode. |
 | `~romanize on\|off\|show` | anyone | Toggle romanized readings in practice mode. |
 | `~speak <lang>` / `~speak show` | anyone | Flag your language so even your short messages translate. |
+| `~said <user> <phrase>` | anyone | Search the chat archive: did they ever say it, and when first. |
+| `~quote <user>` | anyone | Random real quote from the chat archive. |
+| `~firstseen <user>` | anyone | A user's first archived message. |
+| `~chatstats <user>` | anyone | Archive stats: count, first/last seen, busiest hour. |
 | `~autotl` | admin | Toggle auto-translate for yourself. |
 | `~setlang <LANG>` | admin | Set your translation target language (e.g. `EN`). |
 | `~tloutput local\|whisper\|channel <name>` | admin | Where your translations are sent. |
@@ -197,11 +201,12 @@ Other options if you'd rather self-host: **LibreTranslate** (open source) or
 
 ## Roadmap & ideas
 
-Design docs for where this could go next live in [`docs/`](docs/):
-a searchable [chat archive](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 over
-Chatterino logs and live chat), a [persona bot roadmap](docs/PERSONA_BOT_ROADMAP.md)
-(per-user chat personas, rare in-character reactions, playful psychometrics,
-trivia), and an [idea bank](docs/IDEA_BANK.md) of smaller things.
+Design docs live in [`docs/`](docs/): a searchable
+[chat archive](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 over Chatterino logs and
+live chat — built; it powers the `~said`/`~quote`/`~firstseen`/`~chatstats`
+commands), a [persona bot roadmap](docs/PERSONA_BOT_ROADMAP.md) (per-user chat
+personas, rare in-character reactions, playful psychometrics, trivia), and an
+[idea bank](docs/IDEA_BANK.md) of smaller things.
 
 ## License
 

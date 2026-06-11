@@ -6,9 +6,9 @@ emulates a chatter's tendencies, vocabulary and rhythms, and a *hyperbolic*
 one tuned for comedy — plus rare spontaneous in-character reactions, playful
 psychometrics, and trivia.
 
-**Status: roadmap — phases 0–1 are prerequisites and unglamorous; everything
-fun builds on them.** Companion docs: [CHAT_ARCHIVE.md](CHAT_ARCHIVE.md) (the
-data layer), [IDEA_BANK.md](IDEA_BANK.md) (smaller ideas, parked things).
+**Status: phases 0–1 built** (the archive and its query commands are live);
+phases 2–5 are roadmap. Companion docs: [CHAT_ARCHIVE.md](CHAT_ARCHIVE.md)
+(the data layer), [IDEA_BANK.md](IDEA_BANK.md) (smaller ideas, parked things).
 
 ## Feasibility verdict
 
@@ -19,10 +19,11 @@ estimates, assuming evenings/weekends:
 
 | Phase | What | Effort | Needs LLM? |
 | --- | --- | --- | --- |
-| 0 | Chat archive (ingest + live capture) | an afternoon | no |
-| 1 | Archive Q&A commands (`~said`, `~quote`, stats) | an evening | no |
+| 0 | Chat archive (ingest + live capture) | **done** | no |
+| 1 | Archive Q&A commands (`~said`, `~quote`, stats) | **done** | no |
 | 2 | Persona cards (accurate + hyperbolic, offline batch) | a weekend | yes, offline |
 | 3 | Runtime roleplay (`~as <user>`, rare random reactions) | an evening | yes, online |
+| 3.5 | Fine-tuned voice model (one model, all personas) | a weekend + ~$5–20/run | training |
 | 4 | Playful psychometrics (Big-5-flavored profiles) | an evening+ | yes, offline |
 | 5 | Trivia (quote-attribution game, film trivia) | an evening | no (optional) |
 
@@ -41,34 +42,40 @@ search answers "did user X ever say Y?" exactly and instantly. Ship `~said`,
 `~quote`, `~firstseen`, `~chatstats` as ordinary commands. This phase also
 shakes out parser bugs before personas consume the same data.
 
-## Phase 2 — Persona cards
+## Phase 2 — Persona cards (exemplars first, description last)
 
-An offline batch job (`scripts/build_persona.py <user>`) that distills a
-user's history into two reusable **persona cards** (JSON + a human-readable
-markdown render):
+**A persona is not a prose description.** A paragraph summary fed to a model
+produces generic text wearing a costume — it cannot carry someone's emotes,
+casing, rhythm, or vocabulary. The voice lives in their *actual messages*, so
+the card's real payload is a curated **exemplar bank**, and the model's job at
+runtime is continuation, not acting on a character sheet.
 
-1. **Stats block — pure counting, no AI.** Message count and date range; top
-   non-stopword vocabulary; top emotes; average/median message length;
-   capitalization and punctuation habits; busiest hours; favorite targets of
-   @mentions; catchphrases (high-frequency n-grams that are rare in everyone
-   else's chat — TF-IDF against the rest of the archive).
-2. **Exemplar sample.** ~150–300 messages: the most-characteristic (containing
-   their signature n-grams) plus a random spread across time so the card isn't
-   hostage to one loud week.
-3. **LLM distillation.** Feed stats + exemplars to a model with two prompts:
-   - *Accurate card:* register and tone, sentence shapes, typical topics,
-     emote usage patterns, things they never do (e.g. never uses punctuation,
-     never types more than 6 words) — written as **instructions for an
-     impersonator**, with verbatim example lines.
-   - *Hyperbolic card:* same inputs, instructed to caricature — amplify the
-     three most recognizable tendencies to absurdity while staying recognizably
-     *them*. (The comedy card.)
+An offline batch job (`scripts/build_persona.py <user>`) produces, per user:
+
+1. **Exemplar bank — the heart of it.** 200–400 of their real messages,
+   selected three ways: the most-characteristic (containing their signature
+   n-grams — high-frequency phrases rare in everyone else's chat, TF-IDF
+   against the rest of the archive); a random spread across time so the bank
+   isn't hostage to one loud week; and topic-tagged clusters so runtime can
+   *retrieve* their real messages about whatever chat is currently discussing.
+   Stored as message ids — the bank re-materializes from the archive, always
+   verbatim.
+2. **Stats block — pure counting, no AI.** Top emotes with frequencies,
+   message-length distribution, capitalization/punctuation habits, busiest
+   hours, favorite @targets. Used to *validate* output (does the generated
+   line use emotes they actually use?) and to weight exemplar selection.
+3. **Voice spec — small, LLM-written, scaffolding only.** The few hard rules
+   examples can't show by themselves: "never capitalizes, no punctuation,
+   1–6 words, types X when excited, never asks questions." Plus the
+   *hyperbolic* variant: the same rules with their three most recognizable
+   tendencies amplified to absurdity (the comedy card). This is ~5% of the
+   runtime prompt — the exemplars are the persona.
 
 Cards are cached at `data/unsynced/personas/<user>.json` (gitignored — this is
-personal data about real people and never ships). Regenerate on demand;
-include the source-message count and build date inside the card so staleness
-is visible. Quality lever: the *exemplar selection* matters more than the
-prompt — invest there first when a persona feels off.
+personal data about real people and never ships), with source-message count
+and build date inside so staleness is visible. New chat accumulates in the
+archive automatically; rebuilding the card re-selects exemplars from the
+up-to-date corpus — that's the whole "top-up" step.
 
 ## Phase 3 — Runtime roleplay
 
@@ -80,8 +87,25 @@ Two entry points, one engine:
   author, or random among built cards) and reacts *to the recent
   conversation*, not just the trigger line.
 
-Engine: persona card (system prompt) + the last ~15 archive rows from that
-channel (context) + the trigger → one short completion → channel send.
+Engine — **many-shot voice cloning**, not description-driven roleplay. The
+prompt is dominated by the person's verbatim messages:
+
+```
+voice spec (~5%)                      "never capitalizes, 1–6 words, ..."
+exemplar messages (~80%)              200+ real lines: their signature
+                                      phrases + lines retrieved from the
+                                      archive about the CURRENT topic
+live conversation (~15%)              the last ~15 messages in the channel
+task                                  "write the next message <user> would
+                                      type here"
+```
+
+With hundreds of their real lines literally in front of it, a strong model
+reproduces the emotes, casing, and catchphrases because they're *in the
+context*, not described. Modern context windows make this trivial — 300 chat
+messages ≈ 4–6k tokens. This is the standard way to get voice mimicry without
+training a model, and it should be built first because Phase 3.5 reuses every
+piece of it.
 
 Guardrails (all config, `[persona]` section in `config.toml`):
 
@@ -97,6 +121,34 @@ Guardrails (all config, `[persona]` section in `config.toml`):
 Cost at hobby scale: a reaction is one ~1.5k-token-in / ~100-token-out call.
 On a cheap fast model (Claude Haiku 4.5: $1/M in, $5/M out) that's
 **~$0.002/call — even 10/day is ~$0.60/month.** Cost is not a factor.
+
+## Phase 3.5 — Fine-tuning: the "train once, top up later" upgrade
+
+If many-shot isn't uncanny enough, the next rung is a model whose *weights*
+have absorbed the chat — trained on `(recent conversation → the user's actual
+next message)` pairs straight from the archive.
+
+- **One model serves every persona — not one per person.** Each training row
+  is prefixed with the speaker (`<persona=user>`), and generation picks the
+  persona by prompting that prefix. Twenty personas is still one model and one
+  training run; adding a person is adding rows, not models.
+- **Two routes:**
+  - *Hosted fine-tune* (e.g. OpenAI's mini models — self-serve): upload the
+    pairs, train for a few dollars at friend-group data sizes, call it like
+    any API. Easiest. (Anthropic has no self-serve fine-tuning.)
+  - *LoRA on an open 7–9B model* in a rented cloud GPU (a few hours,
+    ~$5–15/run), then quantize to GGUF and run **inference locally for free**
+    — an 8 GB consumer card can run what it cannot train. Most private; most
+    tinkering.
+- **Top-ups** are exactly what they sound like: re-run the job every few
+  months with the new rows the archive accumulated (`sent_at` makes selecting
+  "everything since last run" trivial).
+- **Expectation-setting:** fine-tuned small models are the *uncanny* option —
+  eerily voice-accurate, noticeably dumber, occasionally incoherent (the
+  famous trained-on-our-group-chat effect — which is often the funnier
+  failure mode). Many-shot on a frontier model is more coherent, slightly
+  less uncanny. Build 3 first, A/B them, keep whichever makes the group laugh
+  harder.
 
 ## Phase 4 — Playful psychometrics
 

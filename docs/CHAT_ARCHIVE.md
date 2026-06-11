@@ -5,8 +5,11 @@ Chatterino logs ingested once, plus everything the bot sees live going forward.
 This is the foundation layer — personas, "did user X ever say Y?", stats, and
 trivia all read from it.
 
-**Status: design — not built yet.** See [PERSONA_BOT_ROADMAP.md](PERSONA_BOT_ROADMAP.md)
-for where this fits.
+**Status: built.** `utils/chat_archive.py` (schema, parser, queries),
+`scripts/ingest_chatterino.py` (historical ingest), `scripts/ask_archive.py`
+(offline CLI), live capture in `handlers.py`, and the `~said` / `~quote` /
+`~firstseen` / `~chatstats` commands. See
+[PERSONA_BOT_ROADMAP.md](PERSONA_BOT_ROADMAP.md) for where this fits.
 
 ## Why SQLite + FTS5 (and not an LLM)
 
@@ -78,7 +81,9 @@ CREATE TABLE messages (
     author   TEXT NOT NULL,        -- lowercase user login
     sent_at  TEXT NOT NULL,        -- 'YYYY-MM-DD HH:MM:SS' (local time)
     content  TEXT NOT NULL,
-    source   TEXT NOT NULL DEFAULT 'chatterino'  -- 'chatterino' | 'live'
+    source   TEXT NOT NULL DEFAULT 'chatterino',  -- 'chatterino' | 'live'
+    src_path TEXT  -- originating log file; re-ingest of a grown file replaces
+                   -- exactly its own rows (alias-merged channels stay intact)
 );
 CREATE INDEX idx_msg_author  ON messages(author, sent_at);
 CREATE INDEX idx_msg_channel ON messages(channel, sent_at);
@@ -123,11 +128,16 @@ python scripts/ingest_chatterino.py <logs-root> [--channels a,b,c] [--since 2025
 Offline (full archive):
 
 ```
-python scripts/ask_archive.py said <user> "<phrase>"     # did X ever say Y -> matching rows
-python scripts/ask_archive.py quotes <user> [n]          # random quotes by X
-python scripts/ask_archive.py stats <user>               # counts, first/last seen, top words/emotes
-python scripts/ask_archive.py search "<fts5 query>"      # raw full-text search
+python scripts/ask_archive.py said <user> <phrase...>    # did X ever say Y -> matching rows
+python scripts/ask_archive.py quote <user>               # random quote by X
+python scripts/ask_archive.py stats <user>               # count, first/last seen, busiest hour
+python scripts/ask_archive.py search <phrase...>         # phrase search, all authors
 ```
+
+Phrases are matched as whole-word exact phrases (FTS5 under the hood, with the
+input always quoted — chat text can't inject query syntax). A phrase with no
+alphanumeric characters at all (emoji-only) falls back to substring search,
+since the tokenizer would otherwise drop it.
 
 In chat (bot commands, follow the existing `commands/` auto-discovery pattern):
 
@@ -138,8 +148,11 @@ In chat (bot commands, follow the existing `commands/` auto-discovery pattern):
 | `~firstseen <user>` | first recorded message + date |
 | `~chatstats <user>` | message count, top emotes, busiest hour |
 
-FTS5 `MATCH` handles word/phrase/prefix/boolean queries natively
-(`"exact phrase"`, `term1 AND term2`, `wor*`).
+One hard-won planner note: query the FTS table with `CROSS JOIN messages` (or
+an `IN (SELECT rowid ...)` subquery) so SQLite runs the FTS match once and
+probes by rowid — the innocent-looking plain `JOIN` flips the loop order and
+re-evaluates the match per candidate row, turning a 3 ms query into minutes on
+a large archive.
 
 ## Optional later: semantic layer
 

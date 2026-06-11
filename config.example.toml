@@ -81,6 +81,21 @@ min_foreign_signal = 0.10
 # messages; lower = translate more of them (and risk more nonsense).
 min_short_confidence = 0.55
 
+[archive]
+# Searchable chat archive (see docs/CHAT_ARCHIVE.md): historical Chatterino
+# logs ingested by scripts/ingest_chatterino.py plus live capture of every
+# message the bot sees. Powers ~said / ~quote / ~firstseen / ~chatstats.
+# The DB lives in a gitignored directory — chat content never reaches git.
+database = "data/unsynced/chat_archive.db"
+live_capture = true
+# Optional: your Chatterino logs root, so the ingest script needs no argument.
+# e.g. 'C:\Users\you\AppData\Roaming\Chatterino2\Logs\Twitch\Channels'
+chatterino_logs = ""
+# Optional: spelling variants that should count as the same channel/user
+# (typo'd channel dirs, renamed accounts).
+[archive.aliases]
+# old_name = "real_name"
+
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count
