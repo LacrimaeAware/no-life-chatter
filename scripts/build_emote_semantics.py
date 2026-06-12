@@ -35,15 +35,26 @@ def main():
     ap.add_argument("--contexts", type=int, default=30)
     args = ap.parse_args()
 
-    model = pc.load()
+    # Source: the ground-truth registry UNION the most frequent emote-shaped
+    # tokens in the archive. Sourcing from per-person DISTINCTIVE profiles
+    # (the old way) filtered out the universal meaning-bearers (DansGame,
+    # Sadge, KEKW) precisely because everyone uses them.
+    import json
     from collections import Counter
-    usage = Counter()
-    for prof in (model.get("profiles") or {}).values():
-        for e, w in prof.get("emotes", {}).items():
-            usage[e] += 1
-    # rank by how many people use them distinctively, then alphabetic
-    emotes = [e for e, _ in usage.most_common(args.top)]
-    print(f"building context vectors for {len(emotes)} emotes...")
+    reg = {}
+    reg_path = os.path.join("data", "unsynced", "emote_registry.json")
+    if os.path.exists(reg_path):
+        reg = json.load(open(reg_path, encoding="utf-8"))
+    conn = chat_archive.connect()
+    freq = Counter()
+    for (m,) in conn.execute("SELECT content FROM messages ORDER BY RANDOM() LIMIT 400000"):
+        for tok in (m or "").split():
+            t = tok.strip(".,!?;:")
+            if t in reg or pc._is_emote_token(t):
+                freq[t] += 1
+    emotes = [e for e, n in freq.most_common(args.top) if n >= 5]
+    print(f"building context vectors for {len(emotes)} emotes "
+          f"(registry {len(reg)} + archive-frequent)...")
 
     conn = chat_archive.connect()
     out = {}
