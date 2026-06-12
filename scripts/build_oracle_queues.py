@@ -34,13 +34,19 @@ import config  # noqa: E402
 from utils import chat_archive, persona_classifier as pc  # noqa: E402
 from utils.persona_traits import _axis_vectors, _embed  # noqa: E402
 
-DROPOFF = os.path.join("..", "ai-prompt-engineering", "dropoff")
+# The review tool (ai-prompt-engineering/tools/review_queue/server.py) reads
+# FLAT jsonl files from here:
+QUEUE_DIR = os.path.join("..", "ai-prompt-engineering", "private_docs", "review_queues")
 
 
 def _write_queue(name, items):
-    d = os.path.join(DROPOFF, name)
-    os.makedirs(os.path.join(d, "results"), exist_ok=True)
-    path = os.path.join(d, "queue.jsonl")
+    os.makedirs(QUEUE_DIR, exist_ok=True)
+    for it in items:   # tool conventions: source_project + subject.title
+        it.setdefault("source_project", it.pop("source", "NoLifeChatter"))
+        sub = it.get("subject", {})
+        sub.setdefault("title", (sub.get("message") or sub.get("token")
+                                 or it.get("id", ""))[:60])
+    path = os.path.join(QUEUE_DIR, f"{name}.jsonl")
     with open(path, "w", encoding="utf-8") as fh:
         for it in items:
             fh.write(json.dumps(it, ensure_ascii=False) + "\n")
