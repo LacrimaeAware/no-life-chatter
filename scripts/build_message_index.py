@@ -31,6 +31,8 @@ def main():
     import numpy as np
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--per-author", type=int, default=1500)
+    ap.add_argument("--force", action="store_true",
+                    help="overwrite existing per-author index files")
     args = ap.parse_args()
     if not config.LLM_EMBED_MODEL:
         print("Set [llm] embed_model in config.toml first.")
@@ -41,9 +43,11 @@ def main():
     rng = random.Random(11)
     for i, a in enumerate(roster, 1):
         out = os.path.join(OUT_DIR, f"{a}.npz")
-        if os.path.exists(out):
+        if os.path.exists(out) and not args.force:
             print(f"  ({i}/{len(roster)}) {a}: exists, skipped", flush=True)
             continue
+        if os.path.exists(out):
+            print(f"  ({i}/{len(roster)}) {a}: rebuilding", flush=True)
         msgs = []
         for m in chat_archive.messages_for(a):
             if not persona_classifier._usable(m):
@@ -62,8 +66,10 @@ def main():
             vecs.extend(embed_batch([c for c, _ in msgs[j:j + 64]]))
         V = np.asarray(vecs, dtype="float32")
         V /= (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
-        np.savez_compressed(out, vectors=V.astype("float16"),
+        tmp = out + ".tmp.npz"
+        np.savez_compressed(tmp, vectors=V.astype("float16"),
                             texts=np.array([orig for _, orig in msgs], dtype=object))
+        os.replace(tmp, out)
         print(f"  ({i}/{len(roster)}) {a}: {len(msgs)} messages indexed", flush=True)
     print(f"done -> {OUT_DIR}")
 

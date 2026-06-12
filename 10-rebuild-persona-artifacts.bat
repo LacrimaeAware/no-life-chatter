@@ -5,7 +5,7 @@ if not exist "%PY%" set "PY=python"
 echo NoLifeChatter - rebuild persona artifacts
 echo.
 echo This can take a while and the embeddings step needs LM Studio embeddings running.
-echo It rebuilds classifier, style profiles, semantic vectors, and trait-axis smoke output.
+echo It rebuilds classifier, style profiles, semantic vectors, message indexes, and trait smoke output.
 echo.
 set /p OK=Type YES to start, or anything else to cancel:
 if /I not "%OK%"=="YES" (

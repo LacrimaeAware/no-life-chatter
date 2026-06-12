@@ -226,9 +226,10 @@ are kept private under `_private/` (see [docs/FINE_TUNING.md](docs/FINE_TUNING.m
 ## Roadmap & docs
 
 Design docs live in [`docs/`](docs/) — start with
-[HANDOFF.md](docs/HANDOFF.md) for the current state of the persona/archive work.
-Also: the [chat archive design](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 + the
-Chatterino log format), the [persona roadmap](docs/PERSONA_BOT_ROADMAP.md),
+[STATE_OF_OPERATION.md](docs/STATE_OF_OPERATION.md) for the current return
+brief, then [HANDOFF.md](docs/HANDOFF.md) for the longer persona/archive
+history. Also: the [chat archive design](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 +
+the Chatterino log format), the [persona roadmap](docs/PERSONA_BOT_ROADMAP.md),
 [fine-tuning](docs/FINE_TUNING.md), a
 [chat-personality research note](docs/CHAT_PERSONALITY_RESEARCH.md), an
 [idea bank](docs/IDEA_BANK.md), and the planned

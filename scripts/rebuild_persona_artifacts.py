@@ -5,10 +5,12 @@ Default pipeline:
 1. Train the authorship classifier.
 2. Rebuild lexical voice profiles in the classifier pickle.
 3. Rebuild semantic person vectors through the configured local embedding model.
-4. Smoke-check trait axes/leaderboards.
+4. Rebuild the per-message semantic index used by burst leaderboards and RAG.
+5. Smoke-check trait axes/leaderboards.
 
 Use --dry-run to print the commands without running them. Use --skip-embeddings
-when LM Studio's embedding endpoint is not running.
+when LM Studio's embedding endpoint is not running; that also skips the message
+index because it uses the same embedding endpoint.
 """
 
 from __future__ import annotations
@@ -65,6 +67,11 @@ def main() -> int:
     parser.add_argument("--embedding-per-author", type=int, default=1000)
     parser.add_argument("--embedding-report", action="store_true")
 
+    parser.add_argument("--skip-message-index", action="store_true")
+    parser.add_argument("--message-index-per-author", type=int, default=1500)
+    parser.add_argument("--no-message-index-force", action="store_true",
+                        help="leave existing per-author message index files in place")
+
     parser.add_argument("--skip-trait-smoke", action="store_true")
     parser.add_argument("--trait-smoke-n", type=int, default=3)
     args = parser.parse_args()
@@ -98,6 +105,13 @@ def main() -> int:
         if args.embedding_report:
             cmd.append("--report")
         steps.append(("semantic embeddings", cmd))
+
+    if not args.skip_embeddings and not args.skip_message_index:
+        cmd = [py, "scripts/build_message_index.py",
+               "--per-author", str(args.message_index_per_author)]
+        if not args.no_message_index_force:
+            cmd.append("--force")
+        steps.append(("semantic message index", cmd))
 
     if not args.skip_trait_smoke:
         steps.append(("trait axis smoke", [
