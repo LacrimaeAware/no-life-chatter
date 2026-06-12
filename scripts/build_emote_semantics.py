@@ -1,0 +1,107 @@
+"""Usage-context emote semantics: what an emote MEANS, learned from our logs.
+
+Emote names lie (deliberately irrelevant names), images aren't always
+fetchable (dead emotes in old logs), and fake personal emotes exist. But
+meaning-from-usage covers all of it: an emote's vector = mean embedding of
+the messages it appears in, with the emote token itself removed. DansGame's
+contexts are disgust, so its vector points at disgust — the stance-OPERATOR
+meaning the name embedding can never carry.
+
+Per emote: sample up to --contexts messages containing it (FTS), strip the
+emote, require >=3 remaining words, embed, mean-pool. Emotes with too few
+usable contexts are skipped (callers fall back to name embeddings).
+
+    python scripts/build_emote_semantics.py [--top 2000] [--contexts 30]
+"""
+
+import argparse
+import os
+import pickle
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import numpy as np  # noqa: E402
+
+from utils import chat_archive, persona_classifier as pc  # noqa: E402
+from scripts.build_persona_embeddings import embed_batch  # noqa: E402
+
+OUT = os.path.join("data", "unsynced", "emote_semantics.pkl")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--top", type=int, default=2000)
+    ap.add_argument("--contexts", type=int, default=30)
+    args = ap.parse_args()
+
+    model = pc.load()
+    from collections import Counter
+    usage = Counter()
+    for prof in (model.get("profiles") or {}).values():
+        for e, w in prof.get("emotes", {}).items():
+            usage[e] += 1
+    # rank by how many people use them distinctively, then alphabetic
+    emotes = [e for e, _ in usage.most_common(args.top)]
+    print(f"building context vectors for {len(emotes)} emotes...")
+
+    conn = chat_archive.connect()
+    out = {}
+    done = 0
+    if os.path.exists(OUT):
+        with open(OUT, "rb") as fh:
+            out = pickle.load(fh)
+    for i, emote in enumerate(emotes, 1):
+        if emote in out:
+            continue
+        try:
+            rows = conn.execute(
+                "SELECT m.content FROM messages_fts f JOIN messages m ON m.id = f.rowid "
+                "WHERE f.messages_fts MATCH ? LIMIT 200",
+                (f'"{emote}"',)).fetchall()
+        except Exception:
+            rows = conn.execute(
+                "SELECT content FROM messages WHERE content LIKE ? LIMIT 200",
+                (f"%{emote}%",)).fetchall()
+        ctxs = []
+        for (m,) in rows:
+            stripped = " ".join(t for t in m.split() if t.strip(".,!?") != emote)
+            if len(stripped.split()) >= 3:
+                ctxs.append(stripped[:300])
+            if len(ctxs) >= args.contexts:
+                break
+        if len(ctxs) < 8:
+            continue
+        embs = embed_batch(ctxs)
+        v = np.asarray(embs, dtype="float32").mean(axis=0)
+        out[emote] = {"vector": (v / (np.linalg.norm(v) + 1e-9)).astype("float16"),
+                      "n": len(ctxs)}
+        done += 1
+        if done % 100 == 0:
+            with open(OUT, "wb") as fh:
+                pickle.dump(out, fh)
+            print(f"  ({i}/{len(emotes)}) {len(out)} vectors saved...", flush=True)
+    with open(OUT, "wb") as fh:
+        pickle.dump(out, fh)
+    print(f"done: {len(out)} emote context-vectors -> {OUT}")
+
+    # sanity: do operator emotes point where they should?
+    probes = {"disgust ew gross nasty": None, "sad crying unhappy": None,
+              "happy nice wholesome": None}
+    P = {k: np.asarray(v, dtype="float32") for k, v in
+         zip(probes, embed_batch(list(probes)))}
+    for k in P:
+        P[k] /= np.linalg.norm(P[k])
+    for emote in ["DansGame", "Sadge", "FeelsBadMan", "ApuDoomer", "FeelsOkayMan"]:
+        d = out.get(emote)
+        if not d:
+            print(f"  {emote}: (no vector)")
+            continue
+        v = np.asarray(d["vector"], dtype="float32")
+        best = max(P, key=lambda k: float(v @ P[k]))
+        print(f"  {emote}: closest probe = '{best}' "
+              + " ".join(f"{k.split()[0]}:{float(v @ P[k]):+.2f}" for k in P))
+
+
+if __name__ == "__main__":
+    main()
