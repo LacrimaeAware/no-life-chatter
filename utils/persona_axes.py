@@ -270,11 +270,48 @@ def _emote_vectors():
     return vecs
 
 
+_ORTHO_CACHE = None
+# fixed priority: each later axis is stripped of all earlier axes' components
+_ORTHO_ORDER = ["menace", "ironic", "unhinged", "professor", "doomer"]
+
+
+def _ortho_builtin():
+    """Gram-Schmidt over the built-in axes. On strong embedders the raw pole
+    directions share a dominant 'negativity' component (menace~doomer score
+    correlation hit +0.91 on bge-m3 — one axis wearing two names). Later axes
+    in the order become 'their residual meaning beyond the earlier ones':
+    doomer = pessimism that ISN'T already explained by hostility."""
+    global _ORTHO_CACHE
+    if _ORTHO_CACHE is None:
+        import numpy as np
+        from utils.persona_traits import _axis_vectors
+        raw = _axis_vectors()
+        done = {}
+        basis = []
+        for name in _ORTHO_ORDER:
+            v = np.asarray(raw[name], dtype="float32").copy()
+            for b in basis:
+                v -= float(v @ b) * b
+            n = float(np.linalg.norm(v))
+            if n > 1e-6:
+                v /= n
+            done[name] = v
+            basis.append(v)
+        _ORTHO_CACHE = done
+    return _ORTHO_CACHE
+
+
 def axis_scores(axis_name):
     """{author: z} on an axis, blending text and emote-name semantics.
-    Short-form posters whose traits live in their emotes get read correctly."""
+    Short-form posters whose traits live in their emotes get read correctly.
+    Built-in axes use the orthogonalized directions (independent dials);
+    custom axes project on their own raw direction."""
     import numpy as np
-    av, _pos, _neg = _all_axis_vectors()[axis_name]
+    ortho = _ortho_builtin()
+    if axis_name in ortho:
+        av = ortho[axis_name]
+    else:
+        av, _pos, _neg = _all_axis_vectors()[axis_name]
     text = persona_embeddings._centered()
     emote = _emote_vectors()
     names = list(text)
