@@ -29,7 +29,8 @@ from utils.persona_traits import AXES, _axis_vectors, _embed, pole_map
 
 CUSTOM_FILE = os.path.join("data", "unsynced", "custom_axes.pkl")
 EMOTE_VEC_FILE = os.path.join("data", "unsynced", "emote_embeddings.pkl")
-MERGE_COSINE = 0.50  # distinct axes measured <=0.42; same-concept rebuilds >=0.56
+MERGE_COSINE = 0.72  # BGE geometry: DISTINCT concepts reach 0.67 (racism~misogyny);
+                     # only near-identical directions may merge
 TEXT_W, EMOTE_W = 0.75, 0.25
 
 _custom = None
