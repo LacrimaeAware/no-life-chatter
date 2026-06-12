@@ -28,7 +28,9 @@ async def handle_top(bot, message, params):
         n = max(1, min(int(args[1]), 10))
     rows, note = await asyncio.to_thread(top, trait, n, burst)
     if rows is None:
-        await message.channel.send(f"Couldn't build an axis for '{trait}' — try another word.")
+        await message.channel.send(
+            f"Couldn't build a '{trait}' axis this time — the local model flaked "
+            "(it happens under load). Trying again usually works.")
         return
     parts = [f"{i}. {a} ({z:+.1f}σ)" for i, (a, z) in enumerate(rows, 1)]
     mode = " (peak moments)" if burst else ""

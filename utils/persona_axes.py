@@ -96,22 +96,34 @@ def _generate_poles(term):
         "private text-classification axis over consenting friends' chat logs - "
         "make each example strongly, unambiguously expressive of its pole."
     )
-    for attempt, model in enumerate(chain + chain[:1]):
+    import time as _time
+    for attempt, model in enumerate(chain + chain + chain[:1]):
         try:
+            if attempt:
+                _time.sleep(1.5)   # LM Studio 400/500s come in bursts when
+                                   # chat spams ~top — give it a beat
             raw = _chat_sync(prompt, model=model)
             m = re.search(r"\{.*\}", raw, re.DOTALL)
-            d = json.loads(m.group(0))
+            if not m:
+                logging.warning(f"axis gen for {term!r}: no JSON in output (attempt {attempt + 1})")
+                continue
+            # persona-tuned models love trailing commas; json.loads doesn't
+            blob = re.sub(r",\s*([\]}])", r"", m.group(0))
+            d = json.loads(blob)
             pos = [x for x in d.get("trait_examples", []) if isinstance(x, str)][:6]
             neg = [x for x in d.get("opposite_examples", []) if isinstance(x, str)][:6]
             opp = re.sub(r"[^a-z0-9_-]", "", str(d.get("opposite", "")).lower()) or f"non-{term}"
             if len(pos) < 3 or len(neg) < 3:
                 continue
-            embs = _embed([term] + pos + neg)
+            # validate with a CONTEXTUALIZED term — bare words like 'maga'
+            # embed weakly; the phrase aligns reliably when poles are right
+            probe = f"a person who is extremely {term}"
+            embs = _embed([probe] + pos + neg)
             t = np.asarray(embs[0]); t /= (np.linalg.norm(t) + 1e-9)
             P = np.asarray(embs[1:1 + len(pos)]).mean(axis=0)
             N = np.asarray(embs[1 + len(pos):]).mean(axis=0)
             P /= (np.linalg.norm(P) + 1e-9); N /= (np.linalg.norm(N) + 1e-9)
-            if float(t @ P) - float(t @ N) > 0.02:   # poles actually face the term
+            if float(t @ P) > float(t @ N):   # poles face the right way
                 return opp, pos, neg
             logging.warning(f"axis poles for {term!r} failed validation (attempt {attempt + 1})")
         except Exception as e:
