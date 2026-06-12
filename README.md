@@ -120,6 +120,9 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~whosaid <sentence>` | anyone | Stylometry: which chatter most likely said a line (novel sentences work). Ranks people active in this chat; `anyone` ranks the whole archive. |
 | `~markers <user> [chat=] [year=]` | anyone | A chatter's voice profile — favorite words + word-pairs vs the average chatter. Scoped to the current chat by default. |
 | `~like <user> [chat=] [year=]` | anyone | Who shares their distinctive voice, with the shared markers as evidence — also a decent alt-account detector. |
+| `~twin <user>` | anyone | Overall nearest match, blending vocabulary/emotes with semantic similarity. |
+| `~traits <user>` | anyone | Semantic trait readout against the room average. |
+| `~top <trait> [n]` | anyone | Trait leaderboard, e.g. `~top unhinged` or `~top wholesome 10`. |
 | `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |
 | `~persona <user> [msg] [model=x]` | anyone | Talk to an AI persona of a chatter (local LLM, context-aware). `model=` picks a configured model shortcut. |
 | `~vibes <user>` | anyone | Semantic twins — embedding-space similarity (same topics/energy, no shared words needed). |
