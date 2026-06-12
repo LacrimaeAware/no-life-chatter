@@ -93,6 +93,33 @@ The user's theory of how humans actually do it, as design directions:
    register + off-prior = ironic" as a rule, not a lookup. Reaction-tracker
    laughter is a free weak label correlated with playful irony.
 
+## Emote meaning — the five-source architecture (2026-06-12 night)
+
+An emote's meaning is assembled from up to five signals, each covering the
+others' blind spots. A learned/weighted combination (trained as labels
+accumulate) should weigh them per-emote:
+
+1. **Usage context** (built: emote_semantics.pkl) — mean embedding of messages
+   the emote appears in, emote removed. The only source that works for DEAD
+   emotes (old logs), misleading names, and fake personal emotes.
+2. **7TV tags** (built: emote_registry.json, 1713/3087 tagged) — author-given
+   topic words (SUSSY -> sus/suspicious). Cheap, often precise; can be
+   ironic/gamed, which training should down-weight.
+3. **Alias name** (built) — what people TYPE. Aliased emotes (507 in our
+   registry) are the 'double awareness' case: the alias-word carries one
+   meaning, the underlying image another, and the CLASH is usually the joke
+   (a friend's name aliased onto a dancing-animal emote, said after an
+   on-theme remark). Representable only once image semantics exist.
+4. **Original name** (built) — the canonical emote name; weak (names lie).
+5. **Image caption** (parked, spec in buckets) — VLM caption of the emote
+   image, embedded into our space. Image URLs already stored in the registry;
+   only available for CURRENT emotes (dead ones rely on #1).
+
+Detection (is-this-an-emote): shape heuristic UNION the known sets (registry),
+plus a learned classifier trained on the emote-suspect oracle queue for tokens
+outside every list. Word-emotes ('ok') are near-1:1 image-to-word and low
+value — intentionally not chased.
+
 ## The disgust-emote case study (the motivating example for emote semantics)
 
 A real line: `DansGame women dont have dicks`, scored by the gay axis as the

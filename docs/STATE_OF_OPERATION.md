@@ -88,6 +88,15 @@ Moderation/utility:
 - **Oracle queues delivered** to the ai-prompt-engineering dropoff.
 - The three codex/* bucket branches were verified merged and deleted
   (worktrees removed); single main worktree remains.
+- **Emote semantics pipeline** (largely built): a ground-truth registry
+  (scripts/build_emote_registry.py -> emote_registry.json: ~3k emotes across
+  channels, 507 ALIASED, 1713 TAGGED, image URLs stored) and usage-context
+  meaning vectors (scripts/build_emote_semantics.py -> emote_semantics.pkl:
+  meaning = mean embedding of an emote's message contexts, which uniquely
+  covers dead/old-log emotes and fake ones). Five-source meaning architecture
+  documented in CHAT_PERSONALITY_RESEARCH.md.
+- **Third oracle queue**: emote-suspect verification (emote-shaped tokens in
+  no known set) in the ai-prompt-engineering dropoff.
 - Known systematic blind spot (research-doc case study): emotes are stance
   OPERATORS (DansGame inverts a proposition) and the pipeline strips them
   pre-embedding — the concrete motivation for a domain-adapted embedder
