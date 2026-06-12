@@ -23,23 +23,34 @@ async def _run(bot, message, params, mode):
         await message.channel.send(f"Usage: ~{'hyper' if mode=='hyper' else 'persona'} <user> [message]")
         return
 
-    # model=lora / model=llama (or a full LM Studio id) forces the model
+    # Flags are LEADING-only: once the free-text message starts, '=' is just
+    # text ("what is 2+2=x" never parses as a flag). Supported flags:
+    # model=llama|lora, anon=true (don't tell the persona who's asking).
     override = None
-    kept = []
-    for p in params:
-        if p.lower().startswith("model="):
-            override = persona_llm.resolve_model(p.split("=", 1)[1])
+    anonymous = False
+    i = 0
+    while i < len(params):
+        low = params[i].lower()
+        if low.startswith("model="):
+            override = persona_llm.resolve_model(low.split("=", 1)[1])
+        elif low.startswith("anon="):
+            anonymous = low.split("=", 1)[1] in ("true", "1", "yes", "on")
         else:
-            kept.append(p)
-    params = kept
+            break
+        i += 1
+    params = params[i:]
     if not params:
         await message.channel.send(f"Usage: ~{'hyper' if mode=='hyper' else 'persona'} <user> [message] [model=lora]")
         return
     user = params[0].lstrip("@")
     said = " ".join(params[1:]) or None
     invoker = message.author.name if message.author else None
+    # 'smoke' is in the prompt's internal-caller list -> persona sees
+    # "Someone says to you" instead of the asker's name
+    prompt_invoker = "smoke" if anonymous else invoker
     out = await persona_llm.generate_with_retry(
-        user, message.channel.name, said, mode=mode, invoked_by=invoker,
+        user, message.channel.name, said, mode=mode,
+        invoked_by=prompt_invoker,
         model_override=override)
     if not out:
         history_count = len(chat_archive.messages_for(user))
@@ -62,8 +73,8 @@ async def _run(bot, message, params, mode):
             "user_message": said, "text": out,
         })
         out = await persona_llm.generate_with_retry(
-            user, message.channel.name, said, mode=mode, invoked_by=invoker,
-            model_override=override)
+            user, message.channel.name, said, mode=mode,
+            invoked_by=prompt_invoker, model_override=override)
         if not out or not is_clean(out):
             if out:
                 persona_llm.log_event({

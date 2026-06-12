@@ -13,11 +13,14 @@ description = (
 
 def _explain(user, trait):
     import numpy as np
-    from utils.persona_axes import _ortho_builtin, _all_axis_vectors, resolve_axis
+    from utils.persona_axes import (_ortho_builtin, _all_axis_vectors,
+                                    axis_scores, resolve_axis)
     resolved = resolve_axis(trait)
     if not resolved:
         return None, f"no axis for '{trait}'"
     axis, sign, _note = resolved
+    person_z = sign * axis_scores(axis).get(
+        chat_archive.normalize_author(user), 0.0)
     ortho = _ortho_builtin()
     av = ortho[axis] if axis in ortho else _all_axis_vectors()[axis][0]
     canon = chat_archive.normalize_author(user)
@@ -31,7 +34,7 @@ def _explain(user, trait):
     bottom = proj.argsort()[:1]
     pos = [str(d["texts"][i])[:160] for i in top]
     neg = [str(d["texts"][i])[:120] for i in bottom]
-    return (pos, neg), None
+    return (pos, neg, person_z), None
 
 
 async def handle_why(bot, message, params):
@@ -43,9 +46,17 @@ async def handle_why(bot, message, params):
     if err:
         await message.channel.send(err)
         return
-    pos, neg = result
-    msg = f"🔍 why {user} scores '{trait}' — most: \"{pos[0]}\""
-    if len(pos) > 1:
-        msg += f" · also: \"{pos[1][:100]}\""
+    pos, neg, person_z = result
+    # honesty about signal strength: a weak overall score means these
+    # 'most/least' examples are basically noise — say so
+    if abs(person_z) >= 1.0:
+        strength = f"{person_z:+.1f}σ overall"
+    elif abs(person_z) >= 0.4:
+        strength = f"{person_z:+.1f}σ overall — weak, examples are shaky"
+    else:
+        strength = f"{person_z:+.1f}σ overall — basically uncorrelated, examples below are NOISE"
+    msg = f"🔍 {user} on '{trait}' ({strength}) — most: \"{pos[0]}\""
+    if len(pos) > 1 and abs(person_z) >= 0.4:
+        msg += f" · also: \"{pos[1][:90]}\""
     msg += f" · least: \"{neg[0][:80]}\""
     await message.channel.send(msg[:480])

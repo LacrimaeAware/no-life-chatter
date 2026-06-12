@@ -1,6 +1,7 @@
 import logging
 from command_registry import command_handlers, load_command_handlers
 from utils.command_bans import is_banned
+from utils import cooldowns
 
 class CommandProcessor:
     def __init__(self, bot):
@@ -17,16 +18,29 @@ class CommandProcessor:
         command = parts[0].lower()
         params = parts[1:]
 
-        # Optional: Reload command handlers if needed (useful in development)
-        # load_command_handlers()
-
         handler = command_handlers.get(command)
-        if handler:
-            try:
-                await handler(self.bot, message, params)
-            except Exception as e:
-                logging.error(f"Error handling command {command}: {e}")
-                await message.channel.send("An error occurred while processing your command.")
-        else:
+        if not handler:
             logging.warning(f"Command not recognized: {command}")
             await message.channel.send(f"Command not recognized. Try {self.bot.prefix}help for command list.")
+            return
+
+        # Anti-spam: stacking commands while your previous one is still
+        # processing is the troll pattern; heavy-but-patient use never
+        # triggers (utils/cooldowns.py — escalating, per-user, reviewable
+        # via ~warnings).
+        user = message.author.name if message.author else ""
+        verdict, secs = cooldowns.before(user)
+        if verdict == "drop":
+            return
+        if verdict == "cooldown":
+            await message.channel.send(
+                f"@{user} slow down — command cooldown {secs // 60}m {secs % 60}s "
+                "(stacking commands before the bot answers).")
+            return
+        try:
+            await handler(self.bot, message, params)
+        except Exception as e:
+            logging.error(f"Error handling command {command}: {e}")
+            await message.channel.send("An error occurred while processing your command.")
+        finally:
+            cooldowns.after(user)
