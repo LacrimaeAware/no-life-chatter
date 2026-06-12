@@ -22,18 +22,9 @@ from utils import chat_archive
 _BOUNDARY = ("\x02",)  # sentinel marking start/end of a message
 
 
-def build(author: str, order: int = 2, min_messages: int = 40, channel: str = None):
-    """Build a Markov model for author, or None if they have too little text.
-    With `channel`, prefers their messages in that chat (their voice THERE),
-    falling back to full history when they barely chat in it."""
-    msgs = []
-    if channel:
-        msgs = chat_archive.messages_for(author, channel=channel)
-    if len(msgs) < max(min_messages, 300):
-        msgs = chat_archive.messages_for(author)
-    if len(msgs) < min_messages:
-        return None
-
+def build_from_messages(msgs, order: int = 2, label: str = "fusion"):
+    """Build a Markov model from an explicit message list (e.g. a multi-person
+    fusion for ~generate). Returns None if there's nothing usable."""
     chain = defaultdict(list)
     starts = []
     used = 0
@@ -50,12 +41,27 @@ def build(author: str, order: int = 2, min_messages: int = 40, channel: str = No
     if not starts:
         return None
     return {
-        "author": chat_archive.normalize_author(author),
+        "author": label,
         "order": order,
         "chain": dict(chain),
         "starts": starts,
         "source_messages": used,
     }
+
+
+def build(author: str, order: int = 2, min_messages: int = 40, channel: str = None):
+    """Build a Markov model for author, or None if they have too little text.
+    With `channel`, prefers their messages in that chat (their voice THERE),
+    falling back to full history when they barely chat in it."""
+    msgs = []
+    if channel:
+        msgs = chat_archive.messages_for(author, channel=channel)
+    if len(msgs) < max(min_messages, 300):
+        msgs = chat_archive.messages_for(author)
+    if len(msgs) < min_messages:
+        return None
+    return build_from_messages(msgs, order=order,
+                               label=chat_archive.normalize_author(author))
 
 
 _model_cache = {}
