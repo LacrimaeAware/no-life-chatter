@@ -1,11 +1,16 @@
 import logging
 from command_registry import command_handlers, load_command_handlers
+from utils.command_bans import is_banned
 
 class CommandProcessor:
     def __init__(self, bot):
         self.bot = bot
 
     async def process_command(self, message):
+        # command-banned users are silently ignored (~banuser/~unbanuser)
+        if message.author and is_banned(message.author.name):
+            logging.info(f"Ignored command from banned user {message.author.name}")
+            return
         parts = message.content.lstrip(self.bot.prefix).split()
         if not parts:  # bare '~' / '~~' — not a command, don't crash
             return
