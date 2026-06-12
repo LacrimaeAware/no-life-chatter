@@ -257,13 +257,22 @@ def axis_scores(axis_name):
     return dict(zip(names, z))
 
 
-def top(term, n=5):
+def top(term, n=5, burst=False):
     """(rows, note): leaderboard toward any term — builtin, saved, or freshly
-    built. rows=None if the axis couldn't be made."""
+    built. rows=None if the axis couldn't be made. burst=True ranks by
+    peak-moment percentile (needs the per-message index) instead of average."""
     resolved = resolve_axis(term)
     if not resolved:
         return None, None
     axis, sign, note = resolved
-    scores = axis_scores(axis)
+    if burst:
+        from utils import persona_msg_index
+        if persona_msg_index.available():
+            scores = persona_msg_index.burst_scores(axis)
+        else:
+            scores = axis_scores(axis)
+            note = (note or "") + " [no message index yet — showing averages]"
+    else:
+        scores = axis_scores(axis)
     ranked = sorted(scores.items(), key=lambda kv: -sign * kv[1])[:n]
     return [(a, sign * z) for a, z in ranked], note

@@ -187,6 +187,9 @@ LLM_MODEL: str = _llm.get("model", "local")  # LM Studio uses whatever's loaded
 # judge them side by side. Empty list = always LLM_MODEL.
 LLM_AB_MODELS: list = list(_llm.get("ab_models", []))
 LLM_EMBED_MODEL: str = str(_llm.get("embed_model", "")).strip()
+# Use the per-message embedding index (scripts/build_message_index.py) to add
+# meaning-based retrieval to persona evidence. Needs the index built.
+LLM_SEMANTIC_RETRIEVAL: bool = bool(_llm.get("semantic_retrieval", False))
 # Short names usable as ~persona's model= override (model=lora -> real id).
 LLM_MODEL_SHORTCUTS: dict = {
     str(k).lower(): str(v) for k, v in _llm.get("model_shortcuts", {}).items()

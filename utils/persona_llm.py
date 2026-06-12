@@ -242,11 +242,21 @@ def select_evidence(author: str, query_text: str, n: int = None,
     flat_budget = max(0, relevant_budget - len(snippets) * 5)
     relevant = []
     if flat_budget:
-        relevant = _unique_messages(
-            relevant_exemplars(author, query_text, flat_budget * 2,
-                               exclude_terms=exclude_terms),
-            flat_budget, seen=set(used),
-        )
+        pool = list(relevant_exemplars(author, query_text, flat_budget * 2,
+                                       exclude_terms=exclude_terms))
+        # Semantic retrieval (config [llm] semantic_retrieval): messages near
+        # the conversation in MEANING, which FTS keyword overlap can't find.
+        # Interleaved ahead of half the keyword hits.
+        if getattr(config, "LLM_SEMANTIC_RETRIEVAL", False):
+            try:
+                from utils import persona_msg_index
+                if persona_msg_index.available(author):
+                    sem = [t for _s, t in persona_msg_index.semantic_hits(
+                        author, query_text, k=flat_budget)]
+                    pool = sem + pool
+            except Exception as e:
+                logging.debug(f"semantic retrieval skipped: {e}")
+        relevant = _unique_messages(pool, flat_budget, seen=set(used))
     seen = set(relevant) | used
     signature = _unique_messages(exemplars(author, n, channel=channel),
                                  n - len(relevant) - len(snippets) * 5, seen)
