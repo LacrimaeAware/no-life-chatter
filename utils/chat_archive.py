@@ -278,6 +278,32 @@ def ingest_file(path: str, channel: str, date: str) -> dict:
 
 # ----------------------------- live capture -----------------------------
 
+_seen_ids = set()
+
+
+def record_author_id(author: str, twitch_id) -> None:
+    """Names change, ids don't — keep an author->twitch_id table current from
+    live chat (message.author.id), once per author per process. Future
+    identity merging is id-dominant for anyone the bot has ever seen."""
+    if not author or not twitch_id:
+        return
+    key = (author.lower(), str(twitch_id))
+    if key in _seen_ids:
+        return
+    try:
+        conn = connect()
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS author_ids ("
+            " author TEXT PRIMARY KEY, twitch_id TEXT, checked_at TEXT)")
+        conn.execute(
+            "INSERT OR REPLACE INTO author_ids VALUES (?,?,datetime('now'))",
+            (author.lower(), str(twitch_id)))
+        conn.commit()
+        _seen_ids.add(key)
+    except Exception as e:
+        logging.debug(f"record_author_id failed: {e}")
+
+
 _live_backlog = []
 
 

@@ -526,7 +526,13 @@ async def generate(author: str, channel: str, user_message: str = None,
     )
     user = f"Current chat in #{channel}:\n{ctx}\n\n"
     if user_message:
-        user += f'Someone says to you: "{user_message}"\n'
+        # WHO asks matters — a persona treats different chatters differently,
+        # like the real person would. (Internal callers stay anonymous.)
+        asker = (invoked_by or "").strip()
+        if asker and asker.lower() not in ("compare", "ambient-reaction", "smoke"):
+            user += f'{asker} says to you: "{user_message}"\n'
+        else:
+            user += f'Someone says to you: "{user_message}"\n'
     user += f"Write {author}'s next chat message now."
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": user}]

@@ -4,7 +4,7 @@ import time
 import config
 from command_processor import CommandProcessor
 from services.message_service import MessageService
-from utils.chat_archive import record_live
+from utils.chat_archive import record_author_id, record_live
 from utils import reaction_tracker
 
 class MessageHandler:
@@ -28,6 +28,8 @@ class MessageHandler:
         # Append to the searchable chat archive (docs/CHAT_ARCHIVE.md).
         # record_live swallows its own errors — it can never break chat handling.
         # message.channel is None for whispers (twitchio routes them here too).
+        if message.author:
+            record_author_id(message.author.name, getattr(message.author, "id", None))
         if config.ARCHIVE_LIVE and message.channel and message.author and message.content:
             record_live(
                 message.channel.name,

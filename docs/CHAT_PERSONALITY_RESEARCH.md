@@ -93,6 +93,31 @@ The user's theory of how humans actually do it, as design directions:
    register + off-prior = ironic" as a rule, not a lookup. Reaction-tracker
    laughter is a free weak label correlated with playful irony.
 
+## Open methodology questions (2026-06-12, second batch)
+
+1. **Intellectualism vs intelligence.** The ~iq estimator measures EXPRESSED
+   cognition; some people express their intelligence less by choice (good at
+   math, never discusses it). The estimator is honest about being a register
+   measure — but the gap is itself interesting: expression bias varies per
+   person. Heuristically the two correlate (user's point, in caps), but
+   per-person divergence between capability signals and expression frequency
+   could be its own measurement.
+2. **Predictive evaluation against reality.** The persona engine is never
+   benchmarked the way it's conceptually trained: take a real moment where X
+   spoke, hide X's actual message, generate X's reply from the context,
+   compare generated vs actual (embedding similarity, classifier, eventually
+   human/funniness). "Isn't that the whole point of predictive training?" —
+   yes, and we don't do it. Build the held-out-reply eval harness; it also
+   gives a per-persona quality score that doesn't depend on tics.
+3. **Are the five built-in axes the right basis?** They were chosen by
+   judgment, not data. Alternatives: PCA/ICA over person vectors to find the
+   community's ACTUAL principal personality dimensions, then name them
+   (LLM-label the extremes). Orthogonalization order also embeds judgment
+   (menace-first means doomer = pessimism-beyond-hostility, not vice versa).
+4. **Identity should be id-dominant.** Names change; Twitch ids don't. The
+   author_ids table + live id capture make future merges factual; dead old
+   logins (pre-capture) remain inference territory (temporal handoff + NCD).
+
 ## What this is trying to measure
 
 The user is interested in whether high-volume chat logs can reveal stable,
