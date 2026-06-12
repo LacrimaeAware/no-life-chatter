@@ -60,3 +60,6 @@ async def handle_generate(bot, message, params):
     if len(out) > 440:
         out = out[:439] + "..."
     await message.channel.send(f"⚗️ {label}: {out}")
+    from utils import reaction_tracker
+    reaction_tracker.watch(message.channel.name, out,
+                           {"kind": "generate", "recipe": label})

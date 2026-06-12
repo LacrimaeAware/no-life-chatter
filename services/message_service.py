@@ -251,6 +251,10 @@ class MessageService:
                     prefix = f"#{tag} " if tag else ""
                     logging.info(f"Persona reaction in #{channel} as {target}: {line!r}")
                     await message.channel.send(f"🎲 {prefix}{target}: {line}")
+                    from utils import reaction_tracker
+                    reaction_tracker.watch(channel, line,
+                                           {"kind": "ambient", "persona": target,
+                                            "model_tag": tag})
                     await self._maybe_continue_reaction(
                         message, target, line, is_clean, persona_llm
                     )

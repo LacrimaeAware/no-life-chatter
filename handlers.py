@@ -5,6 +5,7 @@ import config
 from command_processor import CommandProcessor
 from services.message_service import MessageService
 from utils.chat_archive import record_live
+from utils import reaction_tracker
 
 class MessageHandler:
     def __init__(self, bot):
@@ -17,6 +18,12 @@ class MessageHandler:
             return
 
         logging.info(f"Received message from {message.author.name}: {message.content}")
+
+        # Implicit funniness labels: every message may be a reaction to a line
+        # the bot just posted (utils/reaction_tracker.py). Never raises.
+        if message.channel and message.author:
+            reaction_tracker.observe(message.channel.name, message.author.name,
+                                     message.content, self.bot.nick or "")
 
         # Append to the searchable chat archive (docs/CHAT_ARCHIVE.md).
         # record_live swallows its own errors — it can never break chat handling.

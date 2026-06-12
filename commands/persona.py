@@ -79,6 +79,10 @@ async def _run(bot, message, params, mode):
     tag = persona_llm.last_model_tag()
     prefix = f"#{tag} " if tag else ""
     await message.channel.send(f"🎭 {prefix}{user}: {out}")
+    from utils import reaction_tracker
+    reaction_tracker.watch(message.channel.name, out,
+                           {"kind": "persona", "persona": user, "mode": mode,
+                            "model_tag": tag})
     await _maybe_continue(message, user, said, out, mode)
 
 
