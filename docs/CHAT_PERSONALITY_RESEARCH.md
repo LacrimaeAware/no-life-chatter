@@ -93,6 +93,29 @@ The user's theory of how humans actually do it, as design directions:
    register + off-prior = ironic" as a rule, not a lookup. Reaction-tracker
    laughter is a free weak label correlated with playful irony.
 
+## The disgust-emote case study (the motivating example for emote semantics)
+
+A real line: `DansGame women dont have dicks`, scored by the gay axis as the
+NEGATIVE extreme. The pipeline strips emotes before embedding, so the model
+read only "women dont have dicks" — an anti-pole statement. But DansGame
+means DISGUST: the full reading is "I am disgusted that women don't have
+dicks" -> "I wish they did" -> the OPPOSITE pole of what we scored. The emote
+carries the entire semantic inversion, the way tone of voice does in speech.
+
+Implications, in order of force:
+1. Emotes are not decoration — they are sentiment/stance OPERATORS applied to
+   the proposition. Stripping them deletes the operator. Naive inclusion
+   (nomic/bge embedding of the emote token) doesn't capture the operator
+   semantics either — the embedder has never seen DansGame used correctly.
+2. This is THE argument for the domain-adapted embedder trained on our own
+   logs, where DansGame co-occurs with disgust-context thousands of times.
+3. Training must use CONTEXT, not isolated lines (user's point): an emote's
+   meaning is learned from what it gets attached to across neighboring
+   messages. The utterance-merging + msg-index infrastructure exists; the
+   training pairs should be (message-with-emotes, surrounding context).
+4. Until then: every axis/why/irony output that involves emote-heavy lines is
+   systematically blind to inversions like this one.
+
 ## Open methodology questions (2026-06-12, second batch)
 
 1. **Intellectualism vs intelligence.** The ~iq estimator measures EXPRESSED

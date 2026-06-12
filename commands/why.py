@@ -11,6 +11,25 @@ description = (
 )
 
 
+_axis_cal = {}   # axis -> (mu, sd) of per-message projections, index-wide
+
+
+def _calibration(axis, av):
+    if axis not in _axis_cal:
+        import numpy as np
+        import random
+        d = os.path.join("data", "unsynced", "msg_index")
+        files = [f for f in os.listdir(d) if f.endswith(".npz")]
+        random.Random(7).shuffle(files)
+        projs = []
+        for f in files[:10]:
+            V = np.load(os.path.join(d, f), allow_pickle=True)["vectors"].astype("float32")
+            projs.append(V @ av)
+        allp = np.concatenate(projs)
+        _axis_cal[axis] = (float(allp.mean()), float(allp.std()) or 1.0)
+    return _axis_cal[axis]
+
+
 def _explain(user, trait):
     import numpy as np
     from utils.persona_axes import (_ortho_builtin, _all_axis_vectors,
@@ -29,11 +48,16 @@ def _explain(user, trait):
         return None, f"no message index for {user}"
     d = np.load(path, allow_pickle=True)
     V = d["vectors"].astype("float32")
-    proj = sign * (V @ np.asarray(av, dtype="float32"))
+    av32 = np.asarray(av, dtype="float32")
+    proj = sign * (V @ av32)
+    mu, sd = _calibration(axis, av32)
+    # proj already carries the sign; the calibration mean was measured on the
+    # unsigned axis, so flip it to match
+    z = (proj - sign * mu) / sd
     top = proj.argsort()[::-1][:2]
     bottom = proj.argsort()[:1]
-    pos = [str(d["texts"][i])[:160] for i in top]
-    neg = [str(d["texts"][i])[:120] for i in bottom]
+    pos = [(str(d["texts"][i])[:150], float(z[i])) for i in top]
+    neg = [(str(d["texts"][i])[:110], float(z[i])) for i in bottom]
     return (pos, neg, person_z), None
 
 
@@ -55,8 +79,9 @@ async def handle_why(bot, message, params):
         strength = f"{person_z:+.1f}σ overall — weak, examples are shaky"
     else:
         strength = f"{person_z:+.1f}σ overall — basically uncorrelated, examples below are NOISE"
-    msg = f"🔍 {user} on '{trait}' ({strength}) — most: \"{pos[0]}\""
+    msg = (f"🔍 {user} on '{trait}' ({strength}) — "
+           f"most ({pos[0][1]:+.1f}): \"{pos[0][0]}\"")
     if len(pos) > 1 and abs(person_z) >= 0.4:
-        msg += f" · also: \"{pos[1][:90]}\""
-    msg += f" · least: \"{neg[0][:80]}\""
+        msg += f" · also ({pos[1][1]:+.1f}): \"{pos[1][0][:80]}\""
+    msg += f" · least ({neg[0][1]:+.1f}): \"{neg[0][0][:70]}\""
     await message.channel.send(msg[:480])
