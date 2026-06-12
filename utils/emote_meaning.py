@@ -9,6 +9,8 @@ SEM_PATH = os.path.join("data", "unsynced", "emote_semantics.pkl")
 
 _reg = None
 _sem = None
+_centered = None
+_names = None
 
 
 def registry():
@@ -25,6 +27,33 @@ def semantics():
     return _sem
 
 
+def _centered_space():
+    """Centered, L2-normalized emote-context vectors (raw chat embeddings are
+    anisotropic — everything ~0.65 cosine until you subtract the mean)."""
+    global _centered, _names
+    if _centered is None:
+        import numpy as np
+        sem = semantics()
+        _names = list(sem)
+        if not _names:
+            _centered = {}
+            return _centered
+        M = np.vstack([np.asarray(sem[e]["vector"], dtype="float32") for e in _names])
+        M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-9)
+        M -= M.mean(axis=0)
+        M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-9)
+        _centered = {e: M[i] for i, e in enumerate(_names)}
+    return _centered
+
+
+def vector(token):
+    """Centered usage vector for an emote (case-insensitive), or None."""
+    c = _centered_space()
+    if token in c:
+        return c[token]
+    return next((c[k] for k in c if k.lower() == token.lower()), None)
+
+
 def lookup(token):
     """Registry facts for an emote token (case-insensitive), or None."""
     reg = registry()
@@ -39,21 +68,26 @@ def lookup(token):
 
 def nearest_emotes(token, n=6):
     """Emotes whose usage-context is closest (same meaning by usage), or []."""
-    import numpy as np
-    sem = semantics()
-    key = token if token in sem else next((k for k in sem if k.lower() == token.lower()), None)
-    if not key:
+    v = vector(token)
+    if v is None:
         return []
-    v = np.asarray(sem[key]["vector"], dtype="float32")
-    v /= (np.linalg.norm(v) + 1e-9)
-    sims = []
-    for k, d in sem.items():
-        if k == key:
-            continue
-        w = np.asarray(d["vector"], dtype="float32")
-        sims.append((k, float(v @ w / (np.linalg.norm(w) + 1e-9))))
+    c = _centered_space()
+    sims = [(k, float(v @ w)) for k, w in c.items()
+            if not (k == token or k.lower() == token.lower())]
     sims.sort(key=lambda kv: -kv[1])
     return sims[:n]
+
+
+def meaning_tags(token, n=6):
+    """Plain-meaning words for an emote: the 7TV tags of its nearest-usage
+    emotes (more reliable than cross-space probe words)."""
+    from collections import Counter
+    reg = registry()
+    c = Counter()
+    for e, sim in nearest_emotes(token, 12):
+        for t in (reg.get(e, {}).get("tags") or [])[:4]:
+            c[t.lower()] += sim
+    return [t for t, _ in c.most_common(n)]
 
 
 def meaning_words(token, probes=None, n=3):

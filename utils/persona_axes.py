@@ -236,24 +236,27 @@ def resolve_axis(term):
 # ----------------------- emote-aware projections -----------------------
 
 def _emote_vectors():
-    """Per-person emote-name semantic vector (log-odds-weighted mean of their
-    distinctive emotes' name embeddings), centered across the roster."""
+    """Per-person emote-MEANING vector: log-odds-weighted mean of their
+    distinctive emotes' USAGE-context vectors (what the emotes mean by how
+    they're used — DansGame=disgust), with camel-split name embeddings as
+    fallback for emotes lacking a usage vector. Centered across the roster."""
     global _emote_person_vecs
     if _emote_person_vecs is not None:
         return _emote_person_vecs
     import numpy as np
     from utils import persona_classifier as pc
+    from utils import emote_meaning
     profiles = pc.load().get("profiles") or {}
+    usage = emote_meaning.semantics()   # raw usage vectors (1024-d, bge)
 
     cache = {}
     if os.path.exists(EMOTE_VEC_FILE):
         with open(EMOTE_VEC_FILE, "rb") as fh:
             cache = pickle.load(fh)
     all_emotes = sorted({e for p in profiles.values() for e in p.get("emotes", {})})
-    missing = [e for e in all_emotes if e not in cache]
+    missing = [e for e in all_emotes if e not in cache and e not in usage]
     for i in range(0, len(missing), 64):
         batch = missing[i:i + 64]
-        # split camel-case so the embedder reads words: ApuDoomer -> Apu Doomer
         readable = [re.sub(r"(?<=[a-z])(?=[A-Z])", " ", e) for e in batch]
         for e, v in zip(batch, _embed(readable)):
             cache[e] = np.asarray(v, dtype="float32")
@@ -261,18 +264,22 @@ def _emote_vectors():
         with open(EMOTE_VEC_FILE, "wb") as fh:
             pickle.dump(cache, fh)
 
+    def emote_vec(e):
+        v = np.asarray(usage[e]["vector"], dtype="float32") if e in usage else cache.get(e)
+        if v is None:
+            return None
+        return v / (np.linalg.norm(v) + 1e-9)
+
     vecs = {}
     for author, prof in profiles.items():
-        em = prof.get("emotes", {})
-        if not em:
-            continue
-        acc = np.zeros(next(iter(cache.values())).shape, dtype="float32")
-        for e, w in em.items():
-            if e in cache:
-                acc += w * cache[e]
-        n = np.linalg.norm(acc)
-        if n > 0:
-            vecs[author] = acc / n
+        acc = None
+        for e, w in prof.get("emotes", {}).items():
+            v = emote_vec(e)
+            if v is None:
+                continue
+            acc = (w * v) if acc is None else (acc + w * v)
+        if acc is not None and np.linalg.norm(acc) > 0:
+            vecs[author] = acc / np.linalg.norm(acc)
     if vecs:
         names = list(vecs)
         M = np.vstack([vecs[a] for a in names])
