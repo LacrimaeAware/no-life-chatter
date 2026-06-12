@@ -289,6 +289,26 @@ def axis_scores(axis_name):
     return dict(zip(names, z))
 
 
+def most_distinct(n=5):
+    """People whose personality deviates most from the room average — total
+    |z| summed across the five built-in axes. Returns
+    [(author, total, [defining trait labels]), ...]. The built-in axes only,
+    so the metric is stable regardless of what custom axes chat has built."""
+    from utils.persona_traits import AXES
+    per = {}
+    for axis in AXES:
+        for a, z in axis_scores(axis).items():
+            per.setdefault(a, []).append((axis, z))
+    out = []
+    for a, zs in per.items():
+        total = sum(abs(z) for _, z in zs)
+        top3 = sorted(zs, key=lambda kv: -abs(kv[1]))[:3]
+        labels = [AXES[ax][1] if z >= 0 else AXES[ax][0] for ax, z in top3]
+        out.append((a, total, labels))
+    out.sort(key=lambda kv: -kv[1])
+    return out[:n]
+
+
 def top(term, n=5, burst=False):
     """(rows, note): leaderboard toward any term — builtin, saved, or freshly
     built. rows=None if the axis couldn't be made. burst=True ranks by
