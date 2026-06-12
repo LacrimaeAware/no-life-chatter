@@ -46,6 +46,53 @@ about MEANING, where token overlap is structurally blind.
    Does an embedding-based judge (semantic similarity to their real replies
    in similar moments) track human funniness judgments better?
 
+## Second-order semantics: the irony problem (user musings, 2026-06-12)
+
+Live test result that frames everything: the zero-shot "ironic" axis detects
+sarcastic SURFACE FORM, not intent. Marked sarcasm ("almost like you
+aren't...") scores ironic — but as the user notes, marked sarcasm is barely
+irony at all; it is a direct claim in roundabout clothing. Deadpan irony
+("I will laugh at the children extra hard just for you") scores as the most
+SINCERE line in its conversation, because deadpan is sincere-looking by
+construction. Emote-stripping deletes tone markers (FeelsOkayMan) on top.
+
+The user's theory of how humans actually do it, as design directions:
+
+1. **First-order vs second-order meaning.** First order = what the words
+   literally say. Second order = meaning conditioned on (a) the speaker's
+   known values, (b) the in-group's acceptable values, (c) delivery register.
+   Irony is a large first/second-order GAP: a statement orthogonal to the
+   speaker's or group's true values, delivered casually. Operationalization:
+   literal extremity (projection on harm/moral axes) x casual delivery x
+   distance from speaker prior = deadpan-irony signal. A morally harmful
+   opinion stated casually in a friendly conversation is usually a bit.
+2. **Speaker prior / value profile.** Requires a per-person stance model —
+   we have person vectors and per-message indexes; "how unusual is this
+   content FOR THIS PERSON" is computable as a percentile within their own
+   message distribution.
+3. **Frequency as a light proxy for masking.** If someone "ironically" makes
+   the same joke about X constantly, revealed preference says it is partly
+   masking. Per-person topic-frequency conditions the playful-vs-masking
+   call. (User: "even if someone claims something is ironic, if they
+   constantly joke about X it can be somewhat masking.")
+4. **Utterance merging.** "I wish" is an unreadable fragment alone — and it
+   was sent seconds before "It would be a great day to cause suffering to
+   children" by the same person. Messages should be merged into utterances
+   by author + temporal proximity before any semantic analysis. Fixes
+   fragments, emote spam, and a chunk of the context problem at once.
+5. **Conversation-level effects (the sixth-person question).** Sort by
+   temporal spacing, not just user: treat a conversation as the unit, measure
+   its axis profile over time, and measure how the ARRIVAL of person X shifts
+   it. "Does the conversation become more ironic / more race-oriented when X
+   joins?" — a per-person INFLUENCE vector, possibly more insightful than
+   their own message profile. Needs conversation segmentation (which #4
+   gives). Confound to handle: time-of-day and topic seasonality.
+6. **Learning without the oracle on novel messages.** Oracle labels bootstrap
+   the supervised head; the second-order features (1-3) are what let it
+   GENERALIZE to novel messages — the model learns "extreme content + casual
+   register + off-prior = ironic" as a rule, not a lookup. Reaction-tracker
+   laughter is a free weak label correlated with playful irony.
+
 ## What this is trying to measure
 
 The user is interested in whether high-volume chat logs can reveal stable,

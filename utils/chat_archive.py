@@ -760,6 +760,50 @@ def messages_for(author: str, channel: str = None, year: int = None):
     return [r[0] for r in conn.execute(sql + " ORDER BY sent_at", params).fetchall()]
 
 
+def merge_utterances(rows, gap_seconds: int = 45):
+    """Merge consecutive same-author messages within `gap_seconds` into single
+    utterances. Chat fragments ("I wish" sent 3s before the punchline) are
+    unreadable alone — semantic analysis should see the merged turn, not the
+    fragment. rows = [(sent_at, author, content), ...] time-ordered;
+    returns the same shape with contents joined.
+    """
+    import datetime
+    def _t(s):
+        try:
+            return datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+    out = []
+    for sent_at, author, content in rows:
+        if out:
+            p_sent, p_author, p_content = out[-1]
+            t0, t1 = _t(p_sent), _t(sent_at)
+            if (p_author == author and t0 and t1
+                    and (t1 - t0).total_seconds() <= gap_seconds):
+                out[-1] = (p_sent, p_author, p_content + " " + (content or ""))
+                continue
+        out.append((sent_at, author, content or ""))
+    return out
+
+
+def utterances_for(author: str, channel: str = None, year: int = None,
+                   gap_seconds: int = 45):
+    """The author's messages merged into utterances (see merge_utterances)."""
+    conn = connect()
+    keys = author_keys(author)
+    ph, params = _in_clause(keys)
+    sql = f"SELECT sent_at, author, content FROM messages WHERE author IN ({ph})"
+    params = list(params)
+    if channel:
+        sql += " AND channel = ?"
+        params.append(normalize_channel(channel))
+    if year:
+        sql += " AND sent_at >= ? AND sent_at < ?"
+        params += [f"{int(year)}-01-01", f"{int(year) + 1}-01-01"]
+    rows = conn.execute(sql + " ORDER BY sent_at, id", params).fetchall()
+    return [c for _s, _a, c in merge_utterances(rows, gap_seconds)]
+
+
 def search_all(phrase: str, limit: int = 10):
     """Full-text search across all authors: [(sent_at, channel, author, content)...]."""
     conn = connect()
