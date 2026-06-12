@@ -21,14 +21,10 @@ async def handle_traits(bot, message, params):
     if not traits:
         await message.channel.send(f"No semantic vector for {user} (not in the roster yet).")
         return
-    # only real deviations: showing everyone's top-4-of-5 axes made every
-    # axis appear for ~80% of people ("why is everyone a professor")
-    strong = [(a, z) for a, z in traits if abs(z) >= 0.8][:3]
-    if not strong:
-        await message.channel.send(f"🧪 {user}: aggressively average — no trait deviates from the room.")
-        return
+    # all five axes, strongest deviation first; the label names the pole they
+    # lean toward, σ = standard deviations from the roster average
     parts = []
-    for axis, z in strong:
+    for axis, z in traits:
         neg, pos = AXES[axis][0], AXES[axis][1]
         label = pos if z >= 0 else neg
         parts.append(f"{label} {abs(z):.1f}σ")
