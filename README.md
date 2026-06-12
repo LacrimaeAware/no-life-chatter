@@ -105,7 +105,7 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 
 | Command | Who | Description |
 | --- | --- | --- |
-| `~help [command]` | anyone | List commands, or details for one. |
+| `~help [page|command]` | anyone | List grouped command pages, or details for one command. |
 | `~ping` | anyone | Latency + host stats. |
 | `~practice on <langs> [native]` | anyone | Start practice mode. e.g. `~practice on es,ja en` |
 | `~practice off` / `~practice show` | anyone | Stop / inspect practice mode. |
@@ -120,6 +120,9 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~whosaid <sentence>` | anyone | Stylometry: which chatter most likely said a line (novel sentences work). Ranks people active in this chat; `anyone` ranks the whole archive. |
 | `~markers <user> [chat=] [year=]` | anyone | A chatter's voice profile — favorite words + word-pairs vs the average chatter. Scoped to the current chat by default. |
 | `~like <user> [chat=] [year=]` | anyone | Who shares their distinctive voice, with the shared markers as evidence — also a decent alt-account detector. |
+| `~twin <user>` | anyone | Overall nearest match, blending vocabulary/emotes with semantic similarity. |
+| `~traits <user>` | anyone | Semantic trait readout against the room average. |
+| `~top <trait> [n]` | anyone | Trait leaderboard, e.g. `~top unhinged` or `~top wholesome 10`. |
 | `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |
 | `~persona <user> [msg] [model=x]` | anyone | Talk to an AI persona of a chatter (local LLM, context-aware). `model=` picks a configured model shortcut. |
 | `~vibes <user>` | anyone | Semantic twins — embedding-space similarity (same topics/energy, no shared words needed). |
@@ -175,6 +178,7 @@ Double-click instead of using the terminal:
 | `run-background.vbs` | Run the bot **hidden**, restarting it if it crashes, logging to `data/bot.log`. |
 | `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
 | `stop-bot.bat` | Stop the background bot. |
+| `9-backup-unsynced-data.bat` | Zip the important local `data/unsynced` artifacts to `_private/backups`, keeping the newest 3 backups. |
 
 To auto-start at login, put a shortcut to `run-background.vbs` in your Startup
 folder (`shell:startup`). Additional numbered helpers for the offline
