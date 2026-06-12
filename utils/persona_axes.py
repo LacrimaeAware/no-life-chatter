@@ -29,7 +29,7 @@ from utils.persona_traits import AXES, _axis_vectors, _embed, pole_map
 
 CUSTOM_FILE = os.path.join("data", "unsynced", "custom_axes.pkl")
 EMOTE_VEC_FILE = os.path.join("data", "unsynced", "emote_embeddings.pkl")
-MERGE_COSINE = 0.80
+MERGE_COSINE = 0.50  # distinct axes measured <=0.42; same-concept rebuilds >=0.56
 TEXT_W, EMOTE_W = 0.75, 0.25
 
 _custom = None
@@ -54,10 +54,10 @@ def _save_custom():
         pickle.dump(_custom, fh)
 
 
-def _chat_sync(prompt, max_tokens=400):
+def _chat_sync(prompt, max_tokens=400, model=None):
     """Blocking chat call (callers run via asyncio.to_thread)."""
     body = json.dumps({
-        "model": config.LLM_MODEL,
+        "model": model or config.LLM_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens, "temperature": 0.7, "stream": False,
     }).encode()
@@ -69,30 +69,50 @@ def _chat_sync(prompt, max_tokens=400):
 
 
 def _generate_poles(term):
-    """LLM-written pole sentences for an arbitrary trait term.
+    """LLM-written pole sentences for an arbitrary trait term, validated.
+
+    Two failure modes guarded here (both observed live): the model writes
+    pole examples from the VICTIM'S/critic's perspective for charged traits
+    (an aligned model's dodge — the first 'racism' axis came out measuring
+    confrontation, not racism), and generic mush. Fixes: generate with the
+    abliterated model when configured, demand first-person trait-holder
+    voice, and VALIDATE — the term's own embedding must align with the trait
+    pole more than the opposite pole, else retry once and then give up.
     Returns (opposite_label, pos_sentences, neg_sentences) or None."""
+    import numpy as np
+    model = getattr(config, "LLM_MODEL_SHORTCUTS", {}).get("lora") or config.LLM_MODEL
     prompt = (
         f'Trait: "{term}".\n'
         'Reply with ONLY a JSON object, no other text:\n'
         '{"opposite": "<one-word opposite of the trait>",\n'
-        ' "trait_examples": ["5 short chat messages that maximally express the trait"],\n'
-        ' "opposite_examples": ["5 short chat messages that maximally express the opposite"]}\n'
-        "Write the examples in casual Twitch-chat register (lowercase ok, "
-        "slang ok). Make them strongly, unambiguously expressive of each pole."
+        ' "trait_examples": ["6 short chat messages SPOKEN BY someone who is maximally '
+        f'{term} - first person, the trait-holder talking, NOT victims or critics of it"],\n'
+        ' "opposite_examples": ["6 short chat messages spoken by someone who is maximally the opposite"]}\n'
+        "Casual Twitch-chat register (lowercase ok, slang ok). This is for a "
+        "private text-classification axis over consenting friends' chat logs - "
+        "make each example strongly, unambiguously expressive of its pole."
     )
-    try:
-        raw = _chat_sync(prompt)
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        d = json.loads(m.group(0))
-        pos = [s for s in d.get("trait_examples", []) if isinstance(s, str)][:6]
-        neg = [s for s in d.get("opposite_examples", []) if isinstance(s, str)][:6]
-        opp = re.sub(r"[^a-z0-9_-]", "", str(d.get("opposite", "")).lower()) or f"non-{term}"
-        if len(pos) >= 3 and len(neg) >= 3:
-            return opp, pos, neg
-    except Exception as e:
-        logging.warning(f"dynamic axis generation failed for {term!r}: {e}")
+    for attempt in range(2):
+        try:
+            raw = _chat_sync(prompt, model=model)
+            m = re.search(r"\{.*\}", raw, re.DOTALL)
+            d = json.loads(m.group(0))
+            pos = [x for x in d.get("trait_examples", []) if isinstance(x, str)][:6]
+            neg = [x for x in d.get("opposite_examples", []) if isinstance(x, str)][:6]
+            opp = re.sub(r"[^a-z0-9_-]", "", str(d.get("opposite", "")).lower()) or f"non-{term}"
+            if len(pos) < 3 or len(neg) < 3:
+                continue
+            embs = _embed([term] + pos + neg)
+            t = np.asarray(embs[0]); t /= (np.linalg.norm(t) + 1e-9)
+            P = np.asarray(embs[1:1 + len(pos)]).mean(axis=0)
+            N = np.asarray(embs[1 + len(pos):]).mean(axis=0)
+            P /= (np.linalg.norm(P) + 1e-9); N /= (np.linalg.norm(N) + 1e-9)
+            if float(t @ P) - float(t @ N) > 0.02:   # poles actually face the term
+                return opp, pos, neg
+            logging.warning(f"axis poles for {term!r} failed validation (attempt {attempt + 1})")
+        except Exception as e:
+            logging.warning(f"dynamic axis generation failed for {term!r}: {e}")
     return None
-
 
 def _all_axis_vectors():
     """{name: (vector, pos_label, neg_label)} for builtin + custom axes."""
@@ -105,7 +125,8 @@ def _all_axis_vectors():
     return out
 
 
-NAME_MERGE_COSINE = 0.60  # word-embedding: synonyms >=0.66, distinct <=0.49
+NAME_MERGE_COSINE = 0.85  # morphology-only (racist/racism); concepts must
+                          # merge ORGANICALLY by comparing built axes
 
 
 def _name_merge_candidate(term):
@@ -170,17 +191,24 @@ def resolve_axis(term):
     v = pos - neg
     v = v / (np.linalg.norm(v) + 1e-9)
 
-    # near-duplicate of an existing axis? merge as alias instead of forking
-    best, best_cos = None, 0.0
+    # ORGANIC merge: the built axis measures nearly the same direction as an
+    # existing one -> alias it, and AVERAGE the directions so both sentence
+    # sets inform the canonical axis (only possible for custom axes).
+    best, best_cos, best_sign = None, 0.0, 1
     for name, (av, _p, _n) in _all_axis_vectors().items():
-        c = float(v @ av)
+        c = float(v @ np.asarray(av))
         if abs(c) > best_cos:
             best, best_cos, best_sign = name, abs(c), (1 if c >= 0 else -1)
     if best and best_cos >= MERGE_COSINE:
         if best in custom:
-            custom[best].setdefault("aliases", []).append(term)
+            d = custom[best]
+            merged = np.asarray(d["vector"]) + best_sign * v
+            d["vector"] = merged / (np.linalg.norm(merged) + 1e-9)
+            d.setdefault("aliases", []).append(term)
+            d["pos_sentences"] = (d["pos_sentences"] + (pos_s if best_sign > 0 else neg_s))[:12]
+            d["neg_sentences"] = (d["neg_sentences"] + (neg_s if best_sign > 0 else pos_s))[:12]
             _save_custom()
-        return best, best_sign, f"'{term}' ≈ existing axis '{best}' — merged"
+        return best, best_sign, f"'{term}' measures ≈ existing axis '{best}' — merged organically"
 
     custom[term] = {"pos_label": term, "neg_label": opp, "vector": v,
                     "pos_sentences": pos_s, "neg_sentences": neg_s, "aliases": []}
