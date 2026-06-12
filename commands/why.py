@@ -5,9 +5,10 @@ from utils import chat_archive
 
 description = (
     "Interpretability: WHICH of a chatter's real messages most drive their "
-    "score on an axis — the receipts behind ~top/~traits. Works for any "
-    "built-in or saved axis.\n"
-    "  ~why <user> <trait>     e.g. ~why someuser doomer"
+    "score on an axis — the receipts behind ~top/~traits. Add 'words' to see "
+    "which WORDS in their top message carry the correlation (occlusion: "
+    "re-embed with each word removed).\n"
+    "  ~why <user> <trait> [words]"
 )
 
 
@@ -61,16 +62,45 @@ def _explain(user, trait):
     return (pos, neg, person_z), None
 
 
+def _word_attribution(text, axis, sign):
+    """Occlusion: drop each word, re-embed, measure projection loss. The words
+    whose removal hurts most are what the axis is actually reacting to."""
+    import numpy as np
+    from utils.persona_axes import _ortho_builtin, _all_axis_vectors
+    from utils.persona_traits import _embed
+    ortho = _ortho_builtin()
+    av = ortho[axis] if axis in ortho else _all_axis_vectors()[axis][0]
+    av = np.asarray(av, dtype="float32")
+    words = text.split()[:24]
+    variants = [" ".join(words)] + [
+        " ".join(words[:i] + words[i + 1:]) for i in range(len(words))]
+    E = np.asarray(_embed(variants), dtype="float32")
+    E /= np.linalg.norm(E, axis=1, keepdims=True)
+    base = sign * float(E[0] @ av)
+    drops = [(w, base - sign * float(E[i + 1] @ av)) for i, w in enumerate(words)]
+    drops.sort(key=lambda kv: -kv[1])
+    return [(w, d) for w, d in drops if d > 0][:4]
+
+
 async def handle_why(bot, message, params):
     if len(params) < 2:
-        await message.channel.send("Usage: ~why <user> <trait>")
+        await message.channel.send("Usage: ~why <user> <trait> [words]")
         return
     user, trait = params[0].lstrip("@"), params[1].lower()
+    words_mode = len(params) > 2 and params[2].lower() == "words"
     result, err = await asyncio.to_thread(_explain, user, trait)
     if err:
         await message.channel.send(err)
         return
     pos, neg, person_z = result
+    if words_mode:
+        from utils.persona_axes import resolve_axis
+        axis, sign, _n = resolve_axis(trait)
+        attr = await asyncio.to_thread(_word_attribution, pos[0][0], axis, sign)
+        parts = " · ".join(f"{w} (+{d:.3f})" for w, d in attr) or "no single word carries it"
+        await message.channel.send(
+            f"🔬 \"{pos[0][0][:120]}\" reads '{trait}' because of: {parts}")
+        return
     # honesty about signal strength: a weak overall score means these
     # 'most/least' examples are basically noise — say so
     if abs(person_z) >= 1.0:
