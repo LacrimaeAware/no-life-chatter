@@ -122,7 +122,8 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 | `~like <user> [chat=] [year=]` | anyone | Who shares their distinctive voice, with the shared markers as evidence — also a decent alt-account detector. |
 | `~twin <user>` | anyone | Overall nearest match, blending vocabulary/emotes with semantic similarity. |
 | `~traits <user>` | anyone | Semantic trait readout against the room average. |
-| `~top <trait> [n]` | anyone | Trait leaderboard, e.g. `~top unhinged` or `~top wholesome 10`. |
+| `~top <trait> [n] [burst]` | anyone | Trait leaderboard for any word — built-in axes answer instantly, novel words build a saved axis on the fly. `burst` ranks peak moments. |
+| `~generate <tags...>` | anyone | Example message from a bag of tags: chatter names (several = fusion), trait poles, `chat=`, `year=`, topic, `engine=markov\|llm`. Save per-user recipes. |
 | `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |
 | `~persona <user> [msg] [model=x]` | anyone | Talk to an AI persona of a chatter (local LLM, context-aware). `model=` picks a configured model shortcut. |
 | `~vibes <user>` | anyone | Semantic twins — embedding-space similarity (same topics/energy, no shared words needed). |

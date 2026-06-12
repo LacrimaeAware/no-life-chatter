@@ -1,5 +1,10 @@
 # Handoff — persona/archive feature set
 
+> **2026-06-12: [STATE_OF_OPERATION.md](STATE_OF_OPERATION.md) is the
+> authoritative current-state map** (architecture, all 26 commands, live
+> artifacts, the pending alias rebuild, refactor intentions). This file is the
+> narrative history of the persona/archive work.
+
 Single doc to bring a fresh session (or a different model) fully up to speed on
 the chat-archive + persona work, with no prior conversation context. Written
 2026-06-11.
