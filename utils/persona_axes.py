@@ -80,7 +80,11 @@ def _generate_poles(term):
     pole more than the opposite pole, else retry once and then give up.
     Returns (opposite_label, pos_sentences, neg_sentences) or None."""
     import numpy as np
-    model = getattr(config, "LLM_MODEL_SHORTCUTS", {}).get("lora") or config.LLM_MODEL
+    # the abliterated model won't dodge charged traits, but it's persona-tuned
+    # so its JSON discipline is shaky — fall back to the base instruct model
+    # (better JSON, may soften) before giving up entirely
+    chain = [m for m in [getattr(config, "LLM_MODEL_SHORTCUTS", {}).get("lora"),
+                         config.LLM_MODEL] if m]
     prompt = (
         f'Trait: "{term}".\n'
         'Reply with ONLY a JSON object, no other text:\n'
@@ -92,7 +96,7 @@ def _generate_poles(term):
         "private text-classification axis over consenting friends' chat logs - "
         "make each example strongly, unambiguously expressive of its pole."
     )
-    for attempt in range(2):
+    for attempt, model in enumerate(chain + chain[:1]):
         try:
             raw = _chat_sync(prompt, model=model)
             m = re.search(r"\{.*\}", raw, re.DOTALL)

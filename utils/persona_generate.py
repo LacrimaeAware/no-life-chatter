@@ -80,7 +80,16 @@ def parse_recipe(params, invoking_user):
     Saved combos (the invoking user's) expand one level."""
     from utils.persona_classifier import _known_usernames
     users_set = _known_usernames()
-    poles = pole_map()
+    poles = dict(pole_map())
+    # custom axes (and their aliases/opposites) are trait tags too — without
+    # this, '~generate <user> racism' silently became topic="racism" and
+    # produced commentary ABOUT racism instead of that register
+    from utils.persona_axes import _load_custom
+    for name, d in _load_custom().items():
+        poles[name] = (name, +1)
+        poles[d["neg_label"]] = (name, -1)
+        for al in d.get("aliases", []):
+            poles[al] = (name, +1)
     recipe = {"users": [], "traits": [], "channels": [], "year": None,
               "topic": [], "engine": "llm", "model": None, "expanded": []}
 
@@ -200,10 +209,21 @@ async def generate_example(recipe):
             if ex:
                 parts.append(f"Real messages by {u}:\n" + "\n".join(ex))
     if traits:
+        from utils.persona_axes import _load_custom
+        custom = _load_custom()
+        builtin = pole_map()
         for t in traits:
-            axis, sign = pole_map()[t]
-            neg, pos, neg_s, pos_s = AXES[axis]
-            hints = pos_s if sign > 0 else neg_s
+            if t in builtin:
+                axis, sign = builtin[t]
+                neg, pos, neg_s, pos_s = AXES[axis]
+                hints = pos_s if sign > 0 else neg_s
+            else:
+                d = custom.get(t) or next(
+                    (d for d in custom.values()
+                     if t in d.get("aliases", []) or t == d["neg_label"]), None)
+                if not d:
+                    continue
+                hints = d["pos_sentences"] if t != d["neg_label"] else d["neg_sentences"]
             parts.append(
                 f"The message must read MAXIMALLY {t}. Register examples "
                 f"(do not copy them): " + " | ".join(hints[:3]))
