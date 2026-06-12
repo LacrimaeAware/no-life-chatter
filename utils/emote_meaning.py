@@ -6,6 +6,7 @@ import pickle
 
 REG_PATH = os.path.join("data", "unsynced", "emote_registry.json")
 SEM_PATH = os.path.join("data", "unsynced", "emote_semantics.pkl")
+TAG_PATH = os.path.join("data", "unsynced", "emote_tag_vecs.pkl")
 
 _reg = None
 _sem = None
@@ -27,22 +28,47 @@ def semantics():
     return _sem
 
 
+def _center(d):
+    import numpy as np
+    names = list(d)
+    if not names:
+        return {}
+    M = np.vstack([np.asarray(d[e], dtype="float32") for e in names])
+    M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-9)
+    M -= M.mean(axis=0)
+    M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-9)
+    return {e: M[i] for i, e in enumerate(names)}
+
+
 def _centered_space():
-    """Centered, L2-normalized emote-context vectors (raw chat embeddings are
-    anisotropic — everything ~0.65 cosine until you subtract the mean)."""
+    """Blended emote-MEANING space: usage-context (0.45) + cleaned 7TV tags
+    (0.55), each centered (raw chat embeddings are anisotropic). Usage alone
+    confounds STIMULUS with STANCE (KEKW and SEETHE react to the same
+    situations); tags carry the stance for ~1700 emotes and pull the whole
+    geometry apart, which even fixes untagged emotes' neighborhoods. Raw
+    emote-NAME embeddings are deliberately excluded (string-similarity
+    pollution: KEKW->KEKWait, DansGame->'Dance')."""
     global _centered, _names
     if _centered is None:
         import numpy as np
         sem = semantics()
-        _names = list(sem)
-        if not _names:
-            _centered = {}
-            return _centered
-        M = np.vstack([np.asarray(sem[e]["vector"], dtype="float32") for e in _names])
-        M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-9)
-        M -= M.mean(axis=0)
-        M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-9)
-        _centered = {e: M[i] for i, e in enumerate(_names)}
+        U = _center({e: d["vector"] for e, d in sem.items()})
+        T = {}
+        if os.path.exists(TAG_PATH):
+            T = _center(pickle.load(open(TAG_PATH, "rb")))
+        _names = sorted(set(U) | set(T))
+        out = {}
+        for e in _names:
+            parts = []
+            if e in U:
+                parts.append(0.45 * U[e])
+            if e in T:
+                parts.append(0.55 * T[e])
+            v = np.sum(parts, axis=0)
+            n = np.linalg.norm(v)
+            if n > 0:
+                out[e] = v / n
+        _centered = out
     return _centered
 
 
