@@ -11,11 +11,15 @@ REM Ensure only one instance: stop any bot that's already running.
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*chatbot.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
 del /q "data\STOP" >nul 2>&1
 
+set "PY=.venv\Scripts\python.exe"
+if not exist "%PY%" set "PY=python"
+
 :loop
 if exist "data\STOP" goto end
+"%PY%" scripts\rotate_logs.py --quiet >nul 2>&1
 echo. >> "data\bot.log"
 echo [%date% %time%] starting bot >> "data\bot.log"
-".venv\Scripts\python.exe" -u chatbot.py >> "data\bot.log" 2>&1
+"%PY%" -u chatbot.py >> "data\bot.log" 2>&1
 if exist "data\STOP" goto end
 echo [%date% %time%] bot exited - restarting in 10s >> "data\bot.log"
 timeout /t 10 /nobreak >nul

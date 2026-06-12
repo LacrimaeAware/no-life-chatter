@@ -105,7 +105,7 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 
 | Command | Who | Description |
 | --- | --- | --- |
-| `~help [command]` | anyone | List commands, or details for one. |
+| `~help [page|command]` | anyone | List grouped command pages, or details for one command. |
 | `~ping` | anyone | Latency + host stats. |
 | `~practice on <langs> [native]` | anyone | Start practice mode. e.g. `~practice on es,ja en` |
 | `~practice off` / `~practice show` | anyone | Stop / inspect practice mode. |
@@ -175,6 +175,7 @@ Double-click instead of using the terminal:
 | `run-background.vbs` | Run the bot **hidden**, restarting it if it crashes, logging to `data/bot.log`. |
 | `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
 | `stop-bot.bat` | Stop the background bot. |
+| `9-backup-unsynced-data.bat` | Zip the important local `data/unsynced` artifacts to `_private/backups`, keeping the newest 3 backups. |
 
 To auto-start at login, put a shortcut to `run-background.vbs` in your Startup
 folder (`shell:startup`). Additional numbered helpers for the offline

@@ -16,6 +16,7 @@ aiohttp = "^3.9.5"
 google-cloud-translate = "^3.15.3"
 psutil = "^6.0.0"
 lingua-language-detector = "^2.0.0"   # free, local language detection (no API cost)
+scikit-learn = "^1.9.0"
 # Romanization engines (practice mode)
 pykakasi = "^2.2.1"      # Japanese
 pythainlp = "^5.0.0"     # Thai

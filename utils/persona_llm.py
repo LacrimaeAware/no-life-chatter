@@ -22,6 +22,7 @@ import time
 import config
 from services import llm
 from utils import chat_archive
+from utils.log_rotation import rotate_file
 
 
 def log_event(event: dict) -> None:
@@ -38,6 +39,7 @@ def log_event(event: dict) -> None:
         path = getattr(config, "PERSONA_LOG_FILE",
                        os.path.join("data", "unsynced", "persona_logs.jsonl"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        rotate_file(path, max_bytes=25 * 1024 * 1024, keep=5)
         event.setdefault("ts", time.strftime("%Y-%m-%d %H:%M:%S"))
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, ensure_ascii=False) + "\n")
