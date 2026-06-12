@@ -1,14 +1,29 @@
 import asyncio
 
-from utils.persona_traits import AXES, traits_for
+from utils.persona_traits import AXES
+from utils import chat_archive
 
 description = (
-    "A chatter's personality readout — their semantic vector projected onto "
-    "trait axes (wholesome↔menace, sincere↔ironic, chill↔unhinged, "
-    "brainrot↔professor, optimist↔doomer). Scores are vs the average chatter "
-    "here (+2 = two standard deviations). A fun mirror, not a diagnosis.\n"
+    "A chatter's personality readout — their semantic vector (prose + "
+    "emote-name semantics) projected onto the five core trait axes "
+    "(wholesome↔menace, sincere↔ironic, chill↔unhinged, brainrot↔professor, "
+    "optimist↔doomer). σ = standard deviations vs the average chatter here. "
+    "A fun mirror, not a diagnosis.\n"
     "  ~traits <user>"
 )
+
+
+def _readout(user):
+    from utils.persona_axes import axis_scores
+    canon = chat_archive.normalize_author(user)
+    out = []
+    for axis in AXES:
+        scores = axis_scores(axis)
+        if canon not in scores:
+            return None
+        out.append((axis, float(scores[canon])))
+    out.sort(key=lambda kv: -abs(kv[1]))
+    return out
 
 
 async def handle_traits(bot, message, params):
@@ -16,8 +31,8 @@ async def handle_traits(bot, message, params):
         await message.channel.send("Usage: ~traits <user>")
         return
     user = params[0].lstrip("@")
-    # first call embeds the axis pole sentences — keep it off the event loop
-    traits = await asyncio.to_thread(traits_for, user)
+    # first call may embed axis poles/emote names — keep it off the event loop
+    traits = await asyncio.to_thread(_readout, user)
     if not traits:
         await message.channel.send(f"No semantic vector for {user} (not in the roster yet).")
         return
