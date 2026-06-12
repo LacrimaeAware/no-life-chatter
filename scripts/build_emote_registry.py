@@ -47,16 +47,22 @@ def room_id(login):
 
 
 def fetch_channel(login, rid, reg):
-    def put(token, origin, original=None, image=None):
-        if token and token not in reg:
+    def put(token, origin, original=None, image=None, tags=None):
+        if not token:
+            return
+        if token not in reg:
             reg[token] = {"origin": origin, "channel": login,
-                          "original": original or token, "image": image}
-    try:  # 7TV (aliases live here: entry name vs data.name)
+                          "original": original or token, "image": image,
+                          "tags": tags or []}
+        elif tags and not reg[token].get("tags"):
+            reg[token]["tags"] = tags   # backfill tags onto existing entries
+    try:  # 7TV (aliases live here: entry name vs data.name; data.tags = topics)
         j = _json(f"https://7tv.io/v3/users/twitch/{rid}")
         for e in ((j.get("emote_set") or {}).get("emotes") or []):
-            host = ((e.get("data") or {}).get("host") or {}).get("url", "")
+            data = e.get("data") or {}
+            host = (data.get("host") or {}).get("url", "")
             img = f"https:{host}/2x.webp" if host else None
-            put(e.get("name"), "7tv", (e.get("data") or {}).get("name"), img)
+            put(e.get("name"), "7tv", data.get("name"), img, data.get("tags"))
     except Exception as ex:
         print(f"  7tv {login}: {ex}")
     try:  # BTTV
