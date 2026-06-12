@@ -175,6 +175,7 @@ Double-click instead of using the terminal:
 | `1-setup.bat` | Create the venv, install deps, build the DB (run once). |
 | `2-login.bat` | Authorize the bot account (one-time). |
 | `3-run.bat` | Run the bot in a visible window. |
+| `4-run-tests.bat` | Run the lightweight unit tests. |
 | `run-background.vbs` | Run the bot **hidden**, restarting it if it crashes, logging to `data/bot.log`. |
 | `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
 | `stop-bot.bat` | Stop the background bot. |
