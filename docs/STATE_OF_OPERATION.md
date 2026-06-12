@@ -59,13 +59,39 @@ Archive:
 `~said`, `~regex`, `~quote`, `~firstseen`, `~chatstats`, `~regulars`
 
 Analysis:
-`~whosaid`, `~markers`, `~like`, `~twin`, `~traits`, `~top`, `~vibes`
+`~whosaid`, `~markers`, `~like`, `~twin`, `~traits`, `~top`, `~vibes`,
+`~iq`, `~distinct`, `~why`
 
 Personas:
 `~markov`, `~mimic`, `~persona`, `~hyper`, `~generate`
 
-Utility:
-`~help`, `~ping`
+Moderation/utility:
+`~help`, `~ping`, `~banuser`, `~unbanuser`, `~warnings`
+
+## Recent Work (evening additions, same day)
+
+- Embedder swapped to **bge-m3** (multilingual — Chinese/German now carry
+  meaning, not noise); ALL artifacts rebuilt on it with alias merges.
+- **Identity is Twitch-id-dominant**: `author_ids` table (resolver script +
+  the live bot records every chatter's id on sight). 79 current authors have
+  hard ids; 30 dead old-names remain oracle territory.
+- **Anti-spam cooldowns** (escalating, punishes stacking-while-pending only,
+  per-user, offenses reviewable via `~warnings`) + `~banuser`/`~unbanuser`.
+- **~iq** (component text-register estimate, measured r=+0.33 vs the
+  professor axis, i.e. not a clone), **~distinct**, **~why** (per-message
+  receipts, per-sentence z, and `words` occlusion attribution).
+- **Reaction tracker**: chat's laughter after bot lines is logged as
+  funniness labels (persona log, type=reaction_feedback).
+- Built-in axes Gram-Schmidt **orthogonalized**; dynamic-axis generation
+  hardened (tolerant JSON, backoff, validated poles via the abliterated
+  model); organic merge threshold re-measured for bge (0.72).
+- **Oracle queues delivered** to the ai-prompt-engineering dropoff.
+- The three codex/* bucket branches were verified merged and deleted
+  (worktrees removed); single main worktree remains.
+- Known systematic blind spot (research-doc case study): emotes are stance
+  OPERATORS (DansGame inverts a proposition) and the pipeline strips them
+  pre-embedding — the concrete motivation for a domain-adapted embedder
+  trained on context windows, which starts once irony labels exist.
 
 ## Recent Work
 
@@ -78,9 +104,10 @@ Utility:
   scopes, Markov/LLM engines, and saved combinations.
 - Dynamic trait axes and burst leaderboards exist; they are useful but still
   register-based rather than a ground-truth psychology instrument.
-- The first RunPod LoRA pilot trained successfully, but LoRA-only smoke tests
-  were bland/mixed. The next useful evaluation is LoRA + the normal RAG prompt,
-  not LoRA alone.
+- The LoRA v2 WAS A/B'd with the normal RAG prompt against plain llama:
+  plain llama won on reactivity (~26% vs ~16% reads-as-them; full lines in
+  `_private/model_ab_side_by_side.md`). The LoRA stays opt-in via
+  `~persona ... model=lora`; a v3 needs conversation-context training pairs.
 - Confirmed alt-account decisions were applied to private `config.toml`. The
   detailed accepted/rejected list is private in `_private/ALT_CANDIDATES.md`.
 - The public Pages site is live at
@@ -90,30 +117,14 @@ Utility:
 
 ## First Thing To Do When Returning
 
-Run the artifact rebuild after making sure LM Studio's embedding endpoint is
-running:
+Nothing is pending. The full rebuild ALREADY RAN on 2026-06-12 (bge-m3
+embedder + alias merges, 46 identities, recalibrated). Only re-run
+`10-rebuild-persona-artifacts.bat` after NEW alias confirmations land (e.g.
+the rename oracle queue) — and note the embedder is `text-embedding-bge-m3`
+(1024-d); any 768-d nomic-era cache is stale and must be deleted, not mixed.
 
-```text
-Double-click 10-rebuild-persona-artifacts.bat
-```
-
-That rebuilds:
-
-1. authorship classifier
-2. lexical voice profiles
-3. person-level semantic embeddings
-4. per-message semantic index
-5. trait-axis smoke output
-
-If LM Studio embeddings are not available, run the Python script with
-`--skip-embeddings` and rebuild embeddings/message indexes later.
-
-After the rebuild, spot-check a few alias-merged names with:
-
-- `~like <alias>`
-- `~vibes <alias>`
-- `~persona <alias> <question>`
-- `~top <trait> burst`
+Actually-pending human items: the two oracle queues in the
+ai-prompt-engineering dropoff (irony x60, renames x15).
 
 ## Next Work
 
@@ -141,8 +152,8 @@ Medium priority:
 Research / hard mode:
 
 - v3 LoRA design with conversation-context training pairs.
-- Better trait-axis validation and orthogonalization.
-- Multilingual embedding model swap if language becomes a confound.
+- (orthogonalization and the multilingual swap are DONE as of 2026-06-12;
+  remaining axis research = data-driven axes via PCA + per-axis validation.)
 - A labeled alt-detection scoring harness using the confirmed aliases.
 - Persona-quality evaluation that tracks funniness and in-character behavior,
   not only classifier similarity.
