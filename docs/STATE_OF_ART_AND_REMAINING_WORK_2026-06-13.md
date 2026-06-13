@@ -40,6 +40,8 @@ Strong/live:
 - Artifact hygiene: `~artifacts`, artifact status CLI, metadata for future
   classifier/style builds, background rebuild launcher.
 - First memory layer: evidence-only fact-bank builder/query scripts.
+- First archive-QA/lore surface: `~askchat` and `scripts/ask_chat.py`.
+- Repeatable command health audit: `scripts/audit_commands.py`.
 
 Known weak points:
 
@@ -57,14 +59,13 @@ Known weak points:
 
 ## Remaining Work Ranking
 
-1. **Archive-QA / lore command.** Highest immediate product value. It turns the
-   archive, fact bank, emote meaning, and exact search into a single evidence
-   surface. This is the next implementation target.
-2. **Run full utterance artifact rebuild.** Necessary to make `~distinct`,
+1. **Run full utterance artifact rebuild.** Necessary to make `~distinct`,
    `~vibes`, `~why`, semantic retrieval, and burst axes all come from the new
    chunking unit. Use the background launcher when a long run is acceptable.
-3. **Held-out eval run, not just harness.** Freeze cases, generate with current
+2. **Held-out eval run, not just harness.** Freeze cases, generate with current
    persona pipeline, and save a baseline report before more RAG changes.
+3. **Archive-QA / lore v2.** The first command exists. Next work is better
+   ranking, contradiction handling, answer synthesis, and semantic evidence.
 4. **Persona output reranker.** Score candidate replies for contextual fit,
    target voice, copy risk, and likely chat reaction before posting.
 5. **Fact-bank v2.** Add contradiction grouping, review queues, confidence
@@ -86,6 +87,6 @@ Known weak points:
 
 ## Decision
 
-Implement **Archive-QA / lore command** first, because it uses the pieces that
-already exist and directly answers the repeated project goal: ask the archive
-organic questions with evidence instead of guessing from embeddings or a LoRA.
+The archive-QA first pass is done. Next immediate operational step is the full
+artifact rebuild so aliases and utterance-unit semantic artifacts are reflected
+in live rankings/retrieval.

@@ -188,6 +188,9 @@ Moderation/utility:
 - `~askchat` and `scripts/ask_chat.py` now provide the first archive-QA/lore
   surface over fact-bank claims, broad archive hits, near matches, and emote
   meaning. It returns evidence snippets rather than unsupported conclusions.
+- Command surface audit is repeatable with `scripts/audit_commands.py`; it
+  checks every `commands/*.py` module for import success, async handler,
+  description, and `docs/COMMANDS.md` coverage.
 
 ## First Thing To Do When Returning
 
