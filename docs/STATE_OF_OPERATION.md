@@ -166,6 +166,14 @@ Moderation/utility:
 - Future classifier/style-profile rebuilds still train on individual messages,
   but now use the shared message-quality filter instead of a minimal
   "two words and not a prefix command" gate.
+- The next-work ranking was refreshed in
+  `docs/NEXT_WORK_RANKING_2026-06-13.md`. The top implementation is now a
+  held-out reply eval harness, because it measures whether persona/RAG changes
+  predict real hidden replies rather than only sounding classifier-like.
+- `scripts/eval_heldout_replies.py` now samples private held-out reply cases
+  from valid chronological channel logs, can run the normal persona generator
+  against historical context, excludes the hidden target line from prompt
+  evidence, and writes private JSONL/Markdown results under `data/unsynced/`.
 
 ## First Thing To Do When Returning
 
@@ -181,17 +189,20 @@ whether masking/shock and literal alignment improve.
 
 High priority:
 
-1. Run the next artifact rebuild when a long rebuild is acceptable. It should
+1. Run the held-out reply eval harness on a frozen case set. Start with
+   `scripts/eval_heldout_replies.py --sample-only`, then run `--generate` with
+   LM Studio up and compare future retrieval/model changes against that report.
+2. Run the next artifact rebuild when a long rebuild is acceptable. It should
    pick up alias changes and the new utterance-based semantic units.
-2. Label the private `nolifechatter_intent_axes_v2` review queue, retrain with
+3. Label the private `nolifechatter_intent_axes_v2` review queue, retrain with
    `12-train-intent-probes.bat`, then compare the new report.
-3. Run focused smoke tests for persona RAG after the utterance-based semantic
+4. Run focused smoke tests for persona RAG after the utterance-based semantic
    rebuild.
-4. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
+5. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
    RAG + better retrieval is the better short-term win.
-5. Implement resident persona controls from `GENERATE_AND_BOT_MODES.md`:
+6. Implement resident persona controls from `GENERATE_AND_BOT_MODES.md`:
    `~botpersona`, `~botmode`, `~botcontext`, and `~botchance`.
-6. Implement the Turing-test game: real archived line versus generated persona
+7. Implement the Turing-test game: real archived line versus generated persona
    line, chat guesses, then reveal.
 
 Medium priority:
@@ -256,6 +267,7 @@ It should not narrate private operating rules or expose real chat evidence.
 ## Useful Entry Points
 
 - Current-state map: `docs/STATE_OF_OPERATION.md`
+- Next-work ranking: `docs/NEXT_WORK_RANKING_2026-06-13.md`
 - Command bible: `docs/COMMANDS.md`
 - Persona/archive narrative: `docs/HANDOFF.md`
 - Fine-tuning runbook: `docs/FINE_TUNING.md`

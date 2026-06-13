@@ -419,6 +419,33 @@ def _copy_key(text: str) -> str:
     return chat_archive.line_match_key(text)
 
 
+def _filter_excluded_evidence(signature, relevant, snippets, exclude_examples):
+    """Remove held-out/private target lines from prompt evidence."""
+    exclude_keys = {_copy_key(text) for text in (exclude_examples or []) if _copy_key(text)}
+    if not exclude_keys:
+        return signature, relevant, snippets
+
+    def keep_text(text: str) -> bool:
+        key = _copy_key(text)
+        return not key or not any(
+            key == excluded
+            or (len(excluded) >= 8 and excluded in key)
+            or (len(key) >= 8 and key in excluded)
+            or chat_archive.line_similarity(text, excluded) >= 0.94
+            for excluded in exclude_keys
+        )
+
+    def keep_snippet(snippet: str) -> bool:
+        key = _copy_key(snippet)
+        return not any(excluded and excluded in key for excluded in exclude_keys)
+
+    return (
+        [text for text in signature if keep_text(text)],
+        [text for text in relevant if keep_text(text)],
+        [snippet for snippet in snippets if keep_snippet(snippet)],
+    )
+
+
 def last_rejection() -> str | None:
     return _last_rejection
 
@@ -577,11 +604,17 @@ async def generate(author: str, channel: str, user_message: str = None,
                    copy_strategy: str = "drop",
                    candidates: int = None,
                    invoked_by: str = None,
-                   model_override: str = None) -> str | None:
+                   model_override: str = None,
+                   recent_override=None,
+                   exclude_examples=None) -> str | None:
     t0 = time.time()
     exemplar_count = exemplar_count or config.LLM_EXEMPLARS
     context_count = context_count or config.LLM_CONTEXT
-    recent = chat_archive.latest(channel, context_count)
+    recent = (
+        list(recent_override)
+        if recent_override is not None
+        else chat_archive.latest(channel, context_count)
+    )
     ctx_rows = _conversation_rows(recent)
     ctx = "\n".join(f"{a}: {c}" for _, a, c in ctx_rows) or "(quiet right now)"
     # Other chatters' names in the live context are addressing, not topic —
@@ -591,6 +624,9 @@ async def generate(author: str, channel: str, user_message: str = None,
     signature, relevant, snippets = select_evidence(
         author, retrieval_text, n=exemplar_count,
         exclude_terms=ctx_names, channel=channel,
+    )
+    signature, relevant, snippets = _filter_excluded_evidence(
+        signature, relevant, snippets, exclude_examples
     )
     ab_model = _roll_ab_model(invoked_by, model_override)
     event = {

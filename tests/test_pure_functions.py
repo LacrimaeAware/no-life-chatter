@@ -290,6 +290,17 @@ class PersonaRetrievalPureTests(unittest.TestCase):
         )
         self.assertEqual(ranked[0], "i keep farting in this game")
 
+    def test_heldout_eval_can_remove_target_from_prompt_evidence(self):
+        signature, relevant, snippets = persona_llm._filter_excluded_evidence(
+            ["normal style line", "the hidden target reply"],
+            ["another relevant line", "The hidden target reply!!!"],
+            [">> mainuser: the hidden target reply\nother: ok", "other: harmless"],
+            ["hidden target reply"],
+        )
+        self.assertEqual(signature, ["normal style line"])
+        self.assertEqual(relevant, ["another relevant line"])
+        self.assertEqual(snippets, ["other: harmless"])
+
 
 if __name__ == "__main__":
     unittest.main()

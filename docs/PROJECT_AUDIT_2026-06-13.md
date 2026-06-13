@@ -132,22 +132,33 @@ Best next improvement:
 
 ## Recommended Next Implementation Order
 
-1. Resident persona controls: `~botpersona`, `~botmode`, `~botcontext`,
+Updated ranking after reviewing the state docs, private work buckets, smoke
+tests, and current RAG/persona-memory practice lives in
+`docs/NEXT_WORK_RANKING_2026-06-13.md`.
+
+1. Held-out reply eval harness. This is now implemented as
+   `scripts/eval_heldout_replies.py`: sample real moments, hide the target
+   user's actual reply, generate from prior context only, and score generated
+   output against the real line.
+2. Memory/fact bank prototype with evidence rows, timestamps, confidence, and
+   contradiction/decay handling.
+3. Archive-QA / lore command with retrieval evidence, not fine-tuning.
+4. Persona output reranker using held-out eval and reaction feedback as labels.
+5. Resident persona controls: `~botpersona`, `~botmode`, `~botcontext`,
    `~botchance`, with per-channel state and timed auto-revert.
-2. Semantic utterance chunking for persona embeddings and the message index.
+6. Semantic utterance chunking for persona embeddings and the message index.
    This is now implemented for future rebuilds: those scripts default to
    `--unit utterance`, while `--unit message` remains available for A/B.
-3. Source-aware context reconstruction for retrieved snippets. This is now
+7. Source-aware context reconstruction for retrieved snippets. This is now
    implemented in `chat_archive.context_window()` and live prompt context:
    author-only mirror logs do not fabricate surrounding conversation, and
    alias-duplicate lines are collapsed before prompt use.
-4. LLM queue/cap feedback around `services.llm.chat`, so heavy persona commands
+8. LLM queue/cap feedback around `services.llm.chat`, so heavy persona commands
    fail gracefully instead of feeling frozen.
-5. IQ receipts: a command or report that explains component drivers per user.
-6. Real-or-AI game, because it uses existing archive/persona machinery and gives
+9. IQ receipts: a command or report that explains component drivers per user.
+10. Real-or-AI game, because it uses existing archive/persona machinery and gives
    chat a direct eval loop.
-7. Archive lore/emote QA with retrieval evidence.
-8. More intent/irony labels, then retrain probes. The current seed model is not
+11. More intent/irony labels, then retrain probes. The current seed model is not
    enough to make irony a primary live decision layer.
 
 ## Follow-Up Implementation Note
