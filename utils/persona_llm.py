@@ -375,10 +375,18 @@ def select_evidence(author: str, query_text: str, n: int = None,
 
 
 def _conversation_rows(recent):
-    return [
-        row for row in recent
-        if not (row[2] or "").lstrip().startswith(config.PREFIX)
-    ]
+    out, seen = [], set()
+    for row in recent:
+        if (row[2] or "").lstrip().startswith(config.PREFIX):
+            continue
+        key_text = chat_archive.line_match_key(row[2])
+        if key_text:
+            key = (chat_archive.normalize_author(row[1]), key_text)
+            if key in seen:
+                continue
+            seen.add(key)
+        out.append(row)
+    return out
 
 
 def _retrieval_text(recent, user_message: str | None) -> str:

@@ -128,6 +128,17 @@ This same two-layer rule is the baseline overlap strategy for future older local
 logs too: import every source into the same normalized schema, then skip exact
 matches and substantial near-time text matches.
 
+Important context rule: Zonian/IVR imports are often one-speaker monthly files
+(`raw/<channel>/<user>/<month>.log`), not complete channel-day transcripts.
+Archive search may still use those rows as quote/message evidence, but
+conversation reconstruction must not treat adjacent rows as surrounding chat
+unless the same channel/time slice contains another imported speaker. The shared
+`chat_archive.context_window()` helper enforces this by returning only the hit
+for author-only mirror neighborhoods, while normal Chatterino/live channel logs
+and multi-author mirror neighborhoods can still provide timestamp-local context.
+It also removes alias-collapsed duplicate copies of the same line so merged alts
+do not echo the same evidence repeatedly in prompts.
+
 ## Schema
 
 ```sql
@@ -137,7 +148,7 @@ CREATE TABLE messages (
     author   TEXT NOT NULL,        -- lowercase user login
     sent_at  TEXT NOT NULL,        -- 'YYYY-MM-DD HH:MM:SS' (local time)
     content  TEXT NOT NULL,
-    source   TEXT NOT NULL DEFAULT 'chatterino',  -- 'chatterino' | 'live'
+    source   TEXT NOT NULL DEFAULT 'chatterino',  -- 'chatterino' | 'live' | 'zonian'
     src_path TEXT  -- originating log file; re-ingest of a grown file replaces
                    -- exactly its own rows (alias-merged channels stay intact)
 );

@@ -491,35 +491,107 @@ def search_author(author: str, text: str, limit: int = 40,
     ]
 
 
-def context_window(message_id: int, channel: str, before: int = 2, after: int = 2):
+def _source_needs_context_coverage(source: str, src_path: str | None) -> bool:
+    """True when adjacent rows may be from a single-speaker mirror export."""
+    source = (source or "").lower()
+    path = os.path.normcase(src_path or "").replace("\\", "/").lower()
+    return source == "zonian" or "/external_logs/zonian/raw/" in path
+
+
+def _has_multi_author_coverage(conn, channel: str, sent_at: str, author: str,
+                               within_minutes: int) -> bool:
+    """Whether a source-limited hit has nearby rows from another chatter."""
+    try:
+        rows = conn.execute(
+            "SELECT author FROM messages WHERE channel = ? "
+            "AND sent_at >= datetime(?, ?) AND sent_at <= datetime(?, ?) "
+            "LIMIT 250",
+            (
+                normalize_channel(channel), sent_at, f"-{int(within_minutes)} minutes",
+                sent_at, f"+{int(within_minutes)} minutes",
+            ),
+        ).fetchall()
+    except Exception:
+        return False
+    hit_author = normalize_author(author)
+    return any(normalize_author(a) != hit_author for a, in rows)
+
+
+def _dedupe_context_rows(rows, hit_id: int | None = None):
+    """Drop alias-collapsed near-duplicate lines while preserving the hit."""
+    hit_key = None
+    if hit_id is not None:
+        for row_id, row_author, row_content in rows:
+            if row_id == hit_id:
+                key = line_match_key(row_content)
+                if key:
+                    hit_key = (normalize_author(row_author), key)
+                break
+
+    out, seen = [], set()
+    for row_id, row_author, row_content in rows:
+        key_text = line_match_key(row_content)
+        if not key_text:
+            out.append((row_id, row_author, row_content))
+            continue
+        key = (normalize_author(row_author), key_text)
+        if hit_key and key == hit_key and row_id != hit_id:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((row_id, row_author, row_content))
+    return out
+
+
+def context_window(message_id: int, channel: str, before: int = 2, after: int = 2,
+                   within_minutes: int = 20, require_multi_author: bool = True,
+                   dedupe: bool = True):
     """The chat moment around one message: [(id, author, content), ...] in
     order, including the message itself. Lets retrieval show what a line was
-    responding to instead of the line in isolation."""
+    responding to instead of the line in isolation.
+
+    For single-speaker mirror logs, surrounding rows are only treated as
+    conversation when the same channel/time slice contains another chatter too.
+    Otherwise returning neighbors would invent context from an author-only log.
+    """
     conn = connect()
-    chan = normalize_channel(channel)
     hit = conn.execute(
-        "SELECT id, author, content, sent_at FROM messages WHERE id = ?",
+        "SELECT id, channel, author, content, sent_at, source, src_path "
+        "FROM messages WHERE id = ?",
         (message_id,),
     ).fetchall()
     if not hit:
         return []
-    ts = hit[0][3]
+    hit_id, hit_channel, hit_author, hit_content, ts, source, src_path = hit[0]
+    chan = normalize_channel(hit_channel or channel)
+    hit_row = (hit_id, hit_author, hit_content)
+    if (
+        require_multi_author
+        and _source_needs_context_coverage(source, src_path)
+        and not _has_multi_author_coverage(conn, chan, ts, hit_author, within_minutes)
+    ):
+        return [hit_row]
+
     # Order by TIME, not row id: bulk imports interleave sources, so id
     # neighbors can be from a different month. (sent_at, id) breaks ties for
-    # same-second messages.
+    # same-second messages. Bound by time so sparse imports don't jump sessions.
     prev = conn.execute(
         "SELECT id, author, content FROM messages WHERE channel = ? "
+        "AND sent_at >= datetime(?, ?) "
         "AND (sent_at < ? OR (sent_at = ? AND id < ?)) "
         "ORDER BY sent_at DESC, id DESC LIMIT ?",
-        (chan, ts, ts, message_id, before),
+        (chan, ts, f"-{int(within_minutes)} minutes", ts, ts, message_id, before),
     ).fetchall()
     nxt = conn.execute(
         "SELECT id, author, content FROM messages WHERE channel = ? "
+        "AND sent_at <= datetime(?, ?) "
         "AND (sent_at > ? OR (sent_at = ? AND id > ?)) "
         "ORDER BY sent_at, id LIMIT ?",
-        (chan, ts, ts, message_id, after),
+        (chan, ts, f"+{int(within_minutes)} minutes", ts, ts, message_id, after),
     ).fetchall()
-    return list(reversed(prev)) + [r[:3] for r in hit] + nxt
+    rows = list(reversed(prev)) + [hit_row] + nxt
+    return _dedupe_context_rows(rows, hit_id=hit_id) if dedupe else rows
 
 
 def _said_legacy(author: str, phrase: str, limit: int = 3):

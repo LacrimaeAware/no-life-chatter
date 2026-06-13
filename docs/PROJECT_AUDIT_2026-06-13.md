@@ -62,6 +62,9 @@ Implemented:
 - Archive search/stat commands.
 - Authorship classifier, lexical markers, semantic neighbors, trait axes,
   dynamic axes, per-message index, IQ v2 cache, and audit script.
+- Source-aware context windows: retrieved snippets are timestamp ordered,
+  bounded by time, reject fake surrounding chat from author-only mirror logs,
+  and de-dupe alias-collapsed repeated lines.
 
 Partially implemented:
 
@@ -134,13 +137,17 @@ Best next improvement:
 2. Semantic utterance chunking for persona embeddings and the message index.
    This is now implemented for future rebuilds: those scripts default to
    `--unit utterance`, while `--unit message` remains available for A/B.
-3. LLM queue/cap feedback around `services.llm.chat`, so heavy persona commands
+3. Source-aware context reconstruction for retrieved snippets. This is now
+   implemented in `chat_archive.context_window()` and live prompt context:
+   author-only mirror logs do not fabricate surrounding conversation, and
+   alias-duplicate lines are collapsed before prompt use.
+4. LLM queue/cap feedback around `services.llm.chat`, so heavy persona commands
    fail gracefully instead of feeling frozen.
-4. IQ receipts: a command or report that explains component drivers per user.
-5. Real-or-AI game, because it uses existing archive/persona machinery and gives
+5. IQ receipts: a command or report that explains component drivers per user.
+6. Real-or-AI game, because it uses existing archive/persona machinery and gives
    chat a direct eval loop.
-6. Archive lore/emote QA with retrieval evidence.
-7. More intent/irony labels, then retrain probes. The current seed model is not
+7. Archive lore/emote QA with retrieval evidence.
+8. More intent/irony labels, then retrain probes. The current seed model is not
    enough to make irony a primary live decision layer.
 
 ## Follow-Up Implementation Note
@@ -158,6 +165,12 @@ the classifier's unit should be a separate A/B, not a blind migration. Its
 line-level filter now uses the shared message-quality rules, so future
 classifier/style-profile rebuilds also drop bot commands, translation
 boilerplate, and repeated spam.
+
+Historical snippet context is now source-aware too. Full channel-day logs and
+live capture can provide nearby chat by `(channel, sent_at, id)`, but one-speaker
+Zonian/IVR mirror neighborhoods return only the target line unless another
+speaker is present in the same time window. This prevents author-only imports
+from pretending to be real conversation context.
 
 ## Operational Rule
 

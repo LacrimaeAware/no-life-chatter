@@ -73,6 +73,92 @@ class ArchiveNormalizationTests(unittest.TestCase):
         self.assertNotIn("well", terms)
         self.assertIn("wow", terms)
 
+    def test_context_window_does_not_invent_context_from_author_only_source(self):
+        conn = chat_archive.connect()
+        channel = "ctx_author_only"
+        with conn:
+            conn.execute("DELETE FROM messages WHERE channel = ?", (channel,))
+            conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'zonian', ?)",
+                (channel, "mainuser", "2026-01-01 00:00:01", "before fragment",
+                 "data/unsynced/external_logs/zonian/raw/room/mainuser/2026-01.log"),
+            )
+            cur = conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'zonian', ?)",
+                (channel, "mainuser", "2026-01-01 00:00:02", "target fragment",
+                 "data/unsynced/external_logs/zonian/raw/room/mainuser/2026-01.log"),
+            )
+            hit_id = cur.lastrowid
+            conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'zonian', ?)",
+                (channel, "mainuser", "2026-01-01 00:00:03", "after fragment",
+                 "data/unsynced/external_logs/zonian/raw/room/mainuser/2026-01.log"),
+            )
+
+        window = chat_archive.context_window(hit_id, channel, before=2, after=2)
+        self.assertEqual([(row[0], row[2]) for row in window], [(hit_id, "target fragment")])
+
+    def test_context_window_allows_zonian_when_other_speakers_are_nearby(self):
+        conn = chat_archive.connect()
+        channel = "ctx_multi_author"
+        with conn:
+            conn.execute("DELETE FROM messages WHERE channel = ?", (channel,))
+            conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'zonian', ?)",
+                (channel, "otheruser", "2026-01-01 00:00:01", "real previous chat",
+                 "data/unsynced/external_logs/zonian/raw/room/otheruser/2026-01.log"),
+            )
+            cur = conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'zonian', ?)",
+                (channel, "mainuser", "2026-01-01 00:00:02", "target reply",
+                 "data/unsynced/external_logs/zonian/raw/room/mainuser/2026-01.log"),
+            )
+            hit_id = cur.lastrowid
+            conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'zonian', ?)",
+                (channel, "thirduser", "2026-01-01 00:00:03", "real next chat",
+                 "data/unsynced/external_logs/zonian/raw/room/thirduser/2026-01.log"),
+            )
+
+        window = chat_archive.context_window(hit_id, channel, before=2, after=2)
+        self.assertEqual([row[2] for row in window],
+                         ["real previous chat", "target reply", "real next chat"])
+
+    def test_context_window_dedupes_alias_repeated_lines(self):
+        conn = chat_archive.connect()
+        channel = "ctx_alias_dupes"
+        with conn:
+            conn.execute("DELETE FROM messages WHERE channel = ?", (channel,))
+            conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'chatterino', ?)",
+                (channel, "oldalt", "2026-01-01 00:00:01", "same copied line",
+                 "C:/logs/ctx_alias_dupes-2026-01-01.log"),
+            )
+            cur = conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'chatterino', ?)",
+                (channel, "mainuser", "2026-01-01 00:00:02", "same copied line",
+                 "C:/logs/ctx_alias_dupes-2026-01-01.log"),
+            )
+            hit_id = cur.lastrowid
+            conn.execute(
+                "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
+                "VALUES (?, ?, ?, ?, 'chatterino', ?)",
+                (channel, "otheruser", "2026-01-01 00:00:03", "different line",
+                 "C:/logs/ctx_alias_dupes-2026-01-01.log"),
+            )
+
+        window = chat_archive.context_window(hit_id, channel, before=2, after=2)
+        self.assertEqual([row[2] for row in window], ["same copied line", "different line"])
+        self.assertEqual(window[0][0], hit_id)
+
 
 class ScopeParserTests(unittest.TestCase):
     def test_parse_scope_defaults_to_current_channel(self):
@@ -170,6 +256,17 @@ class PersonaRetrievalPureTests(unittest.TestCase):
         ]
         text = persona_llm._retrieval_text(recent, "favorite game")
         self.assertEqual(text.count("favorite game"), 3)
+
+    def test_conversation_rows_dedupes_alias_repeated_lines(self):
+        recent = [
+            ("2026-01-01 00:00:01", "oldalt", "same copied line"),
+            ("2026-01-01 00:00:02", "mainuser", "same copied line"),
+            ("2026-01-01 00:00:03", "otheruser", "~persona mainuser hi"),
+            ("2026-01-01 00:00:04", "otheruser", "fresh line"),
+        ]
+        rows = persona_llm._conversation_rows(recent)
+        self.assertEqual([(author, content) for _ts, author, content in rows],
+                         [("oldalt", "same copied line"), ("otheruser", "fresh line")])
 
     def test_early_direct_terms_outrank_later_context_terms(self):
         ranked = persona_llm._rank_relevant_texts(

@@ -136,6 +136,10 @@ Moderation/utility:
   confidence floors before entering evidence, repeated-token spam is filtered
   out of prompt evidence, and `scripts/persona_rag_preview.py` now prints the
   same snippet/flat evidence sections used by the live prompt.
+- Historical context windows are now source-aware. Normal Chatterino/live
+  channel logs can provide timestamp-local surrounding chat, but author-only
+  Zonian/IVR mirror neighborhoods return only the hit unless another speaker is
+  present nearby. Prompt context also de-dupes alias-collapsed repeated lines.
 - Archive search ergonomics: `~said` now parses `chat=<channel>`, ignores bot
   command lines by default, stores a short-lived `~saidnext` continuation, and
   `~userregex` finds archived usernames by regex.
@@ -195,8 +199,9 @@ Medium priority:
 - Build the anonymized Pages similarity map from real embeddings.
 - Add an archive-QA command for local lore/emote questions. This should use
   retrieval, not fine-tuning.
-- Improve retrieval evidence by including timestamp-local surrounding context
-  around retrieved hits.
+- Add source-coverage diagnostics for archive imports: per-channel/day coverage,
+  how much evidence comes from full channel logs versus one-speaker mirror logs,
+  and where context reconstruction is safe.
 - Improve `~said` / `~regex` ergonomics for close matches and saved examples.
 - Cleanly separate runtime bot code from offline research/training scripts.
 
