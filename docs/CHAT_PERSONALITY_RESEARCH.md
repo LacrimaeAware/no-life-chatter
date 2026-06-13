@@ -93,6 +93,34 @@ The user's theory of how humans actually do it, as design directions:
    register + off-prior = ironic" as a rule, not a lookup. Reaction-tracker
    laughter is a free weak label correlated with playful irony.
 
+## Irony oracle v1 result: use axes, not one overloaded class
+
+The first 60-item irony oracle pass is complete and was converted into a
+private multi-axis dataset:
+
+`data/unsynced/oracle/irony_v1_multi_axis.jsonl`
+
+The main lesson: **hyperbole is not irony**. Hyperbole often preserves the
+speaker's intended direction while exaggerating magnitude. "Worst ever" can be
+a sincere negative judgment with comic magnitude, not a reversal of meaning.
+
+Going forward, the model should predict separate axes:
+
+- **Validity**: human utterance vs bot notice, pure link, pasted log,
+  moderation line, or other non-semantic junk.
+- **Literal-intended alignment**: aligned, divergent, unclear, not-applicable.
+- **Magnitude distortion**: normal/literal, overstated, understated.
+- **Play frame**: earnest/low-play, playful, masking-play.
+- **Masking / facework**: absent, possible, present.
+- **Hostility**: none, mild/mock, present.
+- **Shock / attention seeking**: absent vs present.
+
+The v1 class labels (`sincere`, `playful-sincere`, `hyperbolic-sincere`,
+`playful-ironic`, `masking-ironic`) should be treated as a bridge from the
+old review UI, not the final ontology. The next queue should ask these axes
+directly, and the downstream model should be multiple small probes rather than
+one "irony" classifier.
+
 ## Emote meaning — the five-source architecture (2026-06-12 night)
 
 An emote's meaning is assembled from up to five signals, each covering the

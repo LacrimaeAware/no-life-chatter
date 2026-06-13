@@ -85,7 +85,9 @@ Moderation/utility:
 - Built-in axes Gram-Schmidt **orthogonalized**; dynamic-axis generation
   hardened (tolerant JSON, backoff, validated poles via the abliterated
   model); organic merge threshold re-measured for bge (0.72).
-- **Oracle queues delivered** to the ai-prompt-engineering dropoff.
+- **Oracle queues delivered and consumed** via the ai-prompt-engineering review
+  tool. Alias, emote-suspect, and irony queues are answered; the empty rename
+  queue was removed.
 - The three codex/* bucket branches were verified merged and deleted
   (worktrees removed); single main worktree remains.
 - **Emote semantics pipeline** (largely built): a ground-truth registry
@@ -95,12 +97,17 @@ Moderation/utility:
   meaning = mean embedding of an emote's message contexts, which uniquely
   covers dead/old-log emotes and fake ones). Five-source meaning architecture
   documented in CHAT_PERSONALITY_RESEARCH.md.
-- **Third oracle queue**: emote-suspect verification (emote-shaped tokens in
-  no known set) in the ai-prompt-engineering dropoff.
+- **Emote-suspect oracle queue**: answered and normalized. It exposed that
+  `username` needs to be a first-class token class, not shoved into free-text
+  notes.
 - Known systematic blind spot (research-doc case study): emotes are stance
   OPERATORS (DansGame inverts a proposition) and the pipeline strips them
   pre-embedding — the concrete motivation for a domain-adapted embedder
   trained on context windows, which starts once irony labels exist.
+- **Irony oracle v1 completed**: the 60 labeled items were projected into a
+  private multi-axis dataset at `data/unsynced/oracle/irony_v1_multi_axis.jsonl`.
+  The key correction is that hyperbole is not the same thing as irony:
+  hyperbole usually preserves intended direction while distorting magnitude.
 
 ## Recent Work
 
@@ -126,26 +133,28 @@ Moderation/utility:
 
 ## First Thing To Do When Returning
 
-Nothing is pending. The full rebuild ALREADY RAN on 2026-06-12 (bge-m3
-embedder + alias merges, 46 identities, recalibrated). Only re-run
-`10-rebuild-persona-artifacts.bat` after NEW alias confirmations land (e.g.
-the rename oracle queue) — and note the embedder is `text-embedding-bge-m3`
-(1024-d); any 768-d nomic-era cache is stale and must be deleted, not mixed.
-
-Actually-pending human items: the two oracle queues in the
-ai-prompt-engineering dropoff (irony x60, renames x15).
+The full artifact rebuild already ran on 2026-06-12 with the bge-m3 embedder
+and alias merges. Only re-run `10-rebuild-persona-artifacts.bat` after new
+identity confirmations or embedding-model changes land. The active follow-up is
+now the oracle-label pipeline: use the private multi-axis irony dataset to train
+small intent/stance probes, then generate a cleaner v2 queue that asks for axes
+directly instead of forcing one overloaded class.
 
 ## Next Work
 
 High priority:
 
-1. Rebuild artifacts after the alias merge.
-2. Run focused smoke tests for persona RAG after the rebuild.
-3. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
+1. Train tiny supervised probes from the private multi-axis irony dataset:
+   validity, literal-intended alignment, hyperbole, play frame, masking, and
+   hostility.
+2. Build a cleaner oracle queue v2 that asks for those axes directly and filters
+   bot commands / pure links before sampling.
+3. Run focused smoke tests for persona RAG after the current bge rebuild.
+4. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
    RAG + better retrieval is the better short-term win.
-4. Implement the Turing-test game: real archived line versus generated persona
+5. Implement the Turing-test game: real archived line versus generated persona
    line, chat guesses, then reveal.
-5. Add bot-mode controls from `GENERATE_AND_BOT_MODES.md`: resident persona,
+6. Add bot-mode controls from `GENERATE_AND_BOT_MODES.md`: resident persona,
    response chance, cooldowns, queueing, and temporary modes.
 
 Medium priority:
