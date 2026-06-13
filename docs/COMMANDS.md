@@ -35,6 +35,7 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~firstseen <user>` | anyone | Show a user's first archived message. |
 | `~chatstats <user> [chat=<channel>]` | anyone | Show message count, first/last seen, average length, and busiest hour. |
 | `~regulars [channel] [min_messages] [limit]` | anyone | Top regulars in a channel, ignoring obvious bots by default. |
+| `~askchat [user=<name>\|<name>] [chat=<channel>] <question>` | anyone | Evidence-backed archive/lore search across fact-bank claims, chat hits, near matches, and emotes. |
 
 ### Persona And Generation
 
@@ -113,6 +114,7 @@ Some commands read live SQLite tables only; others need offline artifacts:
 | `data/unsynced/persona_embeddings.pkl` | `scripts/build_persona_embeddings.py` | `~vibes`, `~twin`, trait averages |
 | `data/unsynced/msg_index/` | `scripts/build_message_index.py` | `~why`, burst `~top`, semantic persona retrieval |
 | `data/unsynced/iq_scores.pkl` | `scripts/build_iq_v2.py` | `~iq` |
+| `data/unsynced/fact_bank.jsonl` | `scripts/build_fact_bank.py` | `~askchat`, offline archive/lore QA |
 
 Use `~artifacts` or `python scripts/artifact_status.py` to check whether these
 artifacts are missing, missing build metadata, or built with the current

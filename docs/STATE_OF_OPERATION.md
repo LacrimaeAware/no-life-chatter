@@ -59,7 +59,7 @@ Translation:
 
 Archive:
 `~said`, `~saidnext`, `~regex`, `~userregex`, `~quote`, `~firstseen`,
-`~chatstats`, `~regulars`
+`~chatstats`, `~regulars`, `~askchat`
 
 Analysis:
 `~whosaid`, `~markers`, `~like`, `~twin`, `~traits`, `~top`, `~vibes`,
@@ -185,6 +185,9 @@ Moderation/utility:
   first evidence-only memory-bank prototype. It extracts candidate user claims,
   preferences, beliefs, and habits into ignored JSONL with timestamps/channels
   and original evidence; rows are claims to review, not verified facts.
+- `~askchat` and `scripts/ask_chat.py` now provide the first archive-QA/lore
+  surface over fact-bank claims, broad archive hits, near matches, and emote
+  meaning. It returns evidence snippets rather than unsupported conclusions.
 
 ## First Thing To Do When Returning
 
@@ -209,11 +212,11 @@ High priority:
    LM Studio up and compare future retrieval/model changes against that report.
 2. Run the next artifact rebuild when a long rebuild is acceptable. It should
    pick up alias changes and the new utterance-based semantic units.
-3. Build and inspect the first fact bank:
-   `python scripts/build_fact_bank.py --max-authors 40`, then query it with
-   `python scripts/query_fact_bank.py --author <name> <terms>`.
-4. Build archive-QA/lore answering on top of exact archive hits, semantic
-   retrieval, emote facts, and fact-bank rows with citations.
+3. Inspect and harden archive-QA/lore results:
+   `python scripts/ask_chat.py --author <name> <terms>`, then improve ranking,
+   contradiction handling, and answer synthesis.
+4. Build fact-bank v2: review queues, contradiction grouping, confidence
+   calibration, and decay/recency weighting.
 5. Label the private `nolifechatter_intent_axes_v2` review queue, retrain with
    `12-train-intent-probes.bat`, then compare the new report.
 6. Run focused smoke tests for persona RAG after the utterance-based semantic

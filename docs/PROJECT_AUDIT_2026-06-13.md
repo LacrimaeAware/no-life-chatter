@@ -13,9 +13,10 @@ quality risks are not the individual trait/IQ axes; they are data hygiene,
 identity merging, stale generated artifacts, retrieval shape, and missing
 operator controls for autonomous persona behavior.
 
-The next best implementation target is the resident-persona control layer:
-`~botpersona`, `~botmode`, `~botcontext`, and `~botchance`. The underlying
-ingredients exist, but the runtime state and chat commands do not.
+The next best implementation target became the evidence-backed archive-QA/lore
+surface after the held-out reply eval harness and first fact-bank prototype
+landed. Resident-persona controls are still important, but they should not
+amplify low-evidence retrieval before the archive/memory layer is inspectable.
 
 ## Live Architecture
 
@@ -60,6 +61,8 @@ Implemented:
 - Ambient persona reaction plumbing through config.
 - Command bans and escalating anti-spam cooldowns.
 - Archive search/stat commands.
+- First archive-QA/lore command: `~askchat`, backed by fact-bank claims, broad
+  archive hits, near matches, and emote meaning.
 - Authorship classifier, lexical markers, semantic neighbors, trait axes,
   dynamic axes, per-message index, IQ v2 cache, and audit script.
 - Source-aware context windows: retrieved snippets are timestamp ordered,
@@ -142,7 +145,8 @@ tests, and current RAG/persona-memory practice lives in
    output against the real line.
 2. Memory/fact bank prototype with evidence rows, timestamps, confidence, and
    contradiction/decay handling.
-3. Archive-QA / lore command with retrieval evidence, not fine-tuning.
+3. Archive-QA / lore command with retrieval evidence, not fine-tuning. First
+   pass is now implemented as `~askchat` plus `scripts/ask_chat.py`.
 4. Persona output reranker using held-out eval and reaction feedback as labels.
 5. Resident persona controls: `~botpersona`, `~botmode`, `~botcontext`,
    `~botchance`, with per-channel state and timed auto-revert.

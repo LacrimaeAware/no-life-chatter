@@ -1,0 +1,297 @@
+"""Evidence-backed archive/lore question helpers.
+
+This is retrieval first, answer second: return receipts from the archive,
+fact-bank claims, and emote meaning data instead of inventing a polished answer
+without sources.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from utils import chat_archive, emote_meaning, fact_bank, message_quality
+
+
+def clip(text: str, n: int = 120) -> str:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    return text if len(text) <= n else text[: n - 1] + "..."
+
+
+def parse_params(params: list[str], current_channel: str | None = None) -> dict:
+    """Parse chat command args for ~askchat.
+
+    Supports explicit `user=`, `author=`, `about=`, and `chat=`. For ergonomic
+    chat use, a first token that resolves to an archived author is also treated
+    as the user scope: `~askchat fernardo minecraft`.
+    """
+    author = None
+    channel = None
+    rest = []
+    for token in params:
+        low = token.lower()
+        if low.startswith(("user=", "author=", "about=")):
+            author = token.split("=", 1)[1].strip().lstrip("@") or author
+        elif low.startswith("chat="):
+            value = token.split("=", 1)[1].strip().lstrip("#").lower()
+            if value in {"", "all", "*"}:
+                channel = None
+            elif value in {"here", "this"}:
+                channel = current_channel
+            else:
+                channel = value
+        else:
+            rest.append(token)
+
+    if not author and len(rest) >= 2:
+        candidate = rest[0].lstrip("@")
+        if candidate.lower() not in {"has", "did", "does", "what", "who", "when", "where", "why"}:
+            try:
+                if chat_archive.stats(candidate):
+                    author = candidate
+                    rest = rest[1:]
+            except Exception:
+                pass
+
+    return {
+        "author": chat_archive.normalize_author(author) if author else None,
+        "channel": chat_archive.normalize_channel(channel) if channel else None,
+        "query": " ".join(rest).strip(),
+    }
+
+
+def _search_all_hits(query: str, *, channel: str | None = None, limit: int = 5) -> list[dict]:
+    q = chat_archive._fts_query(query)
+    if not q:
+        return []
+    chan_sql, chan_params = chat_archive._channel_filter(channel)
+    cmd_sql, cmd_params = chat_archive._command_filter(False)
+    conn = chat_archive.connect()
+    rows = conn.execute(
+        "SELECT m.id, m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
+        "CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}"
+        "AND length(m.content) <= ? "
+        "ORDER BY bm25(messages_fts), m.sent_at DESC LIMIT ?",
+        [q, *chan_params, *cmd_params, 260, limit],
+    ).fetchall()
+    return [
+        {
+            "id": row_id,
+            "sent_at": sent_at,
+            "channel": channel,
+            "author": chat_archive.normalize_author(author),
+            "text": content,
+        }
+        for row_id, sent_at, channel, author, content in rows
+        if _usable_hit(content)
+    ]
+
+
+def _usable_hit(text: str) -> bool:
+    if not message_quality.usable_for_snippet_context(text, max_chars=320):
+        return False
+    clean = message_quality.clean_text(text, strip_emotes=True, strip_urls=True)
+    toks = message_quality.tokens(clean)
+    return len(clean) >= 18 and len(toks) >= 3
+
+
+def _author_hits(author: str, query: str, *, channel: str | None = None, limit: int = 5) -> list[dict]:
+    rows = chat_archive.search_author_hits(author, query, limit=limit * 2, max_chars=260)
+    out = []
+    for row_id, sent_at, row_channel, content in rows:
+        if channel and chat_archive.normalize_channel(row_channel) != channel:
+            continue
+        if not _usable_hit(content):
+            continue
+        out.append({
+            "id": row_id,
+            "sent_at": sent_at,
+            "channel": row_channel,
+            "author": chat_archive.normalize_author(author),
+            "text": content,
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _near_author(author: str, query: str, *, channel: str | None = None, limit: int = 2) -> list[dict]:
+    rows = chat_archive.nearest_author_lines(
+        author, query, limit=limit, min_score=0.65, channel=channel
+    )
+    return [
+        {
+            "score": round(float(score), 3),
+            "sent_at": sent_at,
+            "channel": channel,
+            "author": chat_archive.normalize_author(author),
+            "text": content,
+        }
+        for score, sent_at, channel, content in rows
+    ]
+
+
+def _fact_hits(author: str | None, query: str, limit: int = 4) -> list[dict]:
+    rows = fact_bank.load_jsonl()
+    if not rows:
+        return []
+    terms = chat_archive.query_terms(query)
+    required = terms[0] if len(terms) >= 2 else None
+    out = []
+    for row in fact_bank.search(rows, author=author, query=query, limit=limit * 4):
+        if required:
+            hay = f"{row.get('kind', '')} {row.get('claim', '')}".casefold()
+            if required.casefold() not in hay:
+                continue
+        ev = (row.get("evidence") or [{}])[0]
+        out.append({
+            "author": row.get("author"),
+            "kind": row.get("kind"),
+            "claim": row.get("claim"),
+            "support_count": row.get("support_count", 0),
+            "confidence": row.get("confidence", 0.0),
+            "sent_at": ev.get("sent_at"),
+            "channel": ev.get("channel"),
+            "evidence": ev.get("clean_text") or ev.get("text") or "",
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _emote_hits(query: str, limit: int = 2) -> list[dict]:
+    out = []
+    seen = set()
+    for raw in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,40}", query or ""):
+        if raw.lower() in seen:
+            continue
+        seen.add(raw.lower())
+        name, info = emote_meaning.lookup(raw)
+        near = emote_meaning.nearest_emotes(raw, n=4)
+        if not info and not near:
+            continue
+        out.append({
+            "name": name or raw,
+            "tags": (info or {}).get("tags") or [],
+            "original": (info or {}).get("original"),
+            "near": [emote for emote, _score in near],
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def build_report(query: str, *, author: str | None = None,
+                 channel: str | None = None, limit: int = 5) -> dict:
+    query = query.strip()
+    author = chat_archive.normalize_author(author) if author else None
+    channel = chat_archive.normalize_channel(channel) if channel else None
+    facts = _fact_hits(author, query, limit=4)
+    archive = _author_hits(author, query, channel=channel, limit=limit) if author else (
+        _search_all_hits(query, channel=channel, limit=limit)
+    )
+    near = [] if archive or not author else _near_author(author, query, channel=channel)
+    emotes = _emote_hits(query)
+    terms = chat_archive.query_terms(query)
+    return {
+        "query": query,
+        "author": author,
+        "channel": channel,
+        "terms": terms,
+        "facts": facts,
+        "archive": archive,
+        "near": near,
+        "emotes": emotes,
+    }
+
+
+def format_chat(report: dict, max_chars: int = 470) -> str:
+    scope = report.get("author") or "archive"
+    if report.get("channel"):
+        scope += f"#{report['channel']}"
+    parts = [f"{scope}: "]
+
+    for fact in report.get("facts", [])[:2]:
+        bit = (
+            f"claim {fact['kind']} '{clip(fact['claim'], 70)}' "
+            f"({fact['support_count']}x"
+        )
+        if fact.get("sent_at"):
+            bit += f", {fact['sent_at'][:10]}"
+        bit += ")"
+        parts.append(bit)
+
+    for hit in report.get("archive", [])[:2]:
+        parts.append(
+            f"{hit['author']}#{hit['channel']} {hit['sent_at'][:10]} "
+            f"\"{clip(hit['text'], 75)}\""
+        )
+
+    for hit in report.get("near", [])[:1]:
+        parts.append(
+            f"near {hit['score']:.0%} {hit['sent_at'][:10]} "
+            f"\"{clip(hit['text'], 80)}\""
+        )
+
+    for emote in report.get("emotes", [])[:1]:
+        bits = []
+        if emote.get("tags"):
+            bits.append("tags " + ",".join(emote["tags"][:3]))
+        if emote.get("near"):
+            bits.append("used like " + " ".join(emote["near"][:3]))
+        if bits:
+            parts.append(f"emote {emote['name']}: " + "; ".join(bits))
+
+    if len(parts) == 1:
+        terms = ", ".join(report.get("terms") or [])
+        suffix = f" terms={terms}" if terms else ""
+        return f"No archive evidence found for '{clip(report.get('query', ''), 90)}'.{suffix}"
+
+    out = " | ".join(parts)
+    return clip(out, max_chars)
+
+
+def format_cli(report: dict) -> str:
+    lines = [f"query: {report['query']}"]
+    if report.get("author"):
+        lines.append(f"author: {report['author']}")
+    if report.get("channel"):
+        lines.append(f"channel: {report['channel']}")
+    if report.get("terms"):
+        lines.append("terms: " + ", ".join(report["terms"]))
+    if report.get("facts"):
+        lines.append("\nclaims:")
+        for fact in report["facts"]:
+            lines.append(
+                f"- {fact['author']} {fact['kind']} support={fact['support_count']} "
+                f"conf={fact['confidence']}: {fact['claim']}"
+            )
+            if fact.get("evidence"):
+                lines.append(f"  {fact.get('sent_at')} #{fact.get('channel')}: {fact['evidence']}")
+    if report.get("archive"):
+        lines.append("\narchive hits:")
+        for hit in report["archive"]:
+            lines.append(
+                f"- {hit['sent_at']} #{hit['channel']} {hit['author']}: {hit['text']}"
+            )
+    if report.get("near"):
+        lines.append("\nnear matches:")
+        for hit in report["near"]:
+            lines.append(
+                f"- {hit['score']:.0%} {hit['sent_at']} #{hit['channel']} {hit['author']}: {hit['text']}"
+            )
+    if report.get("emotes"):
+        lines.append("\nemotes:")
+        for emote in report["emotes"]:
+            bits = []
+            if emote.get("original") and emote["original"] != emote["name"]:
+                bits.append(f"alias={emote['original']}")
+            if emote.get("tags"):
+                bits.append("tags=" + ",".join(emote["tags"][:6]))
+            if emote.get("near"):
+                bits.append("near=" + " ".join(emote["near"][:6]))
+            lines.append(f"- {emote['name']}: " + "; ".join(bits))
+    if len(lines) <= 4:
+        lines.append("\nNo evidence found.")
+    return "\n".join(lines)

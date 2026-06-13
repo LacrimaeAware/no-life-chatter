@@ -53,8 +53,7 @@ or resident autonomous behavior is worth turning up.
    A local evidence-answering route for archive/emote/lore questions. It should
    retrieve exact quotes, semantic neighbors, emote facts, and eventually fact
    bank entries, then answer with citations. Do not solve this by fine-tuning.
-   This is now the next large implementation target after the fact-bank
-   prototype.
+   First pass is now implemented as `~askchat` and `scripts/ask_chat.py`.
 
 4. **Persona output reranker.**
    The generator already samples candidates. The next version should score

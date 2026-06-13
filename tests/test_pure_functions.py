@@ -25,7 +25,7 @@ def install_fake_config():
 
 install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
-from utils import chat_archive, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm  # noqa: E402
+from utils import archive_qa, chat_archive, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm  # noqa: E402
 from commands import markers  # noqa: E402
 
 
@@ -255,6 +255,38 @@ class FactBankPureTests(unittest.TestCase):
             "I almost pissed my whole bed dreaming i was pissing in a dream",
         )
         self.assertFalse(any(row["kind"] == "possession" for row in rows))
+
+
+class ArchiveQaPureTests(unittest.TestCase):
+    def test_parse_params_accepts_author_and_chat_scope(self):
+        parsed = archive_qa.parse_params(
+            ["user=OldAlt", "chat=here", "graph", "theory"],
+            current_channel="Side-Room",
+        )
+        self.assertEqual(parsed["author"], "mainuser")
+        self.assertEqual(parsed["channel"], "mainroom")
+        self.assertEqual(parsed["query"], "graph theory")
+
+    def test_format_chat_returns_compact_evidence(self):
+        report = {
+            "query": "graph theory",
+            "author": "mainuser",
+            "channel": None,
+            "terms": ["graph", "theory"],
+            "facts": [{
+                "kind": "preference_positive",
+                "claim": "graph theory",
+                "support_count": 2,
+                "sent_at": "2026-01-01 00:00:00",
+            }],
+            "archive": [],
+            "near": [],
+            "emotes": [],
+        }
+        out = archive_qa.format_chat(report, max_chars=180)
+        self.assertIn("mainuser", out)
+        self.assertIn("graph theory", out)
+        self.assertLessEqual(len(out), 180)
 
 
 class PersonaIqPureTests(unittest.TestCase):

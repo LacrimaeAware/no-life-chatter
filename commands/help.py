@@ -12,7 +12,7 @@ CATEGORIES = [
     ]),
     ("archive", [
         "said", "saidnext", "regex", "userregex", "quote", "firstseen",
-        "chatstats", "regulars",
+        "chatstats", "regulars", "askchat",
     ]),
     ("personas", [
         "markov", "mimic", "persona", "hyper", "generate",

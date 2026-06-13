@@ -153,6 +153,10 @@ def _author_utterance_rows(author: str, max_utterances: int, gap_seconds: int = 
     rows = list(reversed(rows))
     out: list[dict] = []
     for sent_at, channel, row_author, content in rows:
+        content = content or ""
+        stripped = content.lstrip()
+        if stripped.startswith(getattr(config, "PREFIX", "~")) or message_quality.command_like(content):
+            continue
         canon = chat_archive.normalize_author(row_author)
         if out:
             prev = out[-1]
@@ -164,14 +168,14 @@ def _author_utterance_rows(author: str, max_utterances: int, gap_seconds: int = 
                 and (t1 - t0).total_seconds() <= gap_seconds
             ):
                 prev["last_seen"] = sent_at
-                prev["text"] = _norm_spaces(prev["text"] + " " + (content or ""))
+                prev["text"] = _norm_spaces(prev["text"] + " " + content)
                 continue
         out.append({
             "author": canon,
             "channel": chat_archive.normalize_channel(channel),
             "first_seen": sent_at,
             "last_seen": sent_at,
-            "text": content or "",
+            "text": content,
         })
     return out[-max_utterances:]
 
