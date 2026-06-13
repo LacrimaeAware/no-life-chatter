@@ -114,12 +114,14 @@ Moderation/utility:
   `_private/INTENT_PROBES_REPORT.md`. First run used bge-m3 embeddings. The
   useful signals are currently hyperbole/magnitude, play frame, and hostility;
   masking and shock need more positive oracle labels before they are useful.
-- **Intent-axis queue v2 built**: `scripts/build_intent_axis_queue.py` uses the
-  v0 probes only as a sampler and writes one focused axis question per review
-  item. The current private queue is
+- **Intent-axis queue v2 built/cleaned**: `scripts/build_intent_axis_queue.py`
+  uses the v0 probes only as a sampler and writes one focused axis question per
+  review item. It now includes author/channel on each card and auto-filters
+  obvious bot/mod/art/link junk instead of asking the human to label it. The
+  current private queue is
   `../ai-prompt-engineering/private_docs/review_queues/nolifechatter_intent_axes_v2.jsonl`
-  with 140 items: 20 each for validity, literal alignment, magnitude, play,
-  masking, hostility, and shock.
+  with 127 items after removing 13 obvious invalid pending rows. The completed
+  old NoLifeChatter queues were archived out of the active review folder.
 
 ## Recent Work
 

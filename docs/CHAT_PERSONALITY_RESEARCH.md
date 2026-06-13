@@ -148,7 +148,10 @@ especially masking and shock.
 the review tool expects one question per item, the queue is not a bundled
 multi-form; it repeats messages as needed and asks a single focused axis each
 time. The first build wrote 140 private items, 20 per axis, and uses the v0
-probe only for sampling. Human answers remain the actual supervision.
+probe only for sampling. After the first review pass exposed obvious bot/art
+junk, the active queue was cleaned to 127 items and future builds auto-filter
+those rows into an ignored auto-invalid file. Human answers remain the actual
+supervision.
 
 ## Emote meaning — the five-source architecture (2026-06-12 night)
 

@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import pickle
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import config  # noqa: E402
 from scripts.train_intent_probes import row_text, try_embed  # noqa: E402
 from utils import chat_archive, persona_classifier as pc  # noqa: E402
 
@@ -29,6 +31,17 @@ QUEUE_OUT = Path(
 )
 REPORT_OUT = Path("_private/INTENT_QUEUE_V2_BUILD.md")
 MODEL_IN = Path("data/unsynced/intent_probes.pkl")
+AUTO_INVALID_OUT = Path("data/unsynced/oracle/intent_v2_auto_invalid.jsonl")
+
+BOT_AUTHORS = {
+    "nightbot", "streamelements", "fossabot", "moobot", "wizebot", "streamlabs",
+    "supibot", "potatbotat", "weirdfarts1av",
+} | {str(u).lower() for u in getattr(config, "EXCLUDE_USERS", set())}
+MOD_NOTICE_RE = re.compile(
+    r"\b(has been timed out|has been timed-out|has been banned|timed out for|"
+    r"no matching emotes found|removed \d+ emotes?|added \d+ emotes?)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -46,7 +59,11 @@ AXES = [
         target="valid_utterance",
         axis_label="validity",
         select_label="not_valid",
-        question="Is the MARKED message a real human utterance worth semantic labeling?",
+        question=(
+            "Should this MARKED row be eligible for semantic/intent training? "
+            "Use not_valid for bot output, mod notices, pure art, pure links, commands, "
+            "or fragments too opaque even with context."
+        ),
         options=["valid", "not_valid", "unclear"],
         include_realish_only=False,
     ),
@@ -95,6 +112,27 @@ AXES = [
 ]
 
 
+def obvious_invalid_reason(author: str, content: str) -> str | None:
+    content = content or ""
+    stripped = content.lstrip()
+    norm_author = chat_archive.normalize_author(author or "")
+    if norm_author in BOT_AUTHORS:
+        return "known_bot_author"
+    if not stripped:
+        return "empty"
+    if stripped.startswith("Replying to @"):
+        return "client_reply_header"
+    if stripped.startswith(("http://", "https://")):
+        return "pure_link"
+    if MOD_NOTICE_RE.search(stripped):
+        return "bot_or_mod_notice_text"
+    if len(stripped) > 80:
+        printable = sum(ch.isalnum() or ch.isspace() for ch in stripped)
+        if printable / max(len(stripped), 1) < 0.45:
+            return "ascii_or_symbol_art"
+    return None
+
+
 def is_realish_message(content: str) -> bool:
     stripped = (content or "").lstrip()
     if not stripped:
@@ -120,13 +158,15 @@ def load_candidates(limit: int, since: str) -> list[dict]:
     for mid, channel, author, content in rows:
         window = chat_archive.context_window(mid, channel, before=4, after=2)
         context = "\n".join(f"{a}: {c[:140]}" for _i, a, c in window)
+        invalid_reason = obvious_invalid_reason(author, content)
         out.append({
             "id": mid,
             "channel": channel,
             "author": author,
             "content": content,
             "context": context,
-            "realish": is_realish_message(content),
+            "realish": invalid_reason is None and is_realish_message(content),
+            "obvious_invalid": invalid_reason,
         })
     return out
 
@@ -181,7 +221,10 @@ def score_candidates(bundle: dict, candidates: list[dict]) -> dict[str, list[flo
 
 
 def select_axis_items(candidates: list[dict], scores: list[float], spec: AxisQueueSpec, n: int):
-    pool = [(c, s) for c, s in zip(candidates, scores) if c["realish"] or not spec.include_realish_only]
+    pool = [
+        (c, s) for c, s in zip(candidates, scores)
+        if not c["obvious_invalid"] and (c["realish"] or not spec.include_realish_only)
+    ]
     high_count = max(1, n // 2)
     boundary_count = max(0, n - high_count)
     selected = []
@@ -210,6 +253,8 @@ def make_item(rank: int, spec: AxisQueueSpec, candidate: dict, score: float, rea
         "subject": {
             "title": candidate["content"][:80],
             "axis": spec.axis_label,
+            "channel": candidate["channel"],
+            "author": candidate["author"],
             "message": candidate["content"],
             "context": candidate["context"],
         },
@@ -234,7 +279,27 @@ def write_jsonl(path: Path, items: list[dict]) -> None:
             fh.write(json.dumps(item, ensure_ascii=False) + "\n")
 
 
-def write_report(path: Path, args: argparse.Namespace, candidates: list[dict], items: list[dict]) -> None:
+def write_auto_invalid(path: Path, candidates: list[dict]) -> int:
+    rows = [c for c in candidates if c["obvious_invalid"]]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps({
+                "source": "intent_axis_queue_v2_auto_filter",
+                "label": "not_valid",
+                "reason": row["obvious_invalid"],
+                "source_message_id": row["id"],
+                "channel": row["channel"],
+                "author": row["author"],
+                "message": row["content"],
+            }, ensure_ascii=False) + "\n")
+    return len(rows)
+
+
+def write_report(
+    path: Path, args: argparse.Namespace, candidates: list[dict], items: list[dict],
+    auto_invalid_n: int,
+) -> None:
     counts = {}
     for item in items:
         axis = item["subject"]["axis"]
@@ -245,8 +310,10 @@ def write_report(path: Path, args: argparse.Namespace, candidates: list[dict], i
         f"Created: {datetime.now(timezone.utc).isoformat()}",
         f"Candidate rows sampled: {len(candidates)}",
         f"Real-ish candidates: {sum(1 for c in candidates if c['realish'])}",
+        f"Obvious invalids auto-filtered: {auto_invalid_n}",
         f"Items written: {len(items)}",
         f"Queue path: `{args.output}`",
+        f"Auto-invalid path: `{args.auto_invalid_out}`",
         "",
         "Axis counts:",
     ]
@@ -267,6 +334,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=Path, default=MODEL_IN)
     parser.add_argument("--output", type=Path, default=QUEUE_OUT)
     parser.add_argument("--report", type=Path, default=REPORT_OUT)
+    parser.add_argument("--auto-invalid-out", type=Path, default=AUTO_INVALID_OUT)
     parser.add_argument("--candidate-n", type=int, default=700)
     parser.add_argument("--per-axis", type=int, default=20)
     parser.add_argument("--since", default="2025-01-01")
@@ -290,8 +358,9 @@ def main() -> int:
         selected = select_axis_items(candidates, scores[spec.target], spec, args.per_axis)
         for candidate, score, reason in selected:
             items.append(make_item(len(items), spec, candidate, score, reason))
+    auto_invalid_n = write_auto_invalid(args.auto_invalid_out, candidates)
     write_jsonl(args.output, items)
-    write_report(args.report, args, candidates, items)
+    write_report(args.report, args, candidates, items, auto_invalid_n)
     print(f"{len(items)} items -> {args.output}")
     print(f"report -> {args.report}")
     return 0
