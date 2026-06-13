@@ -121,6 +121,29 @@ old review UI, not the final ontology. The next queue should ask these axes
 directly, and the downstream model should be multiple small probes rather than
 one "irony" classifier.
 
+## Intent probe v0
+
+`scripts/train_intent_probes.py` now trains those small probes from the private
+multi-axis dataset. The default run writes ignored artifacts:
+
+- `data/unsynced/intent_probes.pkl`
+- `_private/INTENT_PROBES_REPORT.md`
+
+The first run used the local bge-m3 embedding model with context and emote tags
+expanded. It is only a seed model because 60 rows is tiny, but it already gives
+a useful read on which axes are learnable:
+
+- **Magnitude distortion / hyperbole**: modest real signal.
+- **Play frame**: modest real signal.
+- **Hostility**: modest real signal.
+- **Literal/intended alignment**: weak; likely needs better second-order
+  features, not just frozen text embeddings.
+- **Masking / facework** and **shock / attention**: not enough positive labels.
+
+That means the next queue should not be "more irony labels" in the old sense.
+It should ask the axes directly and intentionally collect more rare positives,
+especially masking and shock.
+
 ## Emote meaning — the five-source architecture (2026-06-12 night)
 
 An emote's meaning is assembled from up to five signals, each covering the

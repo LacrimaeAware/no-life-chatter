@@ -108,6 +108,12 @@ Moderation/utility:
   private multi-axis dataset at `data/unsynced/oracle/irony_v1_multi_axis.jsonl`.
   The key correction is that hyperbole is not the same thing as irony:
   hyperbole usually preserves intended direction while distorting magnitude.
+- **Intent-probe v0 trained**: `scripts/train_intent_probes.py` learns separate
+  lightweight heads from the private multi-axis irony labels and writes the
+  ignored model/report to `data/unsynced/intent_probes.pkl` and
+  `_private/INTENT_PROBES_REPORT.md`. First run used bge-m3 embeddings. The
+  useful signals are currently hyperbole/magnitude, play frame, and hostility;
+  masking and shock need more positive oracle labels before they are useful.
 
 ## Recent Work
 
@@ -136,25 +142,22 @@ Moderation/utility:
 The full artifact rebuild already ran on 2026-06-12 with the bge-m3 embedder
 and alias merges. Only re-run `10-rebuild-persona-artifacts.bat` after new
 identity confirmations or embedding-model changes land. The active follow-up is
-now the oracle-label pipeline: use the private multi-axis irony dataset to train
-small intent/stance probes, then generate a cleaner v2 queue that asks for axes
-directly instead of forcing one overloaded class.
+now the oracle-label pipeline: the first intent probes exist, so generate a
+cleaner v2 queue that asks for axes directly and deliberately oversamples the
+weak positives: masking/facework and shock/attention.
 
 ## Next Work
 
 High priority:
 
-1. Train tiny supervised probes from the private multi-axis irony dataset:
-   validity, literal-intended alignment, hyperbole, play frame, masking, and
-   hostility.
-2. Build a cleaner oracle queue v2 that asks for those axes directly and filters
+1. Build a cleaner oracle queue v2 that asks for those axes directly and filters
    bot commands / pure links before sampling.
-3. Run focused smoke tests for persona RAG after the current bge rebuild.
-4. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
+2. Run focused smoke tests for persona RAG after the current bge rebuild.
+3. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
    RAG + better retrieval is the better short-term win.
-5. Implement the Turing-test game: real archived line versus generated persona
+4. Implement the Turing-test game: real archived line versus generated persona
    line, chat guesses, then reveal.
-6. Add bot-mode controls from `GENERATE_AND_BOT_MODES.md`: resident persona,
+5. Add bot-mode controls from `GENERATE_AND_BOT_MODES.md`: resident persona,
    response chance, cooldowns, queueing, and temporary modes.
 
 Medium priority:
