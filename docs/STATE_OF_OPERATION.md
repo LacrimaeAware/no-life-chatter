@@ -114,6 +114,12 @@ Moderation/utility:
   `_private/INTENT_PROBES_REPORT.md`. First run used bge-m3 embeddings. The
   useful signals are currently hyperbole/magnitude, play frame, and hostility;
   masking and shock need more positive oracle labels before they are useful.
+- **Intent-axis queue v2 built**: `scripts/build_intent_axis_queue.py` uses the
+  v0 probes only as a sampler and writes one focused axis question per review
+  item. The current private queue is
+  `../ai-prompt-engineering/private_docs/review_queues/nolifechatter_intent_axes_v2.jsonl`
+  with 140 items: 20 each for validity, literal alignment, magnitude, play,
+  masking, hostility, and shock.
 
 ## Recent Work
 
@@ -142,16 +148,17 @@ Moderation/utility:
 The full artifact rebuild already ran on 2026-06-12 with the bge-m3 embedder
 and alias merges. Only re-run `10-rebuild-persona-artifacts.bat` after new
 identity confirmations or embedding-model changes land. The active follow-up is
-now the oracle-label pipeline: the first intent probes exist, so generate a
-cleaner v2 queue that asks for axes directly and deliberately oversamples the
-weak positives: masking/facework and shock/attention.
+now the oracle-label pipeline: the first intent probes and v2 review queue
+exist. The next human step is labeling
+`nolifechatter_intent_axes_v2.jsonl`, then retraining the probes and checking
+whether masking/shock and literal alignment improve.
 
 ## Next Work
 
 High priority:
 
-1. Build a cleaner oracle queue v2 that asks for those axes directly and filters
-   bot commands / pure links before sampling.
+1. Label the private `nolifechatter_intent_axes_v2` review queue, retrain with
+   `12-train-intent-probes.bat`, then compare the new report.
 2. Run focused smoke tests for persona RAG after the current bge rebuild.
 3. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
    RAG + better retrieval is the better short-term win.

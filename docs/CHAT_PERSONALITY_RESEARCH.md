@@ -144,6 +144,12 @@ That means the next queue should not be "more irony labels" in the old sense.
 It should ask the axes directly and intentionally collect more rare positives,
 especially masking and shock.
 
+`scripts/build_intent_axis_queue.py` now creates that v2 queue shape. Because
+the review tool expects one question per item, the queue is not a bundled
+multi-form; it repeats messages as needed and asks a single focused axis each
+time. The first build wrote 140 private items, 20 per axis, and uses the v0
+probe only for sampling. Human answers remain the actual supervision.
+
 ## Emote meaning — the five-source architecture (2026-06-12 night)
 
 An emote's meaning is assembled from up to five signals, each covering the
