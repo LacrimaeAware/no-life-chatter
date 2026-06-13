@@ -50,6 +50,7 @@ class AxisQueueSpec:
     axis_label: str
     select_label: str
     question: str
+    guidance: str
     options: list[str]
     include_realish_only: bool = True
 
@@ -59,10 +60,11 @@ AXES = [
         target="valid_utterance",
         axis_label="validity",
         select_label="not_valid",
-        question=(
-            "Should this MARKED row be eligible for semantic/intent training? "
-            "Use not_valid for bot output, mod notices, pure art, pure links, commands, "
-            "or fragments too opaque even with context."
+        question="Validity",
+        guidance=(
+            "Should this row be eligible for semantic/intent training? Use not_valid for "
+            "bot output, mod notices, pure art, pure links, command output, or fragments "
+            "too opaque even with context. Short human messages can still be valid."
         ),
         options=["valid", "not_valid", "unclear"],
         include_realish_only=False,
@@ -71,42 +73,67 @@ AXES = [
         target="literal_alignment",
         axis_label="literal_alignment",
         select_label="divergent",
-        question="Do the literal words and intended stance align, or is there a reversal/gap?",
+        question="Literal alignment",
+        guidance=(
+            "Aligned means the intended stance points the same way as the literal words. "
+            "Divergent means irony/reversal/gap. Not applicable means no real proposition, "
+            "such as pure emotes, greetings, or reaction noise."
+        ),
         options=["aligned", "divergent", "unclear", "not_applicable"],
     ),
     AxisQueueSpec(
         target="magnitude_distortion",
         axis_label="magnitude_distortion",
         select_label="overstated",
-        question="Is the message normal/literal, overstated, or understated?",
+        question="Magnitude distortion",
+        guidance=(
+            "Literal/normal is ordinary strength. Overstated is hyperbole or exaggerated "
+            "magnitude. Understated is deliberately downplayed. This axis is separate from irony."
+        ),
         options=["literal_or_normal", "overstated", "understated", "unclear", "not_applicable"],
     ),
     AxisQueueSpec(
         target="play_frame",
         axis_label="play_frame",
         select_label="playful",
-        question="Is the message framed as play/a bit, or mostly plain serious talk?",
+        question="Play frame",
+        guidance=(
+            "Low/none is mostly plain serious talk. Playful is framed as a bit or joke. "
+            "Masking-play is joke form that appears to cover criticism, aggression, or status work."
+        ),
         options=["low_or_none", "playful", "masking_play", "unclear", "not_applicable"],
     ),
     AxisQueueSpec(
         target="masking_facework",
         axis_label="masking_facework",
         select_label="present_or_possible",
-        question="Is irony/play being used as cover for criticism, aggression, or status work?",
+        question="Masking / facework",
+        guidance=(
+            "Absent means no obvious cover. Possible/present means humor or irony seems to launder "
+            "criticism, aggression, status, or a socially risky stance."
+        ),
         options=["absent", "possible", "present", "unclear", "not_applicable"],
     ),
     AxisQueueSpec(
         target="hostility",
         axis_label="hostility",
         select_label="hostile_or_mock",
-        question="How much hostile or mocking energy is present?",
+        question="Hostility",
+        guidance=(
+            "Low/none is not hostile. Mild/mock is teasing, mockery, or casual insult. "
+            "Present is direct hostility or aggressive attack."
+        ),
         options=["low_or_none", "mild_or_mock", "present", "unclear", "not_applicable"],
     ),
     AxisQueueSpec(
         target="shock_attention",
         axis_label="shock_attention",
         select_label="present",
-        question="Is this a shock-value / attention-bid message?",
+        question="Shock / attention",
+        guidance=(
+            "Present means shock value or attention-bid energy is the point. Low/none is ordinary "
+            "chat, even if rude or dumb."
+        ),
         options=["low_or_none", "present", "unclear", "not_applicable"],
     ),
 ]
@@ -156,7 +183,7 @@ def load_candidates(limit: int, since: str) -> list[dict]:
     ).fetchall()
     out = []
     for mid, channel, author, content in rows:
-        window = chat_archive.context_window(mid, channel, before=4, after=2)
+        window = chat_archive.context_window(mid, channel, before=10, after=5)
         context = "\n".join(f"{a}: {c[:140]}" for _i, a, c in window)
         invalid_reason = obvious_invalid_reason(author, content)
         out.append({
@@ -250,6 +277,7 @@ def make_item(rank: int, spec: AxisQueueSpec, candidate: dict, score: float, rea
         "source_project": "NoLifeChatter",
         "kind": "single-classification",
         "question": spec.question,
+        "guidance": spec.guidance,
         "subject": {
             "title": candidate["content"][:80],
             "axis": spec.axis_label,
