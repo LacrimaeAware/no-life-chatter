@@ -127,7 +127,7 @@ The table below is a project overview, not the audited source of truth.
 | `~firstseen <user>` | anyone | A user's first archived message. |
 | `~chatstats <user> [chat=ch]` | anyone | Archive stats: count, first/last seen, busiest hour. |
 | `~regulars [channel] [min] [n]` | anyone | Top chatters of a channel above a message floor, bots excluded. |
-| `~askchat [user=<name>\|<name>] [chat=ch] <question>` | anyone | Evidence-backed archive/lore search over fact-bank claims, chat hits, near matches, and emotes. |
+| `~askchat [raw] [user=<name>\|<name>] [chat=ch] <question>` | anyone | Evidence-backed archive/lore QA; normal mode uses local LLM synthesis, `raw` shows receipts. |
 | `~whosaid <sentence>` | anyone | Stylometry: which chatter most likely said a line (novel sentences work). Ranks people active in this chat; `anyone` ranks the whole archive. |
 | `~markers <user> [chat=] [year=]` | anyone | A chatter's voice profile — favorite words + word-pairs vs the average chatter. Scoped to the current chat by default. |
 | `~like <user> [chat=] [year=]` | anyone | Who shares their distinctive voice, with the shared markers as evidence — also a decent alt-account detector. |

@@ -195,6 +195,13 @@ def _chatworthy_fact(fact: dict) -> bool:
     return support >= CHAT_FACT_MIN_SUPPORT
 
 
+def _scope(report: dict) -> str:
+    scope = report.get("author") or "archive"
+    if report.get("channel"):
+        scope += f"#{report['channel']}"
+    return scope
+
+
 def _near_author(author: str, query: str, *, channel: str | None = None, limit: int = 2) -> list[dict]:
     rows = chat_archive.nearest_author_lines(
         author, query, limit=limit, min_score=0.65, channel=channel
@@ -286,11 +293,90 @@ def build_report(query: str, *, author: str | None = None,
     }
 
 
+def evidence_items(report: dict, max_items: int = 6) -> list[dict]:
+    """Evidence lines safe to give an answer model.
+
+    One-off fact-bank claims stay out of synthesis; they are candidate memory
+    rows, not verified facts. The model gets raw archive receipts first.
+    """
+    items = []
+    for hit in report.get("archive", [])[:4]:
+        items.append({
+            "label": f"A{len([i for i in items if i['label'].startswith('A')]) + 1}",
+            "text": (
+                f"{hit['author']}#{hit['channel']} {hit['sent_at'][:10]}: "
+                f"\"{clip(hit['text'], 180)}\""
+            ),
+        })
+    for hit in report.get("near", [])[:1]:
+        items.append({
+            "label": f"N{len([i for i in items if i['label'].startswith('N')]) + 1}",
+            "text": (
+                f"near {hit['score']:.0%} {hit['author']}#{hit['channel']} "
+                f"{hit['sent_at'][:10]}: \"{clip(hit['text'], 180)}\""
+            ),
+        })
+    for fact in [f for f in report.get("facts", []) if _chatworthy_fact(f)][:2]:
+        items.append({
+            "label": f"F{len([i for i in items if i['label'].startswith('F')]) + 1}",
+            "text": (
+                f"claim {fact['kind']} support={fact['support_count']} "
+                f"{fact.get('sent_at', '')[:10]}: \"{clip(fact['claim'], 160)}\""
+            ),
+        })
+    for emote in report.get("emotes", [])[:1]:
+        bits = []
+        if emote.get("tags"):
+            bits.append("tags=" + ",".join(emote["tags"][:4]))
+        if emote.get("near"):
+            bits.append("used_like=" + " ".join(emote["near"][:5]))
+        if bits:
+            items.append({
+                "label": "E1",
+                "text": f"emote {emote['name']}: " + "; ".join(bits),
+            })
+    return items[:max_items]
+
+
+def has_strong_evidence(report: dict) -> bool:
+    return bool(evidence_items(report))
+
+
+def answer_messages(report: dict) -> list[dict]:
+    evidence = evidence_items(report)
+    evidence_text = "\n".join(f"[{item['label']}] {item['text']}" for item in evidence)
+    system = (
+        "You answer Twitch chat archive questions using only the provided evidence. "
+        "Be cautious: a quote is evidence that someone said a line, not proof a broad "
+        "claim is true. If evidence is weak, say that. If the question asks whether "
+        "someone likes/loves/hates/prefers something, only call it a preference when "
+        "a receipt directly says that; otherwise say the evidence only shows mentions "
+        "or behavior. Do not invent facts, do not use outside knowledge, and cite "
+        "receipt labels like [A1]. Keep it under 360 chars."
+    )
+    user = (
+        f"Scope: {_scope(report)}\n"
+        f"Question: {report.get('query', '')}\n"
+        f"Evidence:\n{evidence_text}\n\n"
+        "Answer in one compact chat message."
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def format_answer_chat(report: dict, answer: str, max_chars: int = 470) -> str:
+    answer = re.sub(r"\s+", " ", answer or "").strip().strip('"')
+    answer = re.sub(r"^(?:answer|final)\s*:\s*", "", answer, flags=re.I)
+    if not answer:
+        return ""
+    if evidence_items(report) and not re.search(r"\[[A-Z]\d+\]", answer):
+        labels = " ".join(f"[{item['label']}]" for item in evidence_items(report)[:2])
+        answer = f"{answer} {labels}"
+    prefix = f"{_scope(report)}: "
+    return clip(prefix + answer, max_chars)
+
+
 def format_chat(report: dict, max_chars: int = 470) -> str:
-    scope = report.get("author") or "archive"
-    if report.get("channel"):
-        scope += f"#{report['channel']}"
-    parts = [f"{scope}: "]
+    parts = [f"{_scope(report)}: "]
 
     for hit in report.get("archive", [])[:2]:
         parts.append(

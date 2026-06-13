@@ -159,6 +159,30 @@ class ArchiveNormalizationTests(unittest.TestCase):
         self.assertEqual([row[2] for row in window], ["same copied line", "different line"])
         self.assertEqual(window[0][0], hit_id)
 
+    def test_exact_search_dedupes_same_line_within_one_minute(self):
+        conn = chat_archive.connect()
+        channel = "search_dedupe_room"
+        phrase = "same exact question"
+        line = "same exact question @MainUser"
+        with conn:
+            conn.execute("DELETE FROM messages WHERE channel = ?", (channel,))
+            for sent_at in (
+                "2026-01-01 00:00:01",
+                "2026-01-01 00:00:04",
+                "2026-01-01 00:01:04",
+            ):
+                conn.execute(
+                    "INSERT INTO messages (channel, author, sent_at, content, source) "
+                    "VALUES (?, ?, ?, ?, 'test')",
+                    (channel, "searchperson", sent_at, line),
+                )
+
+        self.assertEqual(chat_archive.search_all_count(phrase, channel=channel), 2)
+        self.assertEqual(len(chat_archive.search_all(phrase, limit=5, channel=channel)), 2)
+        total, rows = chat_archive.said("searchperson", phrase, limit=5, channel=channel)
+        self.assertEqual(total, 2)
+        self.assertEqual(len(rows), 2)
+
 
 class ScopeParserTests(unittest.TestCase):
     def test_parse_scope_defaults_to_current_channel(self):
@@ -344,6 +368,52 @@ class ArchiveQaPureTests(unittest.TestCase):
         out = archive_qa.format_chat(report, max_chars=180)
         self.assertIn("No strong archive evidence", out)
         self.assertNotIn("on drugs", out)
+
+    def test_answer_prompt_uses_receipts_not_weak_claims(self):
+        report = {
+            "query": "graph theory",
+            "author": "mainuser",
+            "channel": None,
+            "terms": ["graph", "theory"],
+            "facts": [{
+                "kind": "self_identity",
+                "claim": "a weird one-off regex claim",
+                "support_count": 1,
+                "sent_at": "2026-01-01 00:00:00",
+            }],
+            "archive": [{
+                "author": "mainuser",
+                "channel": "mainroom",
+                "sent_at": "2026-01-01 00:00:00",
+                "text": "I love graph theory",
+            }],
+            "near": [],
+            "emotes": [],
+        }
+        messages = archive_qa.answer_messages(report)
+        joined = "\n".join(message["content"] for message in messages)
+        self.assertIn("[A1]", joined)
+        self.assertIn("I love graph theory", joined)
+        self.assertNotIn("weird one-off", joined)
+
+    def test_format_answer_appends_labels_when_model_omits_them(self):
+        report = {
+            "query": "graph theory",
+            "author": "mainuser",
+            "channel": None,
+            "terms": ["graph", "theory"],
+            "facts": [],
+            "archive": [{
+                "author": "mainuser",
+                "channel": "mainroom",
+                "sent_at": "2026-01-01 00:00:00",
+                "text": "I love graph theory",
+            }],
+            "near": [],
+            "emotes": [],
+        }
+        out = archive_qa.format_answer_chat(report, "They directly said it.")
+        self.assertIn("[A1]", out)
 
 
 class PersonaIqPureTests(unittest.TestCase):

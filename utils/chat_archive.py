@@ -133,6 +133,7 @@ _MATCH_TRANSLATION = str.maketrans({
     "‐": "-",
     "\u00a0": " ",
 })
+_EXACT_DEDUPE_SCAN_LIMIT = 5000
 
 
 def line_match_key(text: str) -> str:
@@ -148,6 +149,38 @@ def line_match_key(text: str) -> str:
     text = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE)
     text = text.replace("_", " ")
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _dedupe_time_bucket(sent_at: str) -> str:
+    """Minute bucket for import-duplicate suppression.
+
+    The archive can contain the same raw line twice a few seconds apart from
+    overlapping imports. Keep repeated memes on different minutes/days, but
+    collapse same author/channel/text inside one minute.
+    """
+    return (sent_at or "")[:16]
+
+
+def _dedupe_search_rows(rows, *, author_index: int | None,
+                        channel_index: int, content_index: int):
+    seen = set()
+    out = []
+    for row in rows:
+        content_key = line_match_key(row[content_index])
+        if not content_key:
+            continue
+        author_key = normalize_author(row[author_index]) if author_index is not None else ""
+        key = (
+            author_key,
+            normalize_channel(row[channel_index]),
+            content_key,
+            _dedupe_time_bucket(row[0]),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
 
 
 def line_similarity(left: str, right: str) -> float:
@@ -706,36 +739,63 @@ def said(author: str, phrase: str, limit: int = 3, offset: int = 0,
     searchable = re.sub(r"[^0-9A-Za-z]+", " ", phrase).strip()
     if not searchable:
         like = "%" + phrase.replace("\\", r"\\").replace("%", r"\%").replace("_", r"\_") + "%"
-        total = conn.execute(
+        raw_total = conn.execute(
             f"SELECT COUNT(*) FROM messages m WHERE m.author IN ({author_placeholders}) "
             f"{chan_sql}{cmd_sql}"
             r"AND m.content LIKE ? ESCAPE '\'",
             [*author_params, *chan_params, *cmd_params, like],
         ).fetchone()[0]
+        if raw_total <= _EXACT_DEDUPE_SCAN_LIMIT:
+            all_rows = conn.execute(
+                f"SELECT m.sent_at, m.channel, m.content FROM messages m "
+                f"WHERE m.author IN ({author_placeholders}) "
+                f"{chan_sql}{cmd_sql}"
+                r"AND m.content LIKE ? ESCAPE '\' ORDER BY m.sent_at",
+                [*author_params, *chan_params, *cmd_params, like],
+            ).fetchall()
+            unique = _dedupe_search_rows(
+                all_rows, author_index=None, channel_index=1, content_index=2
+            )
+            return len(unique), unique[offset:offset + limit]
         rows = conn.execute(
             f"SELECT m.sent_at, m.channel, m.content FROM messages m "
             f"WHERE m.author IN ({author_placeholders}) "
             f"{chan_sql}{cmd_sql}"
             r"AND m.content LIKE ? ESCAPE '\' ORDER BY m.sent_at LIMIT ? OFFSET ?",
-            [*author_params, *chan_params, *cmd_params, like, limit, offset],
+            [*author_params, *chan_params, *cmd_params, like, limit * 5, offset],
         ).fetchall()
-        return total, rows
+        rows = _dedupe_search_rows(rows, author_index=None, channel_index=1, content_index=2)
+        return raw_total, rows[:limit]
     q = _fts_phrase(phrase)
-    total = conn.execute(
+    raw_total = conn.execute(
         "SELECT COUNT(*) FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid "
         f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
         f"{chan_sql}{cmd_sql}",
         [q, *author_params, *chan_params, *cmd_params],
     ).fetchone()[0]
+    if raw_total <= _EXACT_DEDUPE_SCAN_LIMIT:
+        all_rows = conn.execute(
+            "SELECT m.sent_at, m.channel, m.content FROM messages_fts f "
+            "CROSS JOIN messages m ON m.id = f.rowid "
+            f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
+            f"{chan_sql}{cmd_sql}"
+            "ORDER BY m.sent_at",
+            [q, *author_params, *chan_params, *cmd_params],
+        ).fetchall()
+        unique = _dedupe_search_rows(
+            all_rows, author_index=None, channel_index=1, content_index=2
+        )
+        return len(unique), unique[offset:offset + limit]
     rows = conn.execute(
         "SELECT m.sent_at, m.channel, m.content FROM messages_fts f "
         "CROSS JOIN messages m ON m.id = f.rowid "
         f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
         f"{chan_sql}{cmd_sql}"
         "ORDER BY m.sent_at LIMIT ? OFFSET ?",
-        [q, *author_params, *chan_params, *cmd_params, limit, offset],
+        [q, *author_params, *chan_params, *cmd_params, limit * 5, offset],
     ).fetchall()
-    return total, rows
+    rows = _dedupe_search_rows(rows, author_index=None, channel_index=1, content_index=2)
+    return raw_total, rows[:limit]
 
 
 def nearest_author_lines(author: str, phrase: str, limit: int = 3,
@@ -1029,11 +1089,21 @@ def search_all_count(phrase: str, channel: str = None,
     conn = connect()
     chan_sql, chan_params = _channel_filter(channel)
     cmd_sql, cmd_params = _command_filter(include_commands)
-    return conn.execute(
+    raw_total = conn.execute(
         "SELECT COUNT(*) FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid "
         f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}",
         [_fts_phrase(phrase), *chan_params, *cmd_params],
     ).fetchone()[0]
+    if raw_total > _EXACT_DEDUPE_SCAN_LIMIT:
+        return raw_total
+    rows = conn.execute(
+        "SELECT m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
+        "CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}"
+        "ORDER BY m.sent_at",
+        [_fts_phrase(phrase), *chan_params, *cmd_params],
+    ).fetchall()
+    return len(_dedupe_search_rows(rows, author_index=2, channel_index=1, content_index=3))
 
 
 def search_all(phrase: str, limit: int = 10, offset: int = 0,
@@ -1042,13 +1112,30 @@ def search_all(phrase: str, limit: int = 10, offset: int = 0,
     conn = connect()
     chan_sql, chan_params = _channel_filter(channel)
     cmd_sql, cmd_params = _command_filter(include_commands)
-    return conn.execute(
+    raw_total = conn.execute(
+        "SELECT COUNT(*) FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}",
+        [_fts_phrase(phrase), *chan_params, *cmd_params],
+    ).fetchone()[0]
+    if raw_total <= _EXACT_DEDUPE_SCAN_LIMIT:
+        rows = conn.execute(
+            "SELECT m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
+            "CROSS JOIN messages m ON m.id = f.rowid "
+            f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}"
+            "ORDER BY m.sent_at",
+            [_fts_phrase(phrase), *chan_params, *cmd_params],
+        ).fetchall()
+        unique = _dedupe_search_rows(rows, author_index=2, channel_index=1, content_index=3)
+        return unique[offset:offset + limit]
+    rows = conn.execute(
         "SELECT m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
         "CROSS JOIN messages m ON m.id = f.rowid "
         f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}"
         "ORDER BY m.sent_at LIMIT ? OFFSET ?",
-        [_fts_phrase(phrase), *chan_params, *cmd_params, limit, offset],
+        [_fts_phrase(phrase), *chan_params, *cmd_params, limit * 5, offset],
     ).fetchall()
+    unique = _dedupe_search_rows(rows, author_index=2, channel_index=1, content_index=3)
+    return unique[:limit]
 
 
 def author_name_search(pattern: str, channel: str = None, limit: int = 12,

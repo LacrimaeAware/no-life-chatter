@@ -35,7 +35,7 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~firstseen <user>` | anyone | Show a user's first archived message. |
 | `~chatstats <user> [chat=<channel>]` | anyone | Show message count, first/last seen, average length, and busiest hour. |
 | `~regulars [channel] [min_messages] [limit]` | anyone | Top regulars in a channel, ignoring obvious bots by default. |
-| `~askchat [user=<name>\|<name>] [chat=<channel>] <question>` | anyone | Evidence-backed archive/lore search across fact-bank claims, chat hits, near matches, and emotes. |
+| `~askchat [raw] [user=<name>\|<name>] [chat=<channel>] <question>` | anyone | Evidence-backed archive/lore QA. Normal mode retrieves receipts and asks the local LLM for a cautious cited answer; `raw` returns receipts only. |
 
 ### Persona And Generation
 
