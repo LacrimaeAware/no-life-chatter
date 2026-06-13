@@ -45,12 +45,16 @@ or resident autonomous behavior is worth turning up.
    Extract recurring user facts, claims, lore terms, and habits with evidence
    rows, confidence, timestamps, contradiction handling, and decay. This is the
    bridge to questions like "has X ever said Y?" and "what does X believe about
-   Z?" without pretending LoRA is memory.
+   Z?" without pretending LoRA is memory. A first evidence-only claim extractor
+   now exists as `scripts/build_fact_bank.py` plus `scripts/query_fact_bank.py`;
+   it writes private candidate claims with receipts, not verified truths.
 
 3. **Archive-QA / lore command.**
    A local evidence-answering route for archive/emote/lore questions. It should
    retrieve exact quotes, semantic neighbors, emote facts, and eventually fact
    bank entries, then answer with citations. Do not solve this by fine-tuning.
+   This is now the next large implementation target after the fact-bank
+   prototype.
 
 4. **Persona output reranker.**
    The generator already samples candidates. The next version should score

@@ -25,7 +25,7 @@ def install_fake_config():
 
 install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
-from utils import chat_archive, message_quality, persona_classifier, persona_iq, persona_llm  # noqa: E402
+from utils import chat_archive, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm  # noqa: E402
 from commands import markers  # noqa: E402
 
 
@@ -235,6 +235,26 @@ class MessageQualityPureTests(unittest.TestCase):
         text = "because jupyter needs the kernel packages installed for interactive python"
         self.assertTrue(message_quality.usable_for_iq(text))
         self.assertIsNotNone(message_quality.semantic_text(text))
+
+
+class FactBankPureTests(unittest.TestCase):
+    def test_extracts_self_claims_as_candidates_not_truths(self):
+        rows = fact_bank.extract_claims("OldAlt", "I'm a software guy and I love graph theory lol")
+        claims = {(row["kind"], row["claim"]) for row in rows}
+        self.assertIn(("self_identity", "a software guy"), claims)
+        self.assertIn(("preference_positive", "graph theory"), claims)
+        self.assertTrue(all(row["author"] == "mainuser" for row in rows))
+
+    def test_rejects_questions_and_commands(self):
+        self.assertEqual(fact_bank.extract_claims("mainuser", "am I a software guy?"), [])
+        self.assertEqual(fact_bank.extract_claims("mainuser", "~persona me I am smart"), [])
+
+    def test_rejects_overbroad_possession_capture(self):
+        rows = fact_bank.extract_claims(
+            "mainuser",
+            "I almost pissed my whole bed dreaming i was pissing in a dream",
+        )
+        self.assertFalse(any(row["kind"] == "possession" for row in rows))
 
 
 class PersonaIqPureTests(unittest.TestCase):

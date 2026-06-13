@@ -61,11 +61,11 @@ def _classifier_status() -> dict:
         status = "ok" if classifier_meta and style_meta else "warn"
         if classifier_meta or style_meta:
             note = (
-                f"classifier={classifier_meta.get('built_at', '?') if classifier_meta else 'legacy'}; "
-                f"style={style_meta.get('built_at', '?') if style_meta else 'legacy'}"
+                f"classifier={classifier_meta.get('built_at', '?') if classifier_meta else 'missing-meta'}; "
+                f"style={style_meta.get('built_at', '?') if style_meta else 'missing-meta'}"
             )
         else:
-            note = "legacy/no build metadata"
+            note = "missing build metadata (pre-status format)"
         return _row(
             "classifier/style profiles", status,
             f"{authors} classifier authors, {profiles} profiles; {note}; mtime {_mtime(path)}",
@@ -96,7 +96,8 @@ def _persona_embeddings_status() -> dict:
         status = "ok"
         if unit != EXPECTED_SEMANTIC_UNIT:
             status = "warn"
-            notes.append(f"unit={unit or 'legacy/missing'}; expected {EXPECTED_SEMANTIC_UNIT}")
+            found = unit or "missing-unit"
+            notes.append(f"unit={found}; expected {EXPECTED_SEMANTIC_UNIT}")
         else:
             notes.append(f"unit={unit}")
         if getattr(config, "LLM_EMBED_MODEL", "") and model != config.LLM_EMBED_MODEL:
@@ -136,7 +137,7 @@ def _message_index_status() -> dict:
         try:
             import numpy as np
             with np.load(file, allow_pickle=True) as data:
-                unit = str(data["unit"].item()) if "unit" in data.files else "legacy/missing"
+                unit = str(data["unit"].item()) if "unit" in data.files else "missing-unit"
             units[unit] = units.get(unit, 0) + 1
         except Exception:
             bad_reads += 1

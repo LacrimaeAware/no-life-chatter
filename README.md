@@ -188,6 +188,8 @@ Double-click instead of using the terminal:
 | `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
 | `stop-bot.bat` | Stop the background bot. |
 | `9-backup-unsynced-data.bat` | Zip the important local `data/unsynced` artifacts to `_private/backups`, keeping the newest 3 backups. |
+| `10-rebuild-persona-artifacts.bat` | Rebuild classifier, style profiles, semantic vectors, message indexes, IQ, and smoke output in the foreground. |
+| `10-rebuild-persona-artifacts-background.bat` | Start that rebuild in the background with logs in `data/unsynced`; pass `-Mode classifier` or `-Mode semantic` for smaller runs. |
 
 To auto-start at login, put a shortcut to `run-background.vbs` in your Startup
 folder (`shell:startup`). Additional numbered helpers for the offline

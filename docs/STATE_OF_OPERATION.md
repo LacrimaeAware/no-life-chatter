@@ -168,8 +168,9 @@ Moderation/utility:
   "two words and not a prefix command" gate.
 - Generated artifact freshness is now visible through `~artifacts` and
   `scripts/artifact_status.py`. Current status: `~iq` has v2 metadata, while
-  the person semantic vectors and semantic message index are legacy/missing
-  semantic-unit metadata until the next long rebuild.
+  the person semantic vectors and semantic message index are recent but missing
+  semantic-unit metadata because they predate the utterance-unit artifact
+  change.
 - Future classifier/style-profile rebuilds now write build metadata into the
   shared classifier pickle, so stale profile state is easier to identify.
 - The next-work ranking was refreshed in
@@ -180,13 +181,18 @@ Moderation/utility:
   from valid chronological channel logs, can run the normal persona generator
   against historical context, excludes the hidden target line from prompt
   evidence, and writes private JSONL/Markdown results under `data/unsynced/`.
+- `scripts/build_fact_bank.py` and `scripts/query_fact_bank.py` now provide the
+  first evidence-only memory-bank prototype. It extracts candidate user claims,
+  preferences, beliefs, and habits into ignored JSONL with timestamps/channels
+  and original evidence; rows are claims to review, not verified facts.
 
 ## First Thing To Do When Returning
 
 Check `~artifacts` or `python scripts/artifact_status.py` before trusting
 persona artifact rankings. The semantic vectors and message index still need
-the next long rebuild to become utterance-unit artifacts; use
-`10-rebuild-persona-artifacts.bat` or
+the next long rebuild to become tagged utterance-unit artifacts; use
+`10-rebuild-persona-artifacts.bat`,
+`10-rebuild-persona-artifacts-background.bat`, or
 `python scripts/rebuild_persona_artifacts.py --semantic-unit utterance --continue-on-error`
 when that runtime cost is acceptable. The active follow-up is still the
 oracle-label pipeline: the first intent probes and v2 review queue exist. The
@@ -203,15 +209,20 @@ High priority:
    LM Studio up and compare future retrieval/model changes against that report.
 2. Run the next artifact rebuild when a long rebuild is acceptable. It should
    pick up alias changes and the new utterance-based semantic units.
-3. Label the private `nolifechatter_intent_axes_v2` review queue, retrain with
+3. Build and inspect the first fact bank:
+   `python scripts/build_fact_bank.py --max-authors 40`, then query it with
+   `python scripts/query_fact_bank.py --author <name> <terms>`.
+4. Build archive-QA/lore answering on top of exact archive hits, semantic
+   retrieval, emote facts, and fact-bank rows with citations.
+5. Label the private `nolifechatter_intent_axes_v2` review queue, retrain with
    `12-train-intent-probes.bat`, then compare the new report.
-4. Run focused smoke tests for persona RAG after the utterance-based semantic
+6. Run focused smoke tests for persona RAG after the utterance-based semantic
    rebuild.
-5. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
+7. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
    RAG + better retrieval is the better short-term win.
-6. Implement resident persona controls from `GENERATE_AND_BOT_MODES.md`:
+8. Implement resident persona controls from `GENERATE_AND_BOT_MODES.md`:
    `~botpersona`, `~botmode`, `~botcontext`, and `~botchance`.
-7. Implement the Turing-test game: real archived line versus generated persona
+9. Implement the Turing-test game: real archived line versus generated persona
    line, chat guesses, then reveal.
 
 Medium priority:

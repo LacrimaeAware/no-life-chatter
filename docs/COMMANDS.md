@@ -115,9 +115,12 @@ Some commands read live SQLite tables only; others need offline artifacts:
 | `data/unsynced/iq_scores.pkl` | `scripts/build_iq_v2.py` | `~iq` |
 
 Use `~artifacts` or `python scripts/artifact_status.py` to check whether these
-artifacts are missing, legacy, or built with the current semantic unit/model.
+artifacts are missing, missing build metadata, or built with the current
+semantic unit/model.
 
 After identity merges, embedding-model changes, or major filter changes, run
 `10-rebuild-persona-artifacts.bat` or `scripts/rebuild_persona_artifacts.py`.
+For an unattended run, use `10-rebuild-persona-artifacts-background.bat`; it
+writes stdout/stderr logs under `data/unsynced`.
 The default semantic unit for embeddings/indexes is now a merged utterance; use
 `--semantic-unit message` only for a deliberate A/B against the old behavior.
