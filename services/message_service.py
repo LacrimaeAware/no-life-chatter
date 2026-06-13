@@ -21,6 +21,60 @@ import config
 
 # ----------------- helpers -----------------
 
+_RESIDENT_TOPIC_WEAK_TERMS = {
+    "about", "actually", "again", "anyone", "before", "being", "better",
+    "could", "crap", "doing", "done", "filler", "forced", "good", "gonna",
+    "hate", "hates", "just", "made", "maybe", "piece", "play", "really",
+    "random", "said", "says", "shit", "some", "someone", "such", "take",
+    "thing", "think", "thought", "thoughts", "today", "tonight", "using",
+    "wanna", "would",
+}
+
+_RESIDENT_TOPIC_SHORT_ANCHORS = {
+    "ai", "api", "cs", "egg", "eggs", "gpu", "iq", "lol", "osu", "wow",
+}
+
+_RESIDENT_EMOTE_EXACT = None
+
+def _token_set(text):
+    return {w.strip("_").lower() for w in re.findall(r"\w+", text or "") if w.strip("_")}
+
+
+def _raw_tokens_by_lower(text):
+    out = {}
+    for raw in re.findall(r"\w+", text or ""):
+        term = raw.strip("_").lower()
+        if term:
+            out.setdefault(term, []).append(raw.strip("_"))
+    return out
+
+
+def _resident_exact_emotes():
+    global _RESIDENT_EMOTE_EXACT
+    if _RESIDENT_EMOTE_EXACT is None:
+        try:
+            from utils import emote_meaning
+            _RESIDENT_EMOTE_EXACT = set(emote_meaning.registry())
+        except Exception:
+            _RESIDENT_EMOTE_EXACT = set()
+    return _RESIDENT_EMOTE_EXACT
+
+
+def _resident_raw_emote_like(raw):
+    if raw in _resident_exact_emotes() and raw.lower() != raw:
+        return True
+    if re.search(r"[a-z][A-Z]", raw):
+        return True
+    return len(raw) >= 6 and raw.isupper() and raw.isalpha()
+
+
+def _resident_topic_anchor(term, raw_tokens):
+    if term in _RESIDENT_TOPIC_WEAK_TERMS:
+        return False
+    if any(_resident_raw_emote_like(raw) for raw in raw_tokens):
+        return False
+    return len(term) >= 4 or term in _RESIDENT_TOPIC_SHORT_ANCHORS
+
 def fetch_usernames(channel_name):
     db_path = config.DB_PATH
     try:
@@ -230,27 +284,46 @@ class MessageService:
         persona = state.get("persona") or ""
         channel = state.get("channel") or ""
         terms = tuple(chat_archive.query_terms(content, max_terms=8))
-        if not persona or not terms:
+        raw_tokens = _raw_tokens_by_lower(content)
+        anchors = tuple(term for term in terms if _resident_topic_anchor(term, raw_tokens.get(term, [])))
+        if not persona or not anchors:
             return 0.0, 0
-        key = (persona, terms)
+        key = (persona, anchors)
         cached = self._resident_affinity_cache.get(key)
         now_ts = time.time()
         if cached and now_ts - cached[0] < 60:
             return cached[1], cached[2]
-        hits = chat_archive.search_author_hits(persona, " ".join(terms), limit=12)
+        hits = chat_archive.search_author_hits(persona, " ".join(anchors), limit=16)
         seen = {}
         same_channel = 0
+        covered_terms = set()
         for _id, _sent_at, hit_channel, content in hits:
             line_key = chat_archive.line_match_key(content)
             if not line_key or line_key in seen:
                 continue
+            hit_terms = _token_set(content)
+            covered = set(anchors) & hit_terms
+            if not covered:
+                continue
             seen[line_key] = True
+            covered_terms |= covered
             if chat_archive.normalize_channel(hit_channel) == channel:
                 same_channel += 1
         hit_count = len(seen)
         affinity = 0.0
         if hit_count:
-            affinity = min(1.0, (hit_count / 8.0) + min(same_channel, 3) * 0.05)
+            covered_count = len(covered_terms)
+            if len(anchors) == 1:
+                affinity = min(0.70, max(0, hit_count - 1) / 6.0 + min(same_channel, 3) * 0.03)
+            elif covered_count == 1:
+                affinity = min(0.45, (hit_count / 10.0) + min(same_channel, 3) * 0.03)
+            else:
+                affinity = min(
+                    1.0,
+                    (hit_count / 8.0)
+                    + min(covered_count, 3) * 0.12
+                    + min(same_channel, 3) * 0.04,
+                )
         self._resident_affinity_cache[key] = (now_ts, affinity, hit_count)
         return affinity, hit_count
 
