@@ -6,7 +6,7 @@ description = (
     "  ~botpersona status [chat=<channel>]\n"
     "  ~botpersona off [chat=<channel>]\n"
     "  ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent] "
-    "[chance=] [topic=] [directed=] [greeting=] [cooldown=] [idle=]"
+    "[chance=] [topic=] [curve=] [directed=] [greeting=] [cooldown=] [idle=]"
 )
 
 
@@ -37,6 +37,8 @@ def _parse(params, current_channel):
             flags["chance"] = _as_float(token.split("=", 1)[1], "chance")
         elif low.startswith("topic="):
             flags["topic_chance"] = _as_float(token.split("=", 1)[1], "topic")
+        elif low.startswith("curve="):
+            flags["topic_curve"] = _as_float(token.split("=", 1)[1], "curve")
         elif low.startswith("directed="):
             flags["directed_chance"] = _as_float(token.split("=", 1)[1], "directed")
         elif low.startswith("greeting="):

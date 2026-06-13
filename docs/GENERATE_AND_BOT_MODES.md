@@ -63,7 +63,7 @@ Live commands:
 
     ~botpersona status [chat=<channel>]
     ~botpersona off [chat=<channel>]
-    ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent] [chance=] [topic=] [idle=]
+    ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent] [chance=] [topic=] [curve=] [idle=]
     ~botmode regular|response|random|silent [minutes] [chat=<channel>]
     ~botcontext [chat=<channel>] <free text|clear>
     ~botchance <base> [directed] [chat=<channel>] [topic=] [idle=] [greeting=] [cooldown=]
@@ -91,8 +91,8 @@ low-level reply method; otherwise they fall back to normal channel send.
 - Current resident mode state is `data/unsynced/resident_personas.json`.
 - A future richer volition gate could use a cheap "reply or STAY SILENT"
   classifier before generation. The current live path uses probability,
-  direct/greeting heuristics, FTS topic-affinity boost, cooldown, idle-roll
-  limits, and a STOP instruction in the persona prompt to keep model calls
-  bounded.
+  direct/greeting heuristics, curved FTS topic-affinity boost, cooldown,
+  idle-roll limits, and a STOP instruction in the persona prompt to keep model
+  calls bounded.
 - Ban list: data/synced settings DB, cached set, checked first thing in
   process_command. Implemented.

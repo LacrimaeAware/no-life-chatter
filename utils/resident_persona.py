@@ -21,6 +21,7 @@ DEFAULTS = {
     "mode": "regular",
     "chance": 0.02,
     "topic_chance": 0.16,
+    "topic_curve": 2.0,
     "directed_chance": 0.65,
     "greeting_chance": 0.75,
     "cooldown": 20.0,
@@ -72,7 +73,7 @@ def _normalize_state(channel: str, state: dict) -> dict:
     for key in (
         "chance", "topic_chance", "directed_chance", "greeting_chance",
         "cooldown", "idle_chance", "idle_after", "idle_interval",
-        "idle_cooldown", "until",
+        "idle_cooldown", "topic_curve", "until",
     ):
         try:
             out[key] = float(out.get(key) or 0)
@@ -82,6 +83,7 @@ def _normalize_state(channel: str, state: dict) -> dict:
         out[key] = _prob(out[key])
     for key in ("cooldown", "idle_after", "idle_interval", "idle_cooldown"):
         out[key] = max(0.0, out[key])
+    out["topic_curve"] = max(0.25, out["topic_curve"])
     out["until"] = max(0.0, out["until"])
     try:
         out["max_bot_streak"] = int(out.get("max_bot_streak") or DEFAULTS["max_bot_streak"])
@@ -157,7 +159,8 @@ def format_status(state: dict) -> str:
     return (
         f"#{state['channel']}: {state['persona']} mode={state['mode']} "
         f"chance={state['chance']:.3g} topic={state['topic_chance']:.3g} "
-        f"directed={state['directed_chance']:.3g} cooldown={int(state['cooldown'])}s "
+        f"curve={state['topic_curve']:.2g} directed={state['directed_chance']:.3g} "
+        f"cooldown={int(state['cooldown'])}s "
         f"idle={state['idle_chance']:.3g}/{int(state['idle_interval'])}s{tail}"
     )
 

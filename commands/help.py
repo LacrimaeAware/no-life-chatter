@@ -20,7 +20,7 @@ CATEGORIES = [
     ]),
     ("analysis", [
         "whosaid", "markers", "like", "vibes", "twin", "traits", "top",
-        "distinct", "why", "emote", "iq", "irony",
+        "distinct", "why", "axis", "emote", "iq", "irony",
     ]),
     ("moderation", [
         "banuser", "unbanuser", "warnings",

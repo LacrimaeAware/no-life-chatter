@@ -51,7 +51,7 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~generate list` / `~generate del <name>` | anyone | List or delete your saved recipes. |
 | `~botpersona status [chat=<channel>]` | super admin | Inspect the resident persona for a channel. |
 | `~botpersona off [chat=<channel>]` | super admin | Clear the resident persona for a channel. |
-| `~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular\|response\|random\|silent] [chance=] [topic=] [idle=]` | super admin | Set a channel-scoped resident persona that can autonomously reply and idle-chat. |
+| `~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular\|response\|random\|silent] [chance=] [topic=] [curve=] [idle=]` | super admin | Set a channel-scoped resident persona that can autonomously reply and idle-chat. |
 | `~botmode regular\|response\|random\|silent [minutes] [chat=<channel>]` | super admin | Change resident persona response mode and optional expiry. |
 | `~botcontext [chat=<channel>] <text\|clear>` | super admin | Set extra standing instruction for the resident persona. |
 | `~botchance <base> [directed] [chat=<channel>] [topic=] [idle=] [greeting=] [cooldown=]` | super admin | Tune resident persona reaction, topic-boost, idle, greeting, and cooldown probabilities. |
@@ -74,6 +74,7 @@ super-admin-only.
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. |
 | `~distinct [top\|bottom] [n]` | anyone | Chatters farthest from or closest to the room average across built-in trait axes. |
 | `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. |
+| `~axis <trait> [n]` | anyone | Inspect a trait/custom axis by showing nearest neighboring axes. |
 | `~emote <emote>` | anyone | Explain what the bot thinks an emote means from registry facts and usage-context neighbors. |
 | `~irony <message> [context=...]` | anyone | Experimental irony/sincerity read using sarcasm and content-extremity axes. |
 | `~iq <user>` | anyone | Roster-relative text-IQ style score: peak expressed cognition in chat, not actual IQ. |

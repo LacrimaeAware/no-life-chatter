@@ -134,6 +134,7 @@ The table below is a project overview, not the audited source of truth.
 | `~twin <user>` | anyone | Overall nearest match, blending vocabulary/emotes with semantic similarity. |
 | `~traits <user>` | anyone | Semantic trait readout against the room average. |
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard for any word — built-in axes answer instantly, novel words build a saved axis on the fly. `burst` ranks peak moments. |
+| `~axis <trait> [n]` | anyone | Inspect what a trait/custom axis is semantically closest to. |
 | `~generate <tags...>` | anyone | Example message from a bag of tags: chatter names (several = fusion), trait poles, `chat=`, `year=`, topic, `engine=markov\|llm`. Save per-user recipes. |
 | `~botpersona` / `~botmode` / `~botcontext` / `~botchance` | super admin | Channel-scoped resident persona controls for timed autonomous chat, topic-weighted reactions, and idle chat. |
 | `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |

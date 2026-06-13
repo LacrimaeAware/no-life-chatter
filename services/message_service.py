@@ -347,7 +347,9 @@ class MessageService:
         affinity, hits = self._resident_topic_affinity(state, message.content)
         if affinity <= 0:
             return base, affinity, hits
-        return base + (topic_chance - base) * affinity, affinity, hits
+        curve = max(0.25, float(state.get("topic_curve", 2.0)))
+        curved_affinity = affinity ** curve
+        return base + (topic_chance - base) * curved_affinity, affinity, hits
 
     def _resident_prompt(self, state, message, directed, greeting, affinity=0.0, hits=0):
         author = message.author.name if message.author else "someone"
