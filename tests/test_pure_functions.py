@@ -267,6 +267,43 @@ class ArchiveQaPureTests(unittest.TestCase):
         self.assertEqual(parsed["channel"], "mainroom")
         self.assertEqual(parsed["query"], "graph theory")
 
+    def test_parse_params_strips_repeated_scoped_author_from_query(self):
+        parsed = archive_qa.parse_params(
+            ["user=OldAlt", "OldAlt", "loves", "graph", "theory"],
+            current_channel="Side-Room",
+        )
+        self.assertEqual(parsed["author"], "mainuser")
+        self.assertEqual(parsed["query"], "loves graph theory")
+
+    def test_author_hits_dedupes_duplicate_imported_lines(self):
+        seen = []
+        rows = [
+            (1, "2026-01-01 00:00:01", "mainroom", "I love graph theory"),
+            (2, "2026-01-01 00:00:02", "mainroom", "i love graph theory!!"),
+            (3, "2026-01-01 00:00:03", "mainroom", "I love number theory"),
+        ]
+        original = chat_archive.search_author_hits
+        try:
+            chat_archive.search_author_hits = lambda *args, **kwargs: rows
+            hits = archive_qa._author_hits("mainuser", "graph theory", limit=5)
+            seen.extend(hit["text"] for hit in hits)
+        finally:
+            chat_archive.search_author_hits = original
+        self.assertEqual(seen, ["I love graph theory", "I love number theory"])
+
+    def test_author_hits_filters_preference_verb_without_topic(self):
+        rows = [
+            (1, "2026-01-01 00:00:01", "mainroom", "someone loves papaplatte"),
+            (2, "2026-01-01 00:00:02", "mainroom", "deviled eggs Evilge"),
+        ]
+        original = chat_archive.search_author_hits
+        try:
+            chat_archive.search_author_hits = lambda *args, **kwargs: rows
+            hits = archive_qa._author_hits("mainuser", "loves eggs", limit=5)
+        finally:
+            chat_archive.search_author_hits = original
+        self.assertEqual([hit["text"] for hit in hits], ["deviled eggs Evilge"])
+
     def test_format_chat_returns_compact_evidence(self):
         report = {
             "query": "graph theory",
@@ -287,6 +324,26 @@ class ArchiveQaPureTests(unittest.TestCase):
         self.assertIn("mainuser", out)
         self.assertIn("graph theory", out)
         self.assertLessEqual(len(out), 180)
+
+    def test_format_chat_suppresses_weak_one_off_claims(self):
+        report = {
+            "query": "math",
+            "author": "mainuser",
+            "channel": None,
+            "terms": ["math"],
+            "facts": [{
+                "kind": "self_identity",
+                "claim": "on drugs (math) and pasted model output",
+                "support_count": 1,
+                "sent_at": "2026-01-01 00:00:00",
+            }],
+            "archive": [],
+            "near": [],
+            "emotes": [],
+        }
+        out = archive_qa.format_chat(report, max_chars=180)
+        self.assertIn("No strong archive evidence", out)
+        self.assertNotIn("on drugs", out)
 
 
 class PersonaIqPureTests(unittest.TestCase):

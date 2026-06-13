@@ -12,10 +12,64 @@ from pathlib import Path
 
 from utils import chat_archive, emote_meaning, fact_bank, message_quality
 
+CHAT_FACT_MIN_SUPPORT = 2
+QUERY_INTENT_TERMS = {
+    "love", "loves", "loved", "like", "likes", "liked", "enjoy", "enjoys",
+    "enjoyed", "hate", "hates", "hated", "prefer", "prefers", "preferred",
+}
+
 
 def clip(text: str, n: int = 120) -> str:
     text = re.sub(r"\s+", " ", text or "").strip()
     return text if len(text) <= n else text[: n - 1] + "..."
+
+
+def _author_exclude_terms(author: str | None) -> set[str]:
+    if not author:
+        return set()
+    terms = set()
+    try:
+        keys = chat_archive.author_keys(author)
+    except Exception:
+        keys = [author]
+    for key in keys:
+        norm = chat_archive.normalize_author(key)
+        terms.add(norm)
+        terms.add(norm.replace("_", ""))
+        terms.update(part for part in norm.split("_") if part)
+    return {term.casefold() for term in terms if term}
+
+
+def _strip_scoped_author_terms(query: str, author: str | None) -> str:
+    """Remove repeated scoped usernames from a natural-language query."""
+    excludes = _author_exclude_terms(author)
+    if not excludes:
+        return query.strip()
+
+    def repl(match: re.Match) -> str:
+        raw = match.group(0).lstrip("@")
+        norm = chat_archive.normalize_author(raw)
+        variants = {raw.casefold(), norm.casefold(), norm.replace("_", "").casefold()}
+        variants.update(part.casefold() for part in norm.split("_") if part)
+        return " " if variants & excludes else match.group(0)
+
+    stripped = re.sub(r"@?[A-Za-z0-9_]{2,40}", repl, query or "")
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def _focus_terms(query: str, author: str | None = None) -> list[str]:
+    excludes = _author_exclude_terms(author)
+    return [
+        term for term in chat_archive.query_terms(query, exclude_terms=excludes)
+        if term not in QUERY_INTENT_TERMS
+    ]
+
+
+def _matches_focus(text: str, focus_terms: list[str]) -> bool:
+    if not focus_terms:
+        return True
+    hay_tokens = set(chat_archive.line_match_key(text).split())
+    return any(term in hay_tokens for term in focus_terms)
 
 
 def parse_params(params: list[str], current_channel: str | None = None) -> dict:
@@ -53,10 +107,11 @@ def parse_params(params: list[str], current_channel: str | None = None) -> dict:
             except Exception:
                 pass
 
+    author = chat_archive.normalize_author(author) if author else None
     return {
-        "author": chat_archive.normalize_author(author) if author else None,
+        "author": author,
         "channel": chat_archive.normalize_channel(channel) if channel else None,
-        "query": " ".join(rest).strip(),
+        "query": _strip_scoped_author_terms(" ".join(rest).strip(), author),
     }
 
 
@@ -73,19 +128,28 @@ def _search_all_hits(query: str, *, channel: str | None = None, limit: int = 5) 
         f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}"
         "AND length(m.content) <= ? "
         "ORDER BY bm25(messages_fts), m.sent_at DESC LIMIT ?",
-        [q, *chan_params, *cmd_params, 260, limit],
+        [q, *chan_params, *cmd_params, 260, limit * 5],
     ).fetchall()
-    return [
-        {
+    out = []
+    seen = set()
+    focus = _focus_terms(query)
+    for row_id, sent_at, channel, author, content in rows:
+        if not _usable_hit(content):
+            continue
+        if not _matches_focus(content, focus):
+            continue
+        key = (chat_archive.normalize_author(author), chat_archive.line_match_key(content))
+        if not key[1] or key in seen:
+            continue
+        seen.add(key)
+        out.append({
             "id": row_id,
             "sent_at": sent_at,
             "channel": channel,
             "author": chat_archive.normalize_author(author),
             "text": content,
-        }
-        for row_id, sent_at, channel, author, content in rows
-        if _usable_hit(content)
-    ]
+        })
+    return out
 
 
 def _usable_hit(text: str) -> bool:
@@ -93,17 +157,27 @@ def _usable_hit(text: str) -> bool:
         return False
     clean = message_quality.clean_text(text, strip_emotes=True, strip_urls=True)
     toks = message_quality.tokens(clean)
-    return len(clean) >= 18 and len(toks) >= 3
+    if len(clean) < 18 or len(toks) < 3:
+        return False
+    return not message_quality.spam_like(clean, toks)
 
 
 def _author_hits(author: str, query: str, *, channel: str | None = None, limit: int = 5) -> list[dict]:
-    rows = chat_archive.search_author_hits(author, query, limit=limit * 2, max_chars=260)
+    rows = chat_archive.search_author_hits(author, query, limit=limit * 6, max_chars=300)
     out = []
+    seen = set()
+    focus = _focus_terms(query, author)
     for row_id, sent_at, row_channel, content in rows:
         if channel and chat_archive.normalize_channel(row_channel) != channel:
             continue
         if not _usable_hit(content):
             continue
+        if not _matches_focus(content, focus):
+            continue
+        key = chat_archive.line_match_key(content)
+        if not key or key in seen:
+            continue
+        seen.add(key)
         out.append({
             "id": row_id,
             "sent_at": sent_at,
@@ -114,6 +188,11 @@ def _author_hits(author: str, query: str, *, channel: str | None = None, limit: 
         if len(out) >= limit:
             break
     return out
+
+
+def _chatworthy_fact(fact: dict) -> bool:
+    support = int(fact.get("support_count") or 0)
+    return support >= CHAT_FACT_MIN_SUPPORT
 
 
 def _near_author(author: str, query: str, *, channel: str | None = None, limit: int = 2) -> list[dict]:
@@ -186,6 +265,7 @@ def build_report(query: str, *, author: str | None = None,
                  channel: str | None = None, limit: int = 5) -> dict:
     query = query.strip()
     author = chat_archive.normalize_author(author) if author else None
+    query = _strip_scoped_author_terms(query, author)
     channel = chat_archive.normalize_channel(channel) if channel else None
     facts = _fact_hits(author, query, limit=4)
     archive = _author_hits(author, query, channel=channel, limit=limit) if author else (
@@ -212,16 +292,6 @@ def format_chat(report: dict, max_chars: int = 470) -> str:
         scope += f"#{report['channel']}"
     parts = [f"{scope}: "]
 
-    for fact in report.get("facts", [])[:2]:
-        bit = (
-            f"claim {fact['kind']} '{clip(fact['claim'], 70)}' "
-            f"({fact['support_count']}x"
-        )
-        if fact.get("sent_at"):
-            bit += f", {fact['sent_at'][:10]}"
-        bit += ")"
-        parts.append(bit)
-
     for hit in report.get("archive", [])[:2]:
         parts.append(
             f"{hit['author']}#{hit['channel']} {hit['sent_at'][:10]} "
@@ -233,6 +303,17 @@ def format_chat(report: dict, max_chars: int = 470) -> str:
             f"near {hit['score']:.0%} {hit['sent_at'][:10]} "
             f"\"{clip(hit['text'], 80)}\""
         )
+
+    chat_facts = [fact for fact in report.get("facts", []) if _chatworthy_fact(fact)]
+    for fact in chat_facts[:2]:
+        bit = (
+            f"claim {fact['kind']} '{clip(fact['claim'], 70)}' "
+            f"({fact['support_count']}x"
+        )
+        if fact.get("sent_at"):
+            bit += f", {fact['sent_at'][:10]}"
+        bit += ")"
+        parts.append(bit)
 
     for emote in report.get("emotes", [])[:1]:
         bits = []
@@ -246,7 +327,8 @@ def format_chat(report: dict, max_chars: int = 470) -> str:
     if len(parts) == 1:
         terms = ", ".join(report.get("terms") or [])
         suffix = f" terms={terms}" if terms else ""
-        return f"No archive evidence found for '{clip(report.get('query', ''), 90)}'.{suffix}"
+        weak = " Weak one-off claim candidates were ignored." if report.get("facts") else ""
+        return f"No strong archive evidence found for '{clip(report.get('query', ''), 90)}'.{suffix}{weak}"
 
     out = " | ".join(parts)
     return clip(out, max_chars)
