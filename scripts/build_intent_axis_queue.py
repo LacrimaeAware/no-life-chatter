@@ -52,6 +52,8 @@ class AxisQueueSpec:
     question: str
     guidance: str
     options: list[str]
+    option_labels: dict[str, str]
+    option_help: dict[str, str]
     include_realish_only: bool = True
 
 
@@ -67,6 +69,16 @@ AXES = [
             "too opaque even with context. Short human messages can still be valid."
         ),
         options=["valid", "not_valid", "unclear"],
+        option_labels={
+            "valid": "valid: human/chat meaning",
+            "not_valid": "not valid: bot/junk/noise",
+            "unclear": "unclear",
+        },
+        option_help={
+            "valid": "A human/chat utterance with interpretable communicative intent, even if short, emote-coded, or slang.",
+            "not_valid": "Bot output, mod notice, pure link, pure ASCII/image text, command output, or unusable noise.",
+            "unclear": "You cannot tell whether it is meaningful enough to train on.",
+        },
         include_realish_only=False,
     ),
     AxisQueueSpec(
@@ -75,11 +87,22 @@ AXES = [
         select_label="divergent",
         question="Literal alignment",
         guidance=(
-            "Aligned means the intended stance points the same way as the literal words. "
-            "Divergent means irony/reversal/gap. Not applicable means no real proposition, "
-            "such as pure emotes, greetings, or reaction noise."
+            "Binary question: is this used straight, or as reversal/irony? Treat conventional "
+            "chat meaning as literal enough: emotes, greetings, tucks, and reaction phrases are "
+            "aligned when used in their normal way. Hyperbole is usually aligned because the "
+            "stance direction is the same; magnitude distortion is a different axis."
         ),
-        options=["aligned", "divergent", "unclear", "not_applicable"],
+        options=["aligned", "divergent", "unclear"],
+        option_labels={
+            "aligned": "straight / aligned",
+            "divergent": "reversal / ironic gap",
+            "unclear": "unclear / no stable meaning",
+        },
+        option_help={
+            "aligned": "They mean the conventional chat meaning: normal slang, emote/action shorthand, greeting, reaction, or hyperbole with the same stance direction.",
+            "divergent": "The message is used as irony/reversal: it says or performs one thing while intending the opposite or a sideways stance.",
+            "unclear": "You cannot infer the conventional meaning or whether it is straight vs ironic.",
+        },
     ),
     AxisQueueSpec(
         target="magnitude_distortion",
@@ -91,6 +114,20 @@ AXES = [
             "magnitude. Understated is deliberately downplayed. This axis is separate from irony."
         ),
         options=["literal_or_normal", "overstated", "understated", "unclear", "not_applicable"],
+        option_labels={
+            "literal_or_normal": "normal magnitude",
+            "overstated": "overstated / hyperbolic",
+            "understated": "understated",
+            "unclear": "unclear",
+            "not_applicable": "no magnitude to judge",
+        },
+        option_help={
+            "literal_or_normal": "The strength is about what they mean.",
+            "overstated": "The direction may be sincere, but the intensity is exaggerated.",
+            "understated": "The wording downplays what is meant.",
+            "unclear": "There is a magnitude claim, but you cannot judge distortion.",
+            "not_applicable": "No claim/reaction intensity to compare.",
+        },
     ),
     AxisQueueSpec(
         target="play_frame",
@@ -102,6 +139,20 @@ AXES = [
             "Masking-play is joke form that appears to cover criticism, aggression, or status work."
         ),
         options=["low_or_none", "playful", "masking_play", "unclear", "not_applicable"],
+        option_labels={
+            "low_or_none": "not playful",
+            "playful": "playful / bit",
+            "masking_play": "playful but masking",
+            "unclear": "unclear",
+            "not_applicable": "no play-frame signal",
+        },
+        option_help={
+            "low_or_none": "Mostly plain serious or neutral talk.",
+            "playful": "Clearly framed as a bit, joke, riff, or unserious performance.",
+            "masking_play": "Joke form seems to cover criticism, aggression, status, or risky stance.",
+            "unclear": "Cannot tell if it is a bit.",
+            "not_applicable": "No usable framing signal.",
+        },
     ),
     AxisQueueSpec(
         target="masking_facework",
@@ -113,6 +164,20 @@ AXES = [
             "criticism, aggression, status, or a socially risky stance."
         ),
         options=["absent", "possible", "present", "unclear", "not_applicable"],
+        option_labels={
+            "absent": "not masking",
+            "possible": "possibly masking",
+            "present": "masking present",
+            "unclear": "unclear",
+            "not_applicable": "no masking signal",
+        },
+        option_help={
+            "absent": "No obvious use of humor/irony as cover.",
+            "possible": "Could be cover, but weak evidence.",
+            "present": "Humor/irony is doing cover work for aggression, status, criticism, or risky stance.",
+            "unclear": "Cannot tell whether cover is happening.",
+            "not_applicable": "No relevant social/facework signal.",
+        },
     ),
     AxisQueueSpec(
         target="hostility",
@@ -124,6 +189,20 @@ AXES = [
             "Present is direct hostility or aggressive attack."
         ),
         options=["low_or_none", "mild_or_mock", "present", "unclear", "not_applicable"],
+        option_labels={
+            "low_or_none": "not hostile",
+            "mild_or_mock": "mild/mock hostility",
+            "present": "hostile",
+            "unclear": "unclear",
+            "not_applicable": "no hostility signal",
+        },
+        option_help={
+            "low_or_none": "No meaningful hostile/mock energy.",
+            "mild_or_mock": "Teasing, casual insult, mockery, or light aggression.",
+            "present": "Direct hostility or attack.",
+            "unclear": "Cannot judge the hostility.",
+            "not_applicable": "No usable interpersonal signal.",
+        },
     ),
     AxisQueueSpec(
         target="shock_attention",
@@ -135,6 +214,18 @@ AXES = [
             "chat, even if rude or dumb."
         ),
         options=["low_or_none", "present", "unclear", "not_applicable"],
+        option_labels={
+            "low_or_none": "not shock/attention",
+            "present": "shock / attention bid",
+            "unclear": "unclear",
+            "not_applicable": "no shock signal",
+        },
+        option_help={
+            "low_or_none": "Not primarily trying to shock or grab attention.",
+            "present": "Shock value or attention seeking is the point.",
+            "unclear": "Cannot tell if it is attention-bid behavior.",
+            "not_applicable": "No usable signal.",
+        },
     ),
 ]
 
@@ -278,6 +369,8 @@ def make_item(rank: int, spec: AxisQueueSpec, candidate: dict, score: float, rea
         "kind": "single-classification",
         "question": spec.question,
         "guidance": spec.guidance,
+        "option_labels": spec.option_labels,
+        "option_help": spec.option_help,
         "subject": {
             "title": candidate["content"][:80],
             "axis": spec.axis_label,
