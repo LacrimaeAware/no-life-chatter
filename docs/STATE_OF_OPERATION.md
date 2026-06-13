@@ -56,7 +56,8 @@ Translation:
 `~practice`, `~romanize`, `~speak`
 
 Archive:
-`~said`, `~regex`, `~quote`, `~firstseen`, `~chatstats`, `~regulars`
+`~said`, `~saidnext`, `~regex`, `~userregex`, `~quote`, `~firstseen`,
+`~chatstats`, `~regulars`
 
 Analysis:
 `~whosaid`, `~markers`, `~like`, `~twin`, `~traits`, `~top`, `~vibes`,
@@ -133,6 +134,9 @@ Moderation/utility:
   confidence floors before entering evidence, repeated-token spam is filtered
   out of prompt evidence, and `scripts/persona_rag_preview.py` now prints the
   same snippet/flat evidence sections used by the live prompt.
+- Archive search ergonomics: `~said` now parses `chat=<channel>`, ignores bot
+  command lines by default, stores a short-lived `~saidnext` continuation, and
+  `~userregex` finds archived usernames by regex.
 - Copy/echo checks were added so generated lines are less likely to be straight
   archived quotes or another chatter's recent line.
 - `~generate` exists for tag recipes: users, traits, topic text, channel/year

@@ -11,7 +11,8 @@ CATEGORIES = [
         "tloutput", "chan_autotl", "global_autotl",
     ]),
     ("archive", [
-        "said", "regex", "quote", "firstseen", "chatstats", "regulars",
+        "said", "saidnext", "regex", "userregex", "quote", "firstseen",
+        "chatstats", "regulars",
     ]),
     ("personas", [
         "markov", "mimic", "persona", "hyper",

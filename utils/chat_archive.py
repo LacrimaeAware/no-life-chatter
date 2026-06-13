@@ -516,7 +516,7 @@ def context_window(message_id: int, channel: str, before: int = 2, after: int = 
     return list(reversed(prev)) + [r[:3] for r in hit] + nxt
 
 
-def said(author: str, phrase: str, limit: int = 3):
+def _said_legacy(author: str, phrase: str, limit: int = 3):
     """All matches of phrase by author: (total_count, [(sent_at, channel, content)...]).
 
     CROSS JOIN forces SQLite to run the FTS match once and probe messages by
@@ -559,8 +559,8 @@ def said(author: str, phrase: str, limit: int = 3):
     return total, rows
 
 
-def nearest_author_lines(author: str, phrase: str, limit: int = 3,
-                         min_score: float = 0.82):
+def _nearest_author_lines_legacy(author: str, phrase: str, limit: int = 3,
+                                 min_score: float = 0.82):
     """Closest lines by author after punctuation/case/spacing normalization.
 
     Intended as a fallback for "did they basically say this?" It does not
@@ -578,6 +578,105 @@ def nearest_author_lines(author: str, phrase: str, limit: int = 3,
         f"SELECT sent_at, channel, content FROM messages "
         f"WHERE author IN ({author_placeholders})",
         author_params,
+    ).fetchall()
+
+    scored = []
+    for sent_at, channel, content in rows:
+        hay = line_match_key(content)
+        if not hay:
+            continue
+        max_len = max(len(needle), len(hay))
+        if max_len and abs(len(needle) - len(hay)) / max_len > 0.65:
+            continue
+        hay_tokens = set(hay.split())
+        if not hay_tokens:
+            continue
+        overlap = len(needle_tokens & hay_tokens)
+        if overlap == 0:
+            continue
+        overlap_share = overlap / min(len(needle_tokens), len(hay_tokens))
+        if overlap_share < 0.45 and needle not in hay and hay not in needle:
+            continue
+        score = line_similarity(phrase, content)
+        if score >= min_score:
+            scored.append((score, sent_at, channel, content))
+
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return scored[:limit]
+
+
+def _command_filter(include_commands: bool, alias: str = "m") -> tuple[str, list[str]]:
+    if include_commands:
+        return "", []
+    return f" AND ltrim({alias}.content) NOT LIKE ? ", [config.PREFIX + "%"]
+
+
+def _channel_filter(channel: str = None, alias: str = "m") -> tuple[str, list[str]]:
+    if not channel:
+        return "", []
+    return f" AND {alias}.channel = ? ", [normalize_channel(channel)]
+
+
+def said(author: str, phrase: str, limit: int = 3, offset: int = 0,
+         channel: str = None, include_commands: bool = False):
+    """All matches of phrase by author: (total_count, [(sent_at, channel, content)...])."""
+    conn = connect()
+    keys = author_keys(author)
+    author_placeholders, author_params = _in_clause(keys)
+    chan_sql, chan_params = _channel_filter(channel)
+    cmd_sql, cmd_params = _command_filter(include_commands)
+    searchable = re.sub(r"[^0-9A-Za-z]+", " ", phrase).strip()
+    if not searchable:
+        like = "%" + phrase.replace("\\", r"\\").replace("%", r"\%").replace("_", r"\_") + "%"
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM messages m WHERE m.author IN ({author_placeholders}) "
+            f"{chan_sql}{cmd_sql}"
+            r"AND m.content LIKE ? ESCAPE '\'",
+            [*author_params, *chan_params, *cmd_params, like],
+        ).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT m.sent_at, m.channel, m.content FROM messages m "
+            f"WHERE m.author IN ({author_placeholders}) "
+            f"{chan_sql}{cmd_sql}"
+            r"AND m.content LIKE ? ESCAPE '\' ORDER BY m.sent_at LIMIT ? OFFSET ?",
+            [*author_params, *chan_params, *cmd_params, like, limit, offset],
+        ).fetchall()
+        return total, rows
+    q = _fts_phrase(phrase)
+    total = conn.execute(
+        "SELECT COUNT(*) FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
+        f"{chan_sql}{cmd_sql}",
+        [q, *author_params, *chan_params, *cmd_params],
+    ).fetchone()[0]
+    rows = conn.execute(
+        "SELECT m.sent_at, m.channel, m.content FROM messages_fts f "
+        "CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
+        f"{chan_sql}{cmd_sql}"
+        "ORDER BY m.sent_at LIMIT ? OFFSET ?",
+        [q, *author_params, *chan_params, *cmd_params, limit, offset],
+    ).fetchall()
+    return total, rows
+
+
+def nearest_author_lines(author: str, phrase: str, limit: int = 3,
+                         min_score: float = 0.82, channel: str = None,
+                         include_commands: bool = False):
+    """Closest lines by author after punctuation/case/spacing normalization."""
+    needle = line_match_key(phrase)
+    if not needle or len(needle) < 8:
+        return []
+    needle_tokens = set(needle.split())
+    conn = connect()
+    keys = author_keys(author)
+    author_placeholders, author_params = _in_clause(keys)
+    chan_sql, chan_params = _channel_filter(channel, alias="m")
+    cmd_sql, cmd_params = _command_filter(include_commands)
+    rows = conn.execute(
+        f"SELECT m.sent_at, m.channel, m.content FROM messages m "
+        f"WHERE m.author IN ({author_placeholders}){chan_sql}{cmd_sql}",
+        [*author_params, *chan_params, *cmd_params],
     ).fetchall()
 
     scored = []
@@ -835,7 +934,7 @@ def utterances_for(author: str, channel: str = None, year: int = None,
     return [c for _s, _a, c in merge_utterances(rows, gap_seconds)]
 
 
-def search_all(phrase: str, limit: int = 10):
+def _search_all_legacy(phrase: str, limit: int = 10):
     """Full-text search across all authors: [(sent_at, channel, author, content)...]."""
     conn = connect()
     return conn.execute(
@@ -844,6 +943,64 @@ def search_all(phrase: str, limit: int = 10):
         "ORDER BY m.sent_at LIMIT ?",
         (_fts_phrase(phrase), limit),
     ).fetchall()
+
+
+def search_all_count(phrase: str, channel: str = None,
+                     include_commands: bool = False) -> int:
+    """Count full-text matches across all authors."""
+    conn = connect()
+    chan_sql, chan_params = _channel_filter(channel)
+    cmd_sql, cmd_params = _command_filter(include_commands)
+    return conn.execute(
+        "SELECT COUNT(*) FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}",
+        [_fts_phrase(phrase), *chan_params, *cmd_params],
+    ).fetchone()[0]
+
+
+def search_all(phrase: str, limit: int = 10, offset: int = 0,
+               channel: str = None, include_commands: bool = False):
+    """Full-text search across all authors: [(sent_at, channel, author, content)...]."""
+    conn = connect()
+    chan_sql, chan_params = _channel_filter(channel)
+    cmd_sql, cmd_params = _command_filter(include_commands)
+    return conn.execute(
+        "SELECT m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
+        "CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}"
+        "ORDER BY m.sent_at LIMIT ? OFFSET ?",
+        [_fts_phrase(phrase), *chan_params, *cmd_params, limit, offset],
+    ).fetchall()
+
+
+def author_name_search(pattern: str, channel: str = None, limit: int = 12,
+                       include_bots: bool = False):
+    """Regex-search archived usernames. Returns [(author, count, first, last), ...]."""
+    import re as _re
+    try:
+        rx = _re.compile(pattern, _re.IGNORECASE | _re.UNICODE)
+    except _re.error:
+        return None
+    conn = connect()
+    if channel:
+        rows = conn.execute(
+            "SELECT author, COUNT(*), MIN(sent_at), MAX(sent_at) FROM messages "
+            "WHERE channel = ? GROUP BY author",
+            (normalize_channel(channel),),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT author, COUNT(*), MIN(sent_at), MAX(sent_at) FROM messages "
+            "GROUP BY author",
+        ).fetchall()
+    out = []
+    for author, count, first, last in rows:
+        if not include_bots and _is_noise_author(author):
+            continue
+        if rx.search(author or ""):
+            out.append((author, count, first, last))
+    out.sort(key=lambda row: (-row[1], row[0]))
+    return out[:limit]
 
 
 def regex_search(pattern, author=None, limit=5, scan_cap=300000):
