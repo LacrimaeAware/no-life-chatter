@@ -65,11 +65,11 @@ AXES = [
         select_label="not_valid",
         question="Validity",
         guidance=(
-            "Is a person trying to communicate something interpretable to another person or "
-            "the chat? Valid includes normal text, emotes, action shorthand, ASCII/image posts, "
-            "and bot-directed messages when they still reveal the person's intent. Not valid "
-            "means bot/mod output, boilerplate command output, pure noise, or no decipherable "
-            "semantic/social content."
+            "Is this useful as human chat data for the bot/classifier? Valid means a person is "
+            "communicating interpretable semantic or social content. This can include text, "
+            "emotes, action shorthand, ASCII/image posts, or bot-directed messages when they "
+            "reveal intent/personality. Not valid means bot/mod output, command boilerplate, "
+            "pure noise, or no decipherable chat meaning."
         ),
         options=["not_valid", "valid", "unclear"],
         option_labels={
@@ -78,9 +78,9 @@ AXES = [
             "unclear": "unclear",
         },
         option_help={
-            "valid": "Human communication with interpretable intent or chat effect. Includes short slang, emotes, tucks, ASCII/image posts, and bot-directed prompts if they reveal personality.",
-            "not_valid": "Bot/mod output, command boilerplate, pure noise/help syntax, or text with no decipherable semantic/social content.",
-            "unclear": "You cannot tell whether a person is communicating something meaningful.",
+            "valid": "Useful human chat data: a person is communicating semantic/social content or revealing personality.",
+            "not_valid": "Not useful as human chat data: bot/mod output, command boilerplate, pure noise/help syntax, or no decipherable meaning.",
+            "unclear": "You cannot tell whether this is useful human chat data.",
         },
         include_realish_only=False,
         option_keys=["q", "w", "r"],
@@ -91,10 +91,11 @@ AXES = [
         select_label="divergent",
         question="Literal alignment",
         guidance=(
-            "Does the intended direction match the message's conventional meaning, with no hidden "
-            "reversal? Judge the main proposition/stance, not every imprecise detail. Figurative "
-            "or auxiliary wording can still be aligned when the overall claim points the same way. "
-            "Hyperbole is usually aligned; magnitude distortion is a different axis."
+            "Where does the real meaning live? Aligned means the main intended meaning is on the "
+            "surface layer: the surface/conventional reading carries the point. Divergent means "
+            "the real point lives in a second layer: hidden implication, reversal, sarcasm, "
+            "role-framing, or subtext is more important than the surface wording. Judge the main "
+            "claim/stance, not every imprecise auxiliary detail."
         ),
         options=["divergent", "aligned", "unclear"],
         option_labels={
@@ -103,9 +104,9 @@ AXES = [
             "unclear": "unclear / no stable meaning",
         },
         option_help={
-            "aligned": "No hidden reversal. The main sentiment/proposition is meant in the same direction, including normal slang, emotes, greetings, fantasy phrasing, or imprecise auxiliary insults.",
-            "divergent": "Irony, sarcasm, reversal, or hidden meaning changes the intended direction from what the words/conventional form appear to say.",
-            "unclear": "No stable/cultural meaning, untranslated line, or you cannot tell whether it is straight vs hidden/reversed.",
+            "aligned": "Surface/conventional meaning is enough. No important hidden second-layer reading; imprecise details or ordinary slang can still be aligned.",
+            "divergent": "Second-layer meaning dominates: irony, sarcasm, reversal, role-framing, taboo fake claim, or subtext matters more than the surface.",
+            "unclear": "No stable/cultural meaning, untranslated line, or you cannot tell whether the point is surface vs second-layer.",
         },
         option_keys=["q", "w", "r"],
     ),
@@ -115,9 +116,10 @@ AXES = [
         select_label="overstated",
         question="Magnitude distortion",
         guidance=(
-            "Magnitude is a distortion scale. Understated is negative distortion, zero means "
-            "normal strength or no meaningful magnitude to judge, and overstated is positive "
-            "distortion/hyperbole. This axis is separate from literal alignment."
+            "Magnitude compares outward expressed intensity to likely intended/internal intensity. "
+            "Understated means outward intensity is lower than the implied/internal intensity. "
+            "Zero means normal strength or no magnitude to judge. Overstated means outward "
+            "intensity is higher than intended/internal intensity: hyperbole."
         ),
         options=["understated", "literal_or_normal", "overstated", "unclear"],
         option_labels={
@@ -127,9 +129,9 @@ AXES = [
             "unclear": "unclear",
         },
         option_help={
-            "understated": "Negative distortion: wording downplays the intended strength.",
-            "literal_or_normal": "Zero distortion: ordinary strength, or no meaningful magnitude claim to judge.",
-            "overstated": "Positive distortion: the direction may be sincere, but the intensity is exaggerated.",
+            "understated": "Negative distortion: external expression downplays the likely internal/intended intensity.",
+            "literal_or_normal": "Zero distortion: external intensity matches intent, or there is no meaningful magnitude claim to judge.",
+            "overstated": "Positive distortion: external expression is stronger than likely internal/intended intensity.",
             "unclear": "You cannot judge whether the magnitude is normal, understated, or overstated.",
         },
         option_keys=["q", "w", "e", "r"],
@@ -138,27 +140,26 @@ AXES = [
         target="play_frame",
         axis_label="play_frame",
         select_label="playful",
-        question="Seriousness / bit frame",
+        question="Roleplay / performed stance",
         guidance=(
-            "Is this presented as straightforward serious/plain chat, or as a bit/unserious "
-            "performance? Hyperbole is only one clue, not the definition: exaggerated wording "
-            "can still be sincere. Use bit-as-cover when the bit form is doing cover work for "
-            "criticism, aggression, status, or a risky stance."
+            "Is the speaker adopting a performed role, voice, emotion, or social stance for "
+            "effect? This is about transparency of stance, not magnitude. Normal emote/slang "
+            "use is zero unless it clearly creates a performed persona or fake stance."
         ),
-        options=["low_or_none", "playful", "masking_play", "unclear"],
+        options=["anti_roleplay", "low_or_none", "playful", "unclear"],
         option_labels={
-            "low_or_none": "serious/plain or no bit",
-            "playful": "bit / unserious",
-            "masking_play": "bit used as cover",
+            "anti_roleplay": "negative / anti-bit sincerity",
+            "low_or_none": "zero / ordinary stance",
+            "playful": "positive / roleplay stance",
             "unclear": "unclear",
         },
         option_help={
-            "low_or_none": "Straightforward, serious, neutral, or no visible bit-frame. This includes ordinary greetings, questions, and plain insults.",
-            "playful": "The message is performed as a joke, riff, meme move, or unserious chat bit.",
-            "masking_play": "The bit form appears to cover criticism, aggression, status work, embarrassment, or a socially risky stance.",
-            "unclear": "You cannot tell whether the message is serious/plain or bit-framed.",
+            "anti_roleplay": "Explicitly refuses the bit/role or insists on plain sincerity. Use sparingly.",
+            "low_or_none": "Zero: ordinary transparent stance, normal emote/slang use, or no clear performed role.",
+            "playful": "Positive: the speaker adopts a role, fake emotion, performed authority, doomer persona, mock anger, or other staged stance for effect.",
+            "unclear": "You cannot tell whether there is a performed role/stance.",
         },
-        option_keys=["w", "e", "t", "r"],
+        option_keys=["q", "w", "e", "r"],
     ),
     AxisQueueSpec(
         target="masking_facework",

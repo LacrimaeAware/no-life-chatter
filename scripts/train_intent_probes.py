@@ -2,7 +2,7 @@
 
 This is the first supervised pass after the v1 irony review queue.  The
 important change is that "irony" is no longer treated as one overloaded label:
-we train separate heads for literal alignment, hyperbole, play frame, masking,
+we train separate heads for literal alignment, hyperbole, roleplay/frame, masking,
 hostility, and shock/attention.
 
 Inputs and outputs live under ignored paths by default:
@@ -78,8 +78,8 @@ TARGETS = [
     ),
     TargetSpec(
         name="play_frame",
-        title="Play frame",
-        description="Whether the utterance is framed as play/bit rather than plain serious talk.",
+        title="Roleplay / performed stance",
+        description="Whether the utterance adopts a performed role, voice, emotion, or stance.",
         positive="playful",
         labeler=lambda row: _play_label(row),
     ),
