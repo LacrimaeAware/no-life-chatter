@@ -133,25 +133,25 @@ AXES = [
         target="play_frame",
         axis_label="play_frame",
         select_label="playful",
-        question="Play frame",
+        question="Seriousness / bit frame",
         guidance=(
-            "Low/none is mostly plain serious talk. Playful is framed as a bit or joke. "
-            "Masking-play is joke form that appears to cover criticism, aggression, or status work."
+            "Is this presented as straightforward serious/plain chat, or as a bit/unserious "
+            "performance? Hyperbole is only one clue, not the definition: exaggerated wording "
+            "can still be sincere. Use bit-as-cover when the bit form is doing cover work for "
+            "criticism, aggression, status, or a risky stance."
         ),
-        options=["low_or_none", "playful", "masking_play", "unclear", "not_applicable"],
+        options=["low_or_none", "playful", "masking_play", "unclear"],
         option_labels={
-            "low_or_none": "not playful",
-            "playful": "playful / bit",
-            "masking_play": "playful but masking",
+            "low_or_none": "serious/plain or no bit",
+            "playful": "bit / unserious",
+            "masking_play": "bit used as cover",
             "unclear": "unclear",
-            "not_applicable": "no play-frame signal",
         },
         option_help={
-            "low_or_none": "Mostly plain serious or neutral talk.",
-            "playful": "Clearly framed as a bit, joke, riff, or unserious performance.",
-            "masking_play": "Joke form seems to cover criticism, aggression, status, or risky stance.",
-            "unclear": "Cannot tell if it is a bit.",
-            "not_applicable": "No usable framing signal.",
+            "low_or_none": "Straightforward, serious, neutral, or no visible bit-frame. This includes ordinary greetings, questions, and plain insults.",
+            "playful": "The message is performed as a joke, riff, meme move, or unserious chat bit.",
+            "masking_play": "The bit form appears to cover criticism, aggression, status work, embarrassment, or a socially risky stance.",
+            "unclear": "You cannot tell whether the message is serious/plain or bit-framed.",
         },
     ),
     AxisQueueSpec(
