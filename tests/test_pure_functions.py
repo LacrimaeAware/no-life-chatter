@@ -441,6 +441,7 @@ class ResidentPersonaPureTests(unittest.TestCase):
                 "topic_chance": 3,
                 "topic_curve": -1,
                 "directed_chance": -1,
+                "directed_cooldown": -3,
                 "idle_chance": -2,
                 "cooldown": -5,
                 "reply_to_trigger": "off",
@@ -452,6 +453,7 @@ class ResidentPersonaPureTests(unittest.TestCase):
         self.assertEqual(state["topic_chance"], 1.0)
         self.assertEqual(state["topic_curve"], 0.25)
         self.assertEqual(state["directed_chance"], 0.0)
+        self.assertEqual(state["directed_cooldown"], 0.0)
         self.assertEqual(state["idle_chance"], 0.0)
         self.assertEqual(state["cooldown"], 0.0)
         self.assertFalse(state["reply_to_trigger"])

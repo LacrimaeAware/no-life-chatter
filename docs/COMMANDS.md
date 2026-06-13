@@ -51,7 +51,7 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~generate list` / `~generate del <name>` | anyone | List or delete your saved recipes. |
 | `~botpersona status [chat=<channel>]` | super admin | Inspect the resident persona for a channel. |
 | `~botpersona off [chat=<channel>]` | super admin | Clear the resident persona for a channel. |
-| `~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular\|response\|random\|silent] [chance=] [topic=] [curve=] [idle=]` | super admin | Set a channel-scoped resident persona that can autonomously reply and idle-chat. |
+| `~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular\|response\|random\|silent] [chance=] [topic=] [curve=] [directed=] [directed_cooldown=] [idle=]` | super admin | Set a channel-scoped resident persona that can autonomously reply and idle-chat. |
 | `~botmode regular\|response\|random\|silent [minutes] [chat=<channel>]` | super admin | Change resident persona response mode and optional expiry. |
 | `~botcontext [chat=<channel>] <text\|clear>` | super admin | Set extra standing instruction for the resident persona. |
 | `~botchance <base> [directed] [chat=<channel>] [topic=] [idle=] [greeting=] [cooldown=]` | super admin | Tune resident persona reaction, topic-boost, idle, greeting, and cooldown probabilities. |

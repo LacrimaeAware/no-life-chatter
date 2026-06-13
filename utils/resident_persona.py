@@ -23,6 +23,7 @@ DEFAULTS = {
     "topic_chance": 0.16,
     "topic_curve": 2.0,
     "directed_chance": 0.65,
+    "directed_cooldown": 0.0,
     "greeting_chance": 0.75,
     "cooldown": 20.0,
     "idle_chance": 0.025,
@@ -72,8 +73,8 @@ def _normalize_state(channel: str, state: dict) -> dict:
         out["mode"] = "regular"
     for key in (
         "chance", "topic_chance", "directed_chance", "greeting_chance",
-        "cooldown", "idle_chance", "idle_after", "idle_interval",
-        "idle_cooldown", "topic_curve", "until",
+        "cooldown", "directed_cooldown", "idle_chance", "idle_after",
+        "idle_interval", "idle_cooldown", "topic_curve", "until",
     ):
         try:
             out[key] = float(out.get(key) or 0)
@@ -81,7 +82,7 @@ def _normalize_state(channel: str, state: dict) -> dict:
             out[key] = float(DEFAULTS.get(key, 0))
     for key in ("chance", "topic_chance", "directed_chance", "greeting_chance", "idle_chance"):
         out[key] = _prob(out[key])
-    for key in ("cooldown", "idle_after", "idle_interval", "idle_cooldown"):
+    for key in ("cooldown", "directed_cooldown", "idle_after", "idle_interval", "idle_cooldown"):
         out[key] = max(0.0, out[key])
     out["topic_curve"] = max(0.25, out["topic_curve"])
     out["until"] = max(0.0, out["until"])

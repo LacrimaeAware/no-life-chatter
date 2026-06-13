@@ -248,6 +248,9 @@ class MessageService:
 
     def _directed_to_resident(self, content, state):
         names = [state.get("persona") or ""]
+        bot_name = (self.bot.nick or "").strip()
+        if bot_name:
+            names.append(bot_name)
         prefix = (state.get("prefix") or "").replace("\U0001f4e3", "").strip()
         if prefix:
             display = prefix.split()[0].strip()
@@ -359,15 +362,19 @@ class MessageService:
             f"{author} just said in chat: {content}\n"
             "You are temporarily hanging out as this chatter, not answering as an assistant. "
             "Reply only if this chatter would naturally jump in here. "
-            "If the best move is to stay quiet, output exactly STOP. "
             "Do not mention being a bot or a persona. Do not include any name label or prefix; "
             "the chat system will add the emote prefix."
         )
         if directed:
-            instruction += " This message is directed at you, so a reply is usually natural."
-        elif greeting:
+            instruction += (
+                " This message is directed at you; answer it in-character. "
+                "Do not output STOP unless the message is impossible to answer safely."
+            )
+        else:
+            instruction += " If the best move is to stay quiet, output exactly STOP."
+        if not directed and greeting:
             instruction += " This looks like a greeting; a short normal greeting back is usually natural."
-        elif affinity >= 0.35:
+        elif not directed and affinity >= 0.35:
             instruction += (
                 f" This topic appears in your archive ({hits} relevant hits), "
                 "so it may be something you would naturally jump into."
@@ -522,7 +529,10 @@ class MessageService:
             if chance <= 0 or random.random() >= chance:
                 return False
 
-            cooldown = float(state.get("cooldown", 180.0))
+            cooldown = float(
+                state.get("directed_cooldown", 0.0)
+                if directed else state.get("cooldown", 180.0)
+            )
             if time.time() - self._resident_last.get(channel, 0) < cooldown:
                 return False
 

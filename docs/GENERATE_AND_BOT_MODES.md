@@ -63,7 +63,7 @@ Live commands:
 
     ~botpersona status [chat=<channel>]
     ~botpersona off [chat=<channel>]
-    ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent] [chance=] [topic=] [curve=] [idle=]
+    ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent] [chance=] [topic=] [curve=] [directed=] [directed_cooldown=] [idle=]
     ~botmode regular|response|random|silent [minutes] [chat=<channel>]
     ~botcontext [chat=<channel>] <free text|clear>
     ~botchance <base> [directed] [chat=<channel>] [topic=] [idle=] [greeting=] [cooldown=]
