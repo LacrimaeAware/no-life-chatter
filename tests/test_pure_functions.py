@@ -435,13 +435,24 @@ class ResidentPersonaPureTests(unittest.TestCase):
     def test_normalize_state_clamps_probability_fields(self):
         state = resident_persona._normalize_state(
             "ThickPoo",
-            {"persona": "NormanBiz", "chance": 2, "directed_chance": -1, "cooldown": -5},
+            {
+                "persona": "NormanBiz",
+                "chance": 2,
+                "topic_chance": 3,
+                "directed_chance": -1,
+                "idle_chance": -2,
+                "cooldown": -5,
+                "reply_to_trigger": "off",
+            },
         )
         self.assertEqual(state["channel"], "thickpoo")
         self.assertEqual(state["persona"], "normanbiz")
         self.assertEqual(state["chance"], 1.0)
+        self.assertEqual(state["topic_chance"], 1.0)
         self.assertEqual(state["directed_chance"], 0.0)
+        self.assertEqual(state["idle_chance"], 0.0)
         self.assertEqual(state["cooldown"], 0.0)
+        self.assertFalse(state["reply_to_trigger"])
 
 
 class PersonaRetrievalPureTests(unittest.TestCase):

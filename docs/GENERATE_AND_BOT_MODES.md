@@ -52,8 +52,9 @@ using one real chatter voice. Full `~generate` recipes and saved combos as
 resident personas are still future work.
 
 - **regular** — may respond to normal incoming chat, with higher odds for
-  greetings and direct messages, capped by a cooldown and output filter.
-  Optional extra prompt context can steer the standing roleplay.
+  direct messages, greetings, and topics the persona has many archived hits
+  for. It can also send rare idle/empty-chat lines after chat has been quiet,
+  capped by a bot-streak guard.
 - **response** — only replies when @mentioned, in the resident persona.
 - **random** — random chance per message (chance settable by command).
 - **silent** — commands only.
@@ -62,14 +63,16 @@ Live commands:
 
     ~botpersona status [chat=<channel>]
     ~botpersona off [chat=<channel>]
-    ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent]
+    ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent] [chance=] [topic=] [idle=]
     ~botmode regular|response|random|silent [minutes] [chat=<channel>]
     ~botcontext [chat=<channel>] <free text|clear>
-    ~botchance <base> [directed] [chat=<channel>]
+    ~botchance <base> [directed] [chat=<channel>] [topic=] [idle=] [greeting=] [cooldown=]
 
 Time-limited modes expire automatically. Resident output can also carry a
 configured prefix, which is live runtime state in `data/unsynced` rather than
-public repository config.
+public repository config. Triggered resident replies use Twitch reply tags when
+the incoming message has an ID and the installed TwitchIO websocket exposes the
+low-level reply method; otherwise they fall back to normal channel send.
 
 ## 4. Admin & abuse controls (PARTLY IMPLEMENTED)
 
@@ -88,7 +91,8 @@ public repository config.
 - Current resident mode state is `data/unsynced/resident_personas.json`.
 - A future richer volition gate could use a cheap "reply or STAY SILENT"
   classifier before generation. The current live path uses probability,
-  direct/greeting heuristics, cooldown, and a STOP instruction in the persona
-  prompt to keep model calls bounded.
+  direct/greeting heuristics, FTS topic-affinity boost, cooldown, idle-roll
+  limits, and a STOP instruction in the persona prompt to keep model calls
+  bounded.
 - Ban list: data/synced settings DB, cached set, checked first thing in
   process_command. Implemented.

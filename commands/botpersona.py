@@ -5,7 +5,8 @@ description = (
     "Set, inspect, or clear a channel resident persona (super admins).\n"
     "  ~botpersona status [chat=<channel>]\n"
     "  ~botpersona off [chat=<channel>]\n"
-    "  ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent]"
+    "  ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent] "
+    "[chance=] [topic=] [directed=] [greeting=] [cooldown=] [idle=]"
 )
 
 
@@ -14,6 +15,10 @@ def _as_float(value, field):
         return float(value)
     except (TypeError, ValueError):
         raise ValueError(f"{field} must be a number")
+
+
+def _as_bool(value):
+    return str(value).strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _parse(params, current_channel):
@@ -30,12 +35,26 @@ def _parse(params, current_channel):
             flags["mode"] = token.split("=", 1)[1].strip().lower()
         elif low.startswith("chance="):
             flags["chance"] = _as_float(token.split("=", 1)[1], "chance")
+        elif low.startswith("topic="):
+            flags["topic_chance"] = _as_float(token.split("=", 1)[1], "topic")
         elif low.startswith("directed="):
             flags["directed_chance"] = _as_float(token.split("=", 1)[1], "directed")
         elif low.startswith("greeting="):
             flags["greeting_chance"] = _as_float(token.split("=", 1)[1], "greeting")
         elif low.startswith("cooldown="):
             flags["cooldown"] = _as_float(token.split("=", 1)[1], "cooldown")
+        elif low.startswith("idle="):
+            flags["idle_chance"] = _as_float(token.split("=", 1)[1], "idle")
+        elif low.startswith("idle_after="):
+            flags["idle_after"] = _as_float(token.split("=", 1)[1], "idle_after")
+        elif low.startswith("idle_interval="):
+            flags["idle_interval"] = _as_float(token.split("=", 1)[1], "idle_interval")
+        elif low.startswith("idle_cooldown="):
+            flags["idle_cooldown"] = _as_float(token.split("=", 1)[1], "idle_cooldown")
+        elif low.startswith(("max_streak=", "streak=")):
+            flags["max_bot_streak"] = int(_as_float(token.split("=", 1)[1], "max_streak"))
+        elif low.startswith("reply="):
+            flags["reply_to_trigger"] = _as_bool(token.split("=", 1)[1])
         elif low.startswith("prefix="):
             flags["prefix"] = token.split("=", 1)[1].replace("\\s", " ")
         else:

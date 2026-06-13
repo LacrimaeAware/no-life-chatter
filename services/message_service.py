@@ -4,6 +4,7 @@ import aiohttp
 import asyncio
 import random
 import time
+from collections import deque
 from google.oauth2 import service_account
 from google.cloud import translate_v2 as translate
 from utils.user_settings import get_user_settings
@@ -123,6 +124,12 @@ class MessageService:
         self._last_reaction = {}  # channel -> last persona-reaction timestamp
         self._resident_last = {}  # channel -> last resident-persona timestamp
         self._resident_bot_streak = {}  # channel -> bot resident lines since real chat
+        self._resident_last_human = {}  # channel -> last non-noise chatter timestamp
+        self._resident_recent_authors = {}  # channel -> recent non-noise chatters
+        self._resident_idle_checked = {}  # channel -> last idle-roll timestamp
+        self._resident_affinity_cache = {}  # (persona, terms) -> (ts, affinity, hits)
+        self._resident_idle_task = None
+        self._resident_started = time.time()
         self.can_translate = self.deepl_enabled or (self.translator is not None)
         if self.deepl_enabled:
             logging.info("Translation: DeepL enabled.")
@@ -201,7 +208,75 @@ class MessageService:
             text,
         ))
 
-    def _resident_prompt(self, state, message, directed, greeting):
+    def _observe_resident_human(self, message):
+        author = message.author.name if message.author else ""
+        if self._noise_author(author):
+            return
+        channel = message.channel.name
+        self._resident_last_human[channel] = time.time()
+        self._resident_bot_streak[channel] = 0
+        authors = self._resident_recent_authors.setdefault(channel, deque(maxlen=20))
+        lowered = author.lower()
+        try:
+            authors.remove(lowered)
+        except ValueError:
+            pass
+        authors.appendleft(lowered)
+
+    def _resident_topic_affinity(self, state, content):
+        """Cheap organic-interest signal: did this persona talk about this topic?"""
+        from utils import chat_archive
+
+        persona = state.get("persona") or ""
+        channel = state.get("channel") or ""
+        terms = tuple(chat_archive.query_terms(content, max_terms=8))
+        if not persona or not terms:
+            return 0.0, 0
+        key = (persona, terms)
+        cached = self._resident_affinity_cache.get(key)
+        now_ts = time.time()
+        if cached and now_ts - cached[0] < 60:
+            return cached[1], cached[2]
+        hits = chat_archive.search_author_hits(persona, " ".join(terms), limit=12)
+        seen = {}
+        same_channel = 0
+        for _id, _sent_at, hit_channel, content in hits:
+            line_key = chat_archive.line_match_key(content)
+            if not line_key or line_key in seen:
+                continue
+            seen[line_key] = True
+            if chat_archive.normalize_channel(hit_channel) == channel:
+                same_channel += 1
+        hit_count = len(seen)
+        affinity = 0.0
+        if hit_count:
+            affinity = min(1.0, (hit_count / 8.0) + min(same_channel, 3) * 0.05)
+        self._resident_affinity_cache[key] = (now_ts, affinity, hit_count)
+        return affinity, hit_count
+
+    def _resident_reply_chance(self, state, message, directed, greeting):
+        mode = state.get("mode") or "regular"
+        if mode == "response":
+            return (float(state.get("directed_chance", 0.65)) if directed else 0.0), 0.0, 0
+        if mode == "random":
+            return (
+                float(state.get("directed_chance", 0.65) if directed else state.get("chance", 0.02)),
+                0.0,
+                0,
+            )
+        if directed:
+            return float(state.get("directed_chance", 0.65)), 0.0, 0
+        if greeting:
+            return max(float(state.get("greeting_chance", 0.75)), float(state.get("chance", 0.02))), 0.0, 0
+
+        base = float(state.get("chance", 0.02))
+        topic_chance = max(base, float(state.get("topic_chance", 0.16)))
+        affinity, hits = self._resident_topic_affinity(state, message.content)
+        if affinity <= 0:
+            return base, affinity, hits
+        return base + (topic_chance - base) * affinity, affinity, hits
+
+    def _resident_prompt(self, state, message, directed, greeting, affinity=0.0, hits=0):
         author = message.author.name if message.author else "someone"
         content = message.content or ""
         context = state.get("context") or ""
@@ -217,9 +292,132 @@ class MessageService:
             instruction += " This message is directed at you, so a reply is usually natural."
         elif greeting:
             instruction += " This looks like a greeting; a short normal greeting back is usually natural."
+        elif affinity >= 0.35:
+            instruction += (
+                f" This topic appears in your archive ({hits} relevant hits), "
+                "so it may be something you would naturally jump into."
+            )
         if context:
             instruction += f"\nStanding instruction: {context}"
         return instruction
+
+    def _resident_idle_prompt(self, state):
+        channel = state.get("channel") or ""
+        context = state.get("context") or ""
+        last_human = self._resident_last_human.get(channel, self._resident_started)
+        quiet_for = max(0, int(time.time() - last_human))
+        recent = list(self._resident_recent_authors.get(channel, []))[:6]
+        instruction = (
+            f"Chat in #{channel} has been quiet for about {quiet_for // 60} minutes. "
+            "You are temporarily hanging out as this chatter, not answering as an assistant. "
+            "Write one short natural empty-chat/idle Twitch line only if this chatter would "
+            "actually say something into the lull. It can be bored, impatient, observational, "
+            "or @ a recently active chatter if that feels natural. If silence is better, output exactly STOP. "
+            "Do not mention being a bot or a persona. Do not include any name label or prefix; "
+            "the chat system will add the emote prefix."
+        )
+        if recent:
+            instruction += "\nRecently active chatters you may address if natural: " + ", ".join(recent)
+        if context:
+            instruction += f"\nStanding instruction: {context}"
+        return instruction
+
+    async def _send_resident_line(self, channel, line, state, trigger_message=None):
+        if trigger_message and state.get("reply_to_trigger", True):
+            msg_id = (
+                getattr(trigger_message, "id", None)
+                or (getattr(trigger_message, "tags", None) or {}).get("id")
+            )
+            ws = None
+            try:
+                ws = channel._fetch_websocket()
+            except Exception:
+                ws = getattr(channel, "_ws", None)
+            if msg_id and ws and hasattr(ws, "reply"):
+                try:
+                    if hasattr(channel, "check_content"):
+                        channel.check_content(line)
+                    if hasattr(channel, "check_bucket"):
+                        channel.check_bucket(channel.name)
+                    await ws.reply(msg_id, f"PRIVMSG #{channel.name} :{line}\r\n")
+                    return "reply"
+                except Exception as e:
+                    logging.warning(f"resident reply send failed, falling back to normal send: {e}")
+        await channel.send(line)
+        return "send"
+
+    def start_resident_idle_loop(self):
+        if self._resident_idle_task and not self._resident_idle_task.done():
+            return
+        self._resident_idle_task = asyncio.create_task(self._resident_idle_loop())
+
+    async def _resident_idle_loop(self):
+        await asyncio.sleep(5)
+        while True:
+            try:
+                from utils import resident_persona
+                for state in resident_persona.active_channels():
+                    await self._maybe_resident_idle(state)
+            except Exception as e:
+                logging.warning(f"resident idle loop failed: {e}")
+            await asyncio.sleep(15)
+
+    async def _maybe_resident_idle(self, state):
+        from utils import persona_llm, resident_persona, reaction_tracker
+        from utils.output_filter import is_clean
+
+        if state.get("mode") not in {"regular", "random"}:
+            return False
+        channel_name = state.get("channel")
+        channel = self.bot.get_channel(channel_name) if hasattr(self.bot, "get_channel") else None
+        if not channel:
+            return False
+        now_ts = time.time()
+        interval = max(10.0, float(state.get("idle_interval", 75.0)))
+        if now_ts - self._resident_idle_checked.get(channel_name, 0) < interval:
+            return False
+        self._resident_idle_checked[channel_name] = now_ts
+
+        idle_after = float(state.get("idle_after", 180.0))
+        last_human = self._resident_last_human.get(channel_name, self._resident_started)
+        if now_ts - last_human < idle_after:
+            return False
+        idle_cooldown = float(state.get("idle_cooldown", 240.0))
+        if now_ts - self._resident_last.get(channel_name, 0) < idle_cooldown:
+            return False
+        max_streak = int(state.get("max_bot_streak", 3))
+        if self._resident_bot_streak.get(channel_name, 0) >= max_streak:
+            return False
+        chance = float(state.get("idle_chance", 0.025))
+        if chance <= 0 or random.random() >= chance:
+            return False
+
+        line = await persona_llm.generate(
+            state.get("persona"),
+            channel_name,
+            self._resident_idle_prompt(state),
+            mode="normal",
+            copy_strategy="drop",
+            invoked_by="resident-idle",
+            candidates=1,
+        )
+        if not line or is_stop_followup(line):
+            return False
+        line = resident_persona.format_line(state, line)
+        if not line or not is_clean(line):
+            return False
+        if len(line) > 450:
+            line = line[:449] + "..."
+        self._resident_last[channel_name] = now_ts
+        self._resident_bot_streak[channel_name] = self._resident_bot_streak.get(channel_name, 0) + 1
+        logging.info(f"Resident idle in #{channel_name} as {state.get('persona')}: {line!r}")
+        await self._send_resident_line(channel, line, state)
+        reaction_tracker.watch(channel_name, line, {
+            "kind": "resident_idle",
+            "persona": state.get("persona"),
+            "mode": state.get("mode"),
+        })
+        return True
 
     async def maybe_resident_react(self, message):
         """Channel-scoped resident persona mode controlled by live state."""
@@ -242,30 +440,10 @@ class MessageService:
             if normalize_author(author) == normalize_author(persona):
                 return False
 
-            # A real chatter has spoken, so the resident bot is no longer
-            # talking into an empty room after its own previous line.
-            self._resident_bot_streak[channel] = 0
-
-            if self._resident_bot_streak.get(channel, 0) >= int(state.get("max_bot_streak", 2)):
-                return False
-
             mode = state.get("mode") or "regular"
             directed = self._directed_to_resident(message.content, state)
             greeting = self._looks_like_greeting(message.content)
-            if mode == "response" and not directed:
-                return False
-
-            if mode == "random":
-                chance = float(state.get("directed_chance", 0.65) if directed else state.get("chance", 0.02))
-            elif mode == "regular":
-                if directed:
-                    chance = float(state.get("directed_chance", 0.65))
-                elif greeting:
-                    chance = float(state.get("greeting_chance", 0.75))
-                else:
-                    chance = float(state.get("chance", 0.02))
-            else:
-                chance = float(state.get("directed_chance", 0.65) if directed else 0.0)
+            chance, affinity, hits = self._resident_reply_chance(state, message, directed, greeting)
             if chance <= 0 or random.random() >= chance:
                 return False
 
@@ -273,7 +451,7 @@ class MessageService:
             if time.time() - self._resident_last.get(channel, 0) < cooldown:
                 return False
 
-            prompt = self._resident_prompt(state, message, directed, greeting)
+            prompt = self._resident_prompt(state, message, directed, greeting, affinity, hits)
             line = await persona_llm.generate(
                 persona,
                 channel,
@@ -292,13 +470,18 @@ class MessageService:
                 line = line[:449] + "..."
             self._resident_last[channel] = time.time()
             self._resident_bot_streak[channel] = self._resident_bot_streak.get(channel, 0) + 1
-            logging.info(f"Resident persona in #{channel} as {persona}: {line!r}")
-            await message.channel.send(line)
+            sent_as = await self._send_resident_line(message.channel, line, state, trigger_message=message)
+            logging.info(
+                f"Resident persona in #{channel} as {persona} ({sent_as}, "
+                f"chance={chance:.3g}, affinity={affinity:.2g}, hits={hits}): {line!r}"
+            )
             reaction_tracker.watch(channel, line, {
                 "kind": "resident",
                 "persona": persona,
                 "mode": mode,
                 "directed": directed,
+                "affinity": affinity,
+                "hits": hits,
             })
             return True
         except Exception as e:
@@ -396,6 +579,7 @@ class MessageService:
     async def handle_regular_message(self, message):
         logging.info(f"Handling regular message from {message.author.name}: {message.content}")
 
+        self._observe_resident_human(message)
         resident_responded = await self.maybe_resident_react(message)
         if not resident_responded:
             await self.maybe_react(message)

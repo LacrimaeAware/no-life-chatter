@@ -20,10 +20,16 @@ MODES = {"regular", "response", "random", "silent"}
 DEFAULTS = {
     "mode": "regular",
     "chance": 0.02,
+    "topic_chance": 0.16,
     "directed_chance": 0.65,
     "greeting_chance": 0.75,
-    "cooldown": 180.0,
-    "max_bot_streak": 2,
+    "cooldown": 20.0,
+    "idle_chance": 0.025,
+    "idle_after": 180.0,
+    "idle_interval": 75.0,
+    "idle_cooldown": 240.0,
+    "max_bot_streak": 3,
+    "reply_to_trigger": True,
     "prefix": "",
     "context": "",
     "until": 0.0,
@@ -63,14 +69,19 @@ def _normalize_state(channel: str, state: dict) -> dict:
     out["mode"] = str(out.get("mode") or "regular").lower()
     if out["mode"] not in MODES:
         out["mode"] = "regular"
-    for key in ("chance", "directed_chance", "greeting_chance", "cooldown", "until"):
+    for key in (
+        "chance", "topic_chance", "directed_chance", "greeting_chance",
+        "cooldown", "idle_chance", "idle_after", "idle_interval",
+        "idle_cooldown", "until",
+    ):
         try:
             out[key] = float(out.get(key) or 0)
         except Exception:
             out[key] = float(DEFAULTS.get(key, 0))
-    for key in ("chance", "directed_chance", "greeting_chance"):
+    for key in ("chance", "topic_chance", "directed_chance", "greeting_chance", "idle_chance"):
         out[key] = _prob(out[key])
-    out["cooldown"] = max(0.0, out["cooldown"])
+    for key in ("cooldown", "idle_after", "idle_interval", "idle_cooldown"):
+        out[key] = max(0.0, out[key])
     out["until"] = max(0.0, out["until"])
     try:
         out["max_bot_streak"] = int(out.get("max_bot_streak") or DEFAULTS["max_bot_streak"])
@@ -78,6 +89,11 @@ def _normalize_state(channel: str, state: dict) -> dict:
         out["max_bot_streak"] = DEFAULTS["max_bot_streak"]
     out["prefix"] = str(out.get("prefix") or "")
     out["context"] = str(out.get("context") or "")
+    raw_reply = out.get("reply_to_trigger")
+    if isinstance(raw_reply, str):
+        out["reply_to_trigger"] = raw_reply.strip().lower() not in {"0", "false", "no", "off"}
+    else:
+        out["reply_to_trigger"] = bool(raw_reply)
     return out
 
 
@@ -140,8 +156,9 @@ def format_status(state: dict) -> str:
         tail = ", no expiry"
     return (
         f"#{state['channel']}: {state['persona']} mode={state['mode']} "
-        f"chance={state['chance']:.3g} directed={state['directed_chance']:.3g} "
-        f"cooldown={int(state['cooldown'])}s{tail}"
+        f"chance={state['chance']:.3g} topic={state['topic_chance']:.3g} "
+        f"directed={state['directed_chance']:.3g} cooldown={int(state['cooldown'])}s "
+        f"idle={state['idle_chance']:.3g}/{int(state['idle_interval'])}s{tail}"
     )
 
 

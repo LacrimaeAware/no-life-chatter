@@ -74,6 +74,7 @@ class Bot(commands.Bot):
     async def event_ready(self):
         logging.info(f"Ready | Logged in as {self.nick} (id {self.user_id})")
         logging.info(f"Joined channels: {[c.name for c in self.connected_channels]}")
+        self.handler.message_service.start_resident_idle_loop()
         # Sending the ready message doubles as a self-test: if Twitch is dropping
         # our messages (unverified phone, suspended, shadowban), we'll either get
         # a NOTICE (logged by event_raw_data below) or a send exception here.

@@ -51,10 +51,10 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~generate list` / `~generate del <name>` | anyone | List or delete your saved recipes. |
 | `~botpersona status [chat=<channel>]` | super admin | Inspect the resident persona for a channel. |
 | `~botpersona off [chat=<channel>]` | super admin | Clear the resident persona for a channel. |
-| `~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular\|response\|random\|silent]` | super admin | Set a channel-scoped resident persona that can autonomously reply. |
+| `~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular\|response\|random\|silent] [chance=] [topic=] [idle=]` | super admin | Set a channel-scoped resident persona that can autonomously reply and idle-chat. |
 | `~botmode regular\|response\|random\|silent [minutes] [chat=<channel>]` | super admin | Change resident persona response mode and optional expiry. |
 | `~botcontext [chat=<channel>] <text\|clear>` | super admin | Set extra standing instruction for the resident persona. |
-| `~botchance <base> [directed] [chat=<channel>]` | super admin | Tune resident persona base and directed reply probabilities. |
+| `~botchance <base> [directed] [chat=<channel>] [topic=] [idle=] [greeting=] [cooldown=]` | super admin | Tune resident persona reaction, topic-boost, idle, greeting, and cooldown probabilities. |
 
 Important distinction: `~persona`, `~hyper`, and `~generate` are one-shot
 commands. The resident persona commands above are channel-scoped and
@@ -96,9 +96,10 @@ comparisons, not clinical or total-person labels.
 
 ## Planned But Not Live
 
-The current resident layer supports one real chatter persona per channel. Full
-`~generate` recipes as resident personas and queue-depth feedback are still
-future work.
+The current resident layer supports one real chatter persona per channel, topic
+affinity boosting from archive hits, rare idle messages, and Twitch reply-thread
+responses when a triggering message ID is available. Full `~generate` recipes
+as resident personas and queue-depth feedback are still future work.
 
 ## Artifact Dependencies
 
