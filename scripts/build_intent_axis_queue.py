@@ -55,6 +55,7 @@ class AxisQueueSpec:
     option_labels: dict[str, str]
     option_help: dict[str, str]
     include_realish_only: bool = True
+    option_keys: list[str] | None = None
 
 
 AXES = [
@@ -64,22 +65,25 @@ AXES = [
         select_label="not_valid",
         question="Validity",
         guidance=(
-            "Should this row be eligible for semantic/intent training? Use not_valid for "
-            "bot output, mod notices, pure art, pure links, command output, or fragments "
-            "too opaque even with context. Short human messages can still be valid."
+            "Is a person trying to communicate something interpretable to another person or "
+            "the chat? Valid includes normal text, emotes, action shorthand, ASCII/image posts, "
+            "and bot-directed messages when they still reveal the person's intent. Not valid "
+            "means bot/mod output, boilerplate command output, pure noise, or no decipherable "
+            "semantic/social content."
         ),
-        options=["valid", "not_valid", "unclear"],
+        options=["not_valid", "valid", "unclear"],
         option_labels={
             "valid": "valid: human/chat meaning",
             "not_valid": "not valid: bot/junk/noise",
             "unclear": "unclear",
         },
         option_help={
-            "valid": "A human/chat utterance with interpretable communicative intent, even if short, emote-coded, or slang.",
-            "not_valid": "Bot output, mod notice, pure link, pure ASCII/image text, command output, or unusable noise.",
-            "unclear": "You cannot tell whether it is meaningful enough to train on.",
+            "valid": "Human communication with interpretable intent or chat effect. Includes short slang, emotes, tucks, ASCII/image posts, and bot-directed prompts if they reveal personality.",
+            "not_valid": "Bot/mod output, command boilerplate, pure noise/help syntax, or text with no decipherable semantic/social content.",
+            "unclear": "You cannot tell whether a person is communicating something meaningful.",
         },
         include_realish_only=False,
+        option_keys=["q", "w", "r"],
     ),
     AxisQueueSpec(
         target="literal_alignment",
@@ -87,22 +91,23 @@ AXES = [
         select_label="divergent",
         question="Literal alignment",
         guidance=(
-            "Binary question: is this used straight, or as reversal/irony? Treat conventional "
-            "chat meaning as literal enough: emotes, greetings, tucks, and reaction phrases are "
-            "aligned when used in their normal way. Hyperbole is usually aligned because the "
-            "stance direction is the same; magnitude distortion is a different axis."
+            "Does the intended direction match the message's conventional meaning, with no hidden "
+            "reversal? Judge the main proposition/stance, not every imprecise detail. Figurative "
+            "or auxiliary wording can still be aligned when the overall claim points the same way. "
+            "Hyperbole is usually aligned; magnitude distortion is a different axis."
         ),
-        options=["aligned", "divergent", "unclear"],
+        options=["divergent", "aligned", "unclear"],
         option_labels={
             "aligned": "straight / aligned",
             "divergent": "reversal / ironic gap",
             "unclear": "unclear / no stable meaning",
         },
         option_help={
-            "aligned": "They mean the conventional chat meaning: normal slang, emote/action shorthand, greeting, reaction, or hyperbole with the same stance direction.",
-            "divergent": "The message is used as irony/reversal: it says or performs one thing while intending the opposite or a sideways stance.",
-            "unclear": "You cannot infer the conventional meaning or whether it is straight vs ironic.",
+            "aligned": "No hidden reversal. The main sentiment/proposition is meant in the same direction, including normal slang, emotes, greetings, fantasy phrasing, or imprecise auxiliary insults.",
+            "divergent": "Irony, sarcasm, reversal, or hidden meaning changes the intended direction from what the words/conventional form appear to say.",
+            "unclear": "No stable/cultural meaning, untranslated line, or you cannot tell whether it is straight vs hidden/reversed.",
         },
+        option_keys=["q", "w", "r"],
     ),
     AxisQueueSpec(
         target="magnitude_distortion",
@@ -110,24 +115,24 @@ AXES = [
         select_label="overstated",
         question="Magnitude distortion",
         guidance=(
-            "Literal/normal is ordinary strength. Overstated is hyperbole or exaggerated "
-            "magnitude. Understated is deliberately downplayed. This axis is separate from irony."
+            "Magnitude is a distortion scale. Understated is negative distortion, zero means "
+            "normal strength or no meaningful magnitude to judge, and overstated is positive "
+            "distortion/hyperbole. This axis is separate from literal alignment."
         ),
-        options=["literal_or_normal", "overstated", "understated", "unclear", "not_applicable"],
+        options=["understated", "literal_or_normal", "overstated", "unclear"],
         option_labels={
-            "literal_or_normal": "normal magnitude",
-            "overstated": "overstated / hyperbolic",
-            "understated": "understated",
+            "understated": "negative / understated",
+            "literal_or_normal": "zero / normal or no magnitude",
+            "overstated": "positive / overstated",
             "unclear": "unclear",
-            "not_applicable": "no magnitude to judge",
         },
         option_help={
-            "literal_or_normal": "The strength is about what they mean.",
-            "overstated": "The direction may be sincere, but the intensity is exaggerated.",
-            "understated": "The wording downplays what is meant.",
-            "unclear": "There is a magnitude claim, but you cannot judge distortion.",
-            "not_applicable": "No claim/reaction intensity to compare.",
+            "understated": "Negative distortion: wording downplays the intended strength.",
+            "literal_or_normal": "Zero distortion: ordinary strength, or no meaningful magnitude claim to judge.",
+            "overstated": "Positive distortion: the direction may be sincere, but the intensity is exaggerated.",
+            "unclear": "You cannot judge whether the magnitude is normal, understated, or overstated.",
         },
+        option_keys=["q", "w", "e", "r"],
     ),
     AxisQueueSpec(
         target="play_frame",
@@ -153,6 +158,7 @@ AXES = [
             "masking_play": "The bit form appears to cover criticism, aggression, status work, embarrassment, or a socially risky stance.",
             "unclear": "You cannot tell whether the message is serious/plain or bit-framed.",
         },
+        option_keys=["w", "e", "t", "r"],
     ),
     AxisQueueSpec(
         target="masking_facework",
@@ -178,6 +184,7 @@ AXES = [
             "unclear": "Cannot tell whether cover is happening.",
             "not_applicable": "No relevant social/facework signal.",
         },
+        option_keys=["w", "e", "t", "r", "y"],
     ),
     AxisQueueSpec(
         target="hostility",
@@ -203,6 +210,7 @@ AXES = [
             "unclear": "Cannot judge the hostility.",
             "not_applicable": "No usable interpersonal signal.",
         },
+        option_keys=["w", "e", "t", "r", "y"],
     ),
     AxisQueueSpec(
         target="shock_attention",
@@ -226,6 +234,7 @@ AXES = [
             "unclear": "Cannot tell if it is attention-bid behavior.",
             "not_applicable": "No usable signal.",
         },
+        option_keys=["w", "e", "r", "y"],
     ),
 ]
 
@@ -386,6 +395,7 @@ def make_item(rank: int, spec: AxisQueueSpec, candidate: dict, score: float, rea
             "source_message_id": candidate["id"],
         },
         "options": spec.options,
+        "option_keys": spec.option_keys,
         "allow_other": True,
         "answer": None,
         "answer_note": None,
