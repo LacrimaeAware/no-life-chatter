@@ -190,6 +190,13 @@ LLM_EMBED_MODEL: str = str(_llm.get("embed_model", "")).strip()
 # Use the per-message embedding index (scripts/build_message_index.py) to add
 # meaning-based retrieval to persona evidence. Needs the index built.
 LLM_SEMANTIC_RETRIEVAL: bool = bool(_llm.get("semantic_retrieval", False))
+# Semantic retrieval is powerful but can hallucinate "nearby" chat concepts.
+# Anchored hits share at least one cleaned query term; unanchored hits must be
+# much more confident before they enter a persona prompt.
+LLM_SEMANTIC_MIN_SCORE: float = float(_llm.get("semantic_min_score", 0.50))
+LLM_SEMANTIC_UNANCHORED_MIN_SCORE: float = float(
+    _llm.get("semantic_unanchored_min_score", 0.62)
+)
 # Short names usable as ~persona's model= override (model=lora -> real id).
 LLM_MODEL_SHORTCUTS: dict = {
     str(k).lower(): str(v) for k, v in _llm.get("model_shortcuts", {}).items()

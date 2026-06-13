@@ -18,6 +18,7 @@ import os
 import random
 import re
 import time
+from collections import Counter
 
 import config
 from services import llm
@@ -79,8 +80,27 @@ def _usable_exemplar(message: str) -> bool:
     words = message.split()
     if len(words) < 2 or len(message) > 240:
         return False
+    if _repeated_token_spam(words):
+        return False  # repeated-token spam is topical noise, not voice evidence
     # require at least one real lowercase word — drops pure ping+emote lines
     return any(re.search(r"[a-z]{3}", w) for w in words)
+
+
+def _repeated_token_spam(words) -> bool:
+    norm_words = [chat_archive.line_match_key(w) for w in words]
+    norm_words = [w for w in norm_words if w]
+    if len(norm_words) < 6:
+        return False
+    counts = Counter(norm_words)
+    return len(counts) <= 4 and counts.most_common(1)[0][1] / len(norm_words) >= 0.45
+
+
+def _usable_snippet_context(message: str) -> bool:
+    if not message or len(message) > 240:
+        return False
+    if "http://" in message or "https://" in message or "www." in message:
+        return False
+    return not _repeated_token_spam(message.split())
 
 
 def _unique_messages(messages, n: int, seen=None):
@@ -96,6 +116,87 @@ def _unique_messages(messages, n: int, seen=None):
         if len(out) >= n:
             break
     return out
+
+
+def _content_terms(text: str) -> set[str]:
+    """Clean topic terms from a candidate evidence line.
+
+    Uses the same query hygiene as retrieval so emotes, pings, and scaffolding
+    words do not make a line look more relevant than it is.
+    """
+    return set(chat_archive.query_terms(text, max_terms=24))
+
+
+def _term_overlap_count(query_terms, evidence_terms) -> int:
+    count = 0
+    for query in {t.lower() for t in query_terms}:
+        for evidence in evidence_terms:
+            if query == evidence:
+                count += 1
+                break
+            if len(query) >= 4 and evidence.startswith(query):
+                count += 1
+                break
+            if len(evidence) >= 4 and query.startswith(evidence):
+                count += 1
+                break
+    return count
+
+
+def _term_overlap_weight(query_terms, evidence_terms) -> float:
+    weight = 0.0
+    seen_queries = list(dict.fromkeys(t.lower() for t in query_terms))
+    for idx, query in enumerate(seen_queries):
+        matched = False
+        for evidence in evidence_terms:
+            if query == evidence:
+                matched = True
+                break
+            if len(query) >= 4 and evidence.startswith(query):
+                matched = True
+                break
+            if len(evidence) >= 4 and query.startswith(evidence):
+                matched = True
+                break
+        if matched:
+            # query_terms() is ordered by count, then first mention. For direct
+            # commands the user's actual prompt is repeated, so its terms land
+            # first and should matter more than incidental recent-context terms.
+            weight += 2.0 if idx < 4 else 1.0
+    return weight
+
+
+def _evidence_score(text: str, terms, semantic_score: float | None = None) -> float:
+    term_set = {t.lower() for t in terms}
+    words = (text or "").split()
+    evidence_terms = _content_terms(text)
+    overlap = _term_overlap_count(term_set, evidence_terms)
+    overlap_weight = _term_overlap_weight(terms, evidence_terms)
+    if 4 <= len(words) <= 30:
+        shape = 2.0
+    elif 2 <= len(words) <= 60:
+        shape = 1.0
+    else:
+        shape = 0.0
+    score = (overlap_weight * 4.0) + shape
+    if semantic_score is not None:
+        # Cosine scores are already filtered before this point. Use the score
+        # as a tiebreaker, not as permission for unrelated evidence to dominate.
+        score += max(0.0, min(2.0, (semantic_score - 0.45) * 10.0))
+        if term_set and overlap == 0:
+            score -= 1.0
+    return score
+
+
+def _semantic_text_allowed(text: str, score: float, terms) -> bool:
+    if not _usable_exemplar(text):
+        return False
+    term_set = {t.lower() for t in terms}
+    overlap = bool(_term_overlap_count(term_set, _content_terms(text)))
+    anchored_floor = getattr(config, "LLM_SEMANTIC_MIN_SCORE", 0.50)
+    unanchored_floor = getattr(config, "LLM_SEMANTIC_UNANCHORED_MIN_SCORE", 0.62)
+    floor = anchored_floor if overlap else unanchored_floor
+    return score >= floor
 
 
 def exemplars(author: str, n: int = None, channel: str = None):
@@ -139,19 +240,46 @@ def _rank_hits(hits, terms):
     bm25 alone let one-word emote lines and query-word echoes win. Boost hits
     that share actual topic terms and are conversation-sized; drop junk.
     """
-    term_set = {t.lower() for t in terms}
     scored = []
     for hit in hits:
         content = hit[3]
         if not _usable_exemplar(content):
             continue
-        words = content.split()
-        content_terms = {w.strip(".,!?\"'").lower() for w in words}
-        overlap = len(term_set & content_terms)
-        shape = 1 if 4 <= len(words) <= 30 else 0
-        scored.append((overlap * 3 + shape, hit))
+        scored.append((_evidence_score(content, terms), hit))
     scored.sort(key=lambda x: -x[0])
     return [hit for _, hit in scored]
+
+
+def _rank_relevant_texts(keyword_texts, semantic_rows, terms):
+    """Rank flat relevant examples from keyword and semantic retrieval.
+
+    Semantic hits used to be prepended wholesale. That made loose embedding
+    neighbors look like strong evidence. Now both sources compete under the
+    same topic/shape score, with semantic similarity only as a tiebreaker.
+    """
+    scored = []
+    seen = set()
+    for idx, text in enumerate(keyword_texts):
+        key = _copy_key(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        scored.append((_evidence_score(text, terms), -idx * 0.001, text))
+    for idx, score_text in enumerate(semantic_rows):
+        sem_score, text = score_text
+        key = _copy_key(text)
+        if not key or key in seen:
+            continue
+        if not _semantic_text_allowed(text, sem_score, terms):
+            continue
+        seen.add(key)
+        scored.append((
+            _evidence_score(text, terms, semantic_score=sem_score),
+            -idx * 0.001,
+            text,
+        ))
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    return [text for _, _, text in scored]
 
 
 def relevant_exemplars(author: str, query_text: str, n: int = None,
@@ -197,6 +325,8 @@ def evidence_snippets(author: str, query_text: str, hits_n: int = None,
         lines = []
         for row_id, row_author, row_content in window:
             used_ids.add(row_id)
+            if row_id != hit_id and not _usable_snippet_context(row_content):
+                continue
             text = row_content if len(row_content) <= 160 else row_content[:159] + "…"
             marker = ">> " if row_id == hit_id else ""
             lines.append(f"{marker}{row_author}: {text}")
@@ -242,20 +372,23 @@ def select_evidence(author: str, query_text: str, n: int = None,
     flat_budget = max(0, relevant_budget - len(snippets) * 5)
     relevant = []
     if flat_budget:
-        pool = list(relevant_exemplars(author, query_text, flat_budget * 2,
-                                       exclude_terms=exclude_terms))
+        terms = chat_archive.query_terms(query_text, exclude_terms=exclude_terms)
+        keyword_pool = list(relevant_exemplars(author, query_text, flat_budget * 3,
+                                               exclude_terms=exclude_terms))
+        semantic_rows = []
         # Semantic retrieval (config [llm] semantic_retrieval): messages near
         # the conversation in MEANING, which FTS keyword overlap can't find.
-        # Interleaved ahead of half the keyword hits.
+        # Filtered and ranked with keyword evidence so loose associations do
+        # not overpower direct archive evidence.
         if getattr(config, "LLM_SEMANTIC_RETRIEVAL", False):
             try:
                 from utils import persona_msg_index
                 if persona_msg_index.available(author):
-                    sem = [t for _s, t in persona_msg_index.semantic_hits(
-                        author, query_text, k=flat_budget)]
-                    pool = sem + pool
+                    semantic_rows = persona_msg_index.semantic_hits(
+                        author, query_text, k=max(flat_budget * 3, 24))
             except Exception as e:
                 logging.debug(f"semantic retrieval skipped: {e}")
+        pool = _rank_relevant_texts(keyword_pool, semantic_rows, terms)
         relevant = _unique_messages(pool, flat_budget, seen=set(used))
     seen = set(relevant) | used
     signature = _unique_messages(exemplars(author, n, channel=channel),
@@ -273,10 +406,13 @@ def _conversation_rows(recent):
 def _retrieval_text(recent, user_message: str | None) -> str:
     parts = []
     if user_message:
-        parts.append(user_message)
+        # A direct ~persona question is the strongest retrieval signal. Repeat
+        # it so unrelated recent chat cannot drown out the actual prompt.
+        parts.extend([user_message] * 3)
     # Use content only, not author labels; names and command words are noisy
     # retrieval anchors, while the actual message text carries the topic.
-    for _, _, content in _conversation_rows(recent)[-12:]:
+    tail = 4 if user_message else 12
+    for _, _, content in _conversation_rows(recent)[-tail:]:
         parts.append(content)
     return "\n".join(parts)
 
@@ -465,8 +601,9 @@ async def generate(author: str, channel: str, user_message: str = None,
     # Other chatters' names in the live context are addressing, not topic —
     # without this they dominate retrieval ranking (smoke-test finding).
     ctx_names = {a for _, a, _ in ctx_rows}
+    retrieval_text = _retrieval_text(recent, user_message)
     signature, relevant, snippets = select_evidence(
-        author, _retrieval_text(recent, user_message), n=exemplar_count,
+        author, retrieval_text, n=exemplar_count,
         exclude_terms=ctx_names, channel=channel,
     )
     ab_model = _roll_ab_model(invoked_by, model_override)
@@ -477,6 +614,7 @@ async def generate(author: str, channel: str, user_message: str = None,
         "model": ab_model or config.LLM_MODEL,
         "invoked_by": invoked_by,
         "user_message": user_message,
+        "retrieval_terms": chat_archive.query_terms(retrieval_text, exclude_terms=ctx_names),
         "context_tail": [f"{a}: {c}" for _, a, c in ctx_rows[-6:]],
         "n_signature": len(signature),
         "relevant": relevant,

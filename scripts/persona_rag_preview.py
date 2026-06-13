@@ -44,13 +44,22 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=config.LLM_EXEMPLARS,
                     help="total exemplar budget")
     ap.add_argument("--show-relevant", type=int, default=20)
+    ap.add_argument("--show-snippets", type=int, default=8)
     ap.add_argument("--show-signature", type=int, default=8)
     args = ap.parse_args()
 
     query = " ".join(args.query).strip()
     recent = chat_archive.latest(args.channel, args.context) if args.channel else []
     retrieval_text = persona_llm._retrieval_text(recent, query)
-    signature, relevant = persona_llm.select_exemplars(args.user, retrieval_text, n=args.n)
+    ctx_names = {a for _, a, _ in persona_llm._conversation_rows(recent)}
+    signature, relevant, snippets = persona_llm.select_evidence(
+        args.user,
+        retrieval_text,
+        n=args.n,
+        exclude_terms=ctx_names,
+        channel=args.channel or None,
+    )
+    terms = chat_archive.query_terms(retrieval_text, exclude_terms=ctx_names)
 
     keys = chat_archive.author_keys(args.user)
     conn = chat_archive.connect()
@@ -63,7 +72,12 @@ def main() -> None:
     print(f"Canonical author: {chat_archive.normalize_author(args.user)}")
     print("Author keys searched: " + ", ".join(f"{key} ({n:,})" for key, n in counts))
     print(f"Exemplar budget: {args.n}")
-    print(f"Selected: {len(signature)} random signature + {len(relevant)} relevant")
+    print(
+        f"Selected: {len(signature)} random signature + "
+        f"{len(relevant)} flat relevant + {len(snippets)} snippets"
+    )
+    print("Retrieval terms: " + (", ".join(terms) if terms else "(none)"))
+    print(f"Semantic retrieval: {'on' if getattr(config, 'LLM_SEMANTIC_RETRIEVAL', False) else 'off'}")
     if args.channel:
         print(f"Recent context: last {len(recent)} messages from #{chat_archive.normalize_channel(args.channel)}")
     if query:
@@ -71,6 +85,7 @@ def main() -> None:
     if not retrieval_text.strip():
         print("Retrieval query text is empty; relevant examples will be empty.")
 
+    _print_lines("Chat-moment snippets", snippets, args.show_snippets)
     _print_lines("Relevant examples", relevant, args.show_relevant)
     _print_lines("Random signature examples", signature, args.show_signature)
 

@@ -345,6 +345,10 @@ def _fts_phrase(phrase: str) -> str:
 
 
 _QUERY_STOPWORDS = {
+    "able", "after", "all", "also", "and", "any", "are", "around", "ask",
+    "asked", "asking", "been", "both", "but", "can", "did", "does", "done",
+    "for", "get", "gets", "got", "had", "has", "him", "his", "its", "off",
+    "one", "our", "out", "she", "the", "too", "was",
     "about", "after", "again", "against", "also", "because", "been", "before",
     "being", "between", "could", "does", "doing", "dont", "from", "have",
     "here", "into", "just", "like", "more", "most", "much", "need", "only",
@@ -363,7 +367,8 @@ _QUERY_STOPWORDS = {
     # should anchor retrieval.
     "hows", "whats", "whos", "whens", "wheres", "whys", "why", "who",
     "going", "treating", "think", "thinks", "thinking", "thought", "thoughts",
-    "feel", "feels", "felt", "tell", "tells", "telling", "says", "saying",
+    "answer", "answers", "felt", "feel", "feels", "see", "seen", "seeing",
+    "such", "tell", "tells", "telling", "says", "saying", "thats", "well",
     "know", "knows", "knew", "mean", "means", "meant",
     "you", "yall", "guys", "dude", "anyone", "everyone", "someone",
     "something", "anything", "nothing", "ever", "never", "still", "even",

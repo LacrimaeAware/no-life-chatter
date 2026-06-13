@@ -15,13 +15,16 @@ def install_fake_config():
         ARCHIVE_DB="data/unsynced/test_archive.db",
         CLASSIFIER_FILE="data/unsynced/test_classifier.pkl",
         EXCLUDE_USERS={"helperbot"},
+        LLM_SEMANTIC_MIN_SCORE=0.50,
+        LLM_SEMANTIC_UNANCHORED_MIN_SCORE=0.62,
     )
     sys.modules["config"] = fake
     return fake
 
 
 install_fake_config()
-from utils import chat_archive, persona_classifier  # noqa: E402
+sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
+from utils import chat_archive, persona_classifier, persona_llm  # noqa: E402
 from commands import markers  # noqa: E402
 
 
@@ -46,6 +49,16 @@ class ArchiveNormalizationTests(unittest.TestCase):
     def test_alias_cycle_stops_instead_of_looping_forever(self):
         aliases = {"a": "b", "b": "a"}
         self.assertIn(chat_archive._resolve_alias("a", aliases), {"a", "b"})
+
+    def test_query_terms_drop_basic_scaffolding_words(self):
+        terms = chat_archive.query_terms("thats such an answer and the wrong one about wow")
+        self.assertNotIn("thats", terms)
+        self.assertNotIn("answer", terms)
+        self.assertNotIn("and", terms)
+        self.assertNotIn("see", terms)
+        self.assertNotIn("the", terms)
+        self.assertNotIn("well", terms)
+        self.assertIn("wow", terms)
 
 
 class ScopeParserTests(unittest.TestCase):
@@ -100,6 +113,43 @@ class PersonaClassifierPureTests(unittest.TestCase):
             prevalence={"signature": 1, "everyone": 9}, n_panel=10)
         self.assertIn("signature", profile)
         self.assertNotIn("everyone", profile)
+
+
+class PersonaRetrievalPureTests(unittest.TestCase):
+    def test_repeated_token_spam_is_not_usable_persona_evidence(self):
+        self.assertFalse(persona_llm._usable_exemplar("FART Fart FART Fart FART Fart"))
+        self.assertFalse(persona_llm._usable_exemplar("@Quin69 FART AYAP Fart " * 6))
+        self.assertTrue(persona_llm._usable_exemplar("post your fart in chat rn"))
+
+    def test_directed_prompt_is_weighted_over_recent_context(self):
+        recent = [
+            ("2026-01-01 00:00:01", "a", "thats such an answer"),
+            ("2026-01-01 00:00:02", "b", "and he got it wrong too"),
+        ]
+        text = persona_llm._retrieval_text(recent, "favorite game")
+        self.assertEqual(text.count("favorite game"), 3)
+
+    def test_early_direct_terms_outrank_later_context_terms(self):
+        ranked = persona_llm._rank_relevant_texts(
+            ["well see how this goes", "fart is real in this game"],
+            [],
+            ["fart", "bragging", "well", "see"],
+        )
+        self.assertEqual(ranked[0], "fart is real in this game")
+
+    def test_semantic_hit_needs_higher_score_without_query_anchor(self):
+        terms = ["fart"]
+        self.assertTrue(persona_llm._semantic_text_allowed("fart is real", 0.51, terms))
+        self.assertFalse(persona_llm._semantic_text_allowed("bragging about winning", 0.59, terms))
+        self.assertTrue(persona_llm._semantic_text_allowed("bragging about winning", 0.63, terms))
+
+    def test_keyword_evidence_not_blindly_displaced_by_semantic_hit(self):
+        ranked = persona_llm._rank_relevant_texts(
+            ["i keep farting in this game"],
+            [(0.63, "bragging about winning again")],
+            ["fart"],
+        )
+        self.assertEqual(ranked[0], "i keep farting in this game")
 
 
 if __name__ == "__main__":

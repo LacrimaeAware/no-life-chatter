@@ -128,6 +128,11 @@ Moderation/utility:
 - RAG persona generation is live: persona prompts combine signature examples,
   topic-relevant retrieved lines, recent chat context, and optional semantic
   retrieval when the message index exists.
+- Persona retrieval guardrails were tightened: direct `~persona` prompts now
+  outweigh incidental recent-context terms, semantic message-index hits require
+  confidence floors before entering evidence, repeated-token spam is filtered
+  out of prompt evidence, and `scripts/persona_rag_preview.py` now prints the
+  same snippet/flat evidence sections used by the live prompt.
 - Copy/echo checks were added so generated lines are less likely to be straight
   archived quotes or another chatter's recent line.
 - `~generate` exists for tag recipes: users, traits, topic text, channel/year

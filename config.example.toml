@@ -162,6 +162,12 @@ snippet_hits = 8
 # (copies, URLs, and echoes of other chatters' lines are rejected). The big
 # prompt is processed once and cached, so 2 is cheap. 1 = single draw.
 candidates = 2
+# Optional meaning-based persona retrieval. Requires [llm].embed_model plus a
+# built per-message index. These floors keep loose semantic neighbors from
+# overpowering keyword/context evidence.
+semantic_retrieval = false
+semantic_min_score = 0.50
+semantic_unanchored_min_score = 0.62
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count
