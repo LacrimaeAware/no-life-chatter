@@ -95,7 +95,7 @@ utils/
 scripts/                # offline pipeline: init/auth, log ingest, archive query,
                         #   persona preview, fine-tune export/train (RunPod)
 data/                   # gitignored: SQLite DBs, bot.log, OAuth tokens
-docs/                   # design docs (start at docs/HANDOFF.md)
+docs/                   # active docs start at docs/README.md
 ```
 
 Commands are auto-discovered: drop a `commands/foo.py` with a
@@ -106,6 +106,9 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 The full live command list is maintained in
 [docs/COMMANDS.md](docs/COMMANDS.md). In chat, `~help` shows grouped pages and
 `~help <command>` shows details for a single command.
+
+The table below is a project overview, not the audited source of truth.
+`scripts/audit_commands.py` checks `docs/COMMANDS.md` against `commands/*.py`.
 
 | Command | Who | Description |
 | --- | --- | --- |
@@ -186,6 +189,8 @@ Double-click instead of using the terminal:
 | `3-run.bat` | Run the bot in a visible window. |
 | `4-run-tests.bat` | Run the lightweight unit tests. |
 | `python scripts/audit_commands.py` | Check every live command imports, has an async handler, has help text, and is in the command bible. |
+| `python scripts/freshness_check.py` | One-shot repo freshness audit: docs layout, command bible, artifacts, rebuild logs, and git dirtiness. |
+| `14-freshness-check.bat` | Double-click wrapper for the same freshness audit. |
 | `run-background.vbs` | Run the bot **hidden**, restarting it if it crashes, logging to `data/bot.log`. |
 | `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
 | `stop-bot.bat` | Stop the background bot. |
@@ -236,15 +241,14 @@ are kept private under `_private/` (see [docs/FINE_TUNING.md](docs/FINE_TUNING.m
 
 ## Roadmap & docs
 
-Design docs live in [`docs/`](docs/) — start with
-[STATE_OF_OPERATION.md](docs/STATE_OF_OPERATION.md) for the current return
-brief, then [HANDOFF.md](docs/HANDOFF.md) for the longer persona/archive
-history. Also: the [chat archive design](docs/CHAT_ARCHIVE.md) (SQLite + FTS5 +
-the Chatterino log format), the [persona roadmap](docs/PERSONA_BOT_ROADMAP.md),
-[fine-tuning](docs/FINE_TUNING.md), a
-[chat-personality research note](docs/CHAT_PERSONALITY_RESEARCH.md), an
-[idea bank](docs/IDEA_BANK.md), and the planned
-[repo reorganization](docs/REORG_PLAN.md).
+Design docs live in [`docs/`](docs/). Start with
+[docs/README.md](docs/README.md), then
+[STATE_OF_OPERATION.md](docs/STATE_OF_OPERATION.md),
+[ROADMAP.md](docs/ROADMAP.md), and [COMMANDS.md](docs/COMMANDS.md).
+
+Dated handoffs, audits, and superseded roadmaps live under
+[docs/archive/](docs/archive/) so history stays available without becoming the
+active agenda.
 
 ## License
 

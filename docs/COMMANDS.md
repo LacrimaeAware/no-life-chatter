@@ -90,7 +90,7 @@ comparisons, not clinical or total-person labels.
 
 ## Planned But Not Live
 
-These are documented in `docs/GENERATE_AND_BOT_MODES.md`, but no command module
+These are documented in [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md), but no command module
 exists for them yet:
 
 | Planned command | Intended behavior |

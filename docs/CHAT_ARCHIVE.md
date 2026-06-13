@@ -8,8 +8,8 @@ trivia all read from it.
 **Status: built.** `utils/chat_archive.py` (schema, parser, queries),
 `scripts/ingest_chatterino.py` (historical ingest), `scripts/ask_archive.py`
 (offline CLI), live capture in `handlers.py`, and the `~said` / `~quote` /
-`~firstseen` / `~chatstats` commands. See
-[PERSONA_BOT_ROADMAP.md](PERSONA_BOT_ROADMAP.md) for where this fits.
+`~firstseen` / `~chatstats` commands. See [ROADMAP.md](ROADMAP.md) for where
+this fits in the current build order.
 
 ## Why SQLite + FTS5 (and not an LLM)
 

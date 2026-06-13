@@ -1,8 +1,9 @@
 # Idea bank
 
-Running list of fun-feature ideas — researched enough to act on later, parked
-so they don't get lost. Big items graduate to their own doc (see
-[PERSONA_BOT_ROADMAP.md](PERSONA_BOT_ROADMAP.md)).
+Running list of fun-feature ideas - researched enough to act on later, parked
+so they do not get lost. Current priorities live in [ROADMAP.md](ROADMAP.md);
+older persona roadmap history is archived at
+[archive/PERSONA_BOT_ROADMAP.md](archive/PERSONA_BOT_ROADMAP.md).
 
 ## Letterboxd integration — parked, viable via RSS
 
@@ -146,9 +147,9 @@ for each cluster with evidence snippets.
 ## Personas — graduated
 
 Accurate + hyperbolic per-user personas, rare random in-character reactions
-(1/1000 roll, with conversation context), playful Big-5-flavored
-psychometrics, and the chat-archive Q&A layer ("did X ever say Y?") all live
-in [PERSONA_BOT_ROADMAP.md](PERSONA_BOT_ROADMAP.md), with the data layer in
+(config-driven, with conversation context), playful trait experiments, and the
+chat-archive Q&A layer have moved from idea to active system/roadmap. Current
+state lives in [ROADMAP.md](ROADMAP.md), with the data layer in
 [CHAT_ARCHIVE.md](CHAT_ARCHIVE.md).
 
 - **Markov-chain mini-personas** — order-2 word chains per user; zero-cost,

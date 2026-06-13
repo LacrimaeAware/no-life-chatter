@@ -1,0 +1,113 @@
+# Roadmap
+
+Last refreshed: 2026-06-13.
+
+## Verdict
+
+NoLifeChatter has the hard base working: local archive, command discovery,
+search/stats, persona RAG, Markov/LLM personas, stylometry, semantic artifacts,
+emote semantics, first fact-bank extraction, archive-QA via `~askchat`, command
+audits, and artifact-status reporting.
+
+The main quality bottleneck is no longer "add one more axis" or "train one more
+LoRA." The highest-value work is making retrieval/memory/eval reliable enough
+that later autonomy or training does not amplify bad evidence.
+
+The next operational dependency is the full utterance-unit artifact rebuild.
+It should make `~distinct`, `~vibes`, `~why`, semantic persona retrieval, burst
+trait evidence, and IQ embedding features line up with the newer chunking and
+alias/filter rules. Check `~artifacts` or `scripts/artifact_status.py` before
+trusting rankings.
+
+## State Of Art For This Project
+
+- RAG quality should be evaluated as retrieval focus, answer faithfulness, and
+  final answer quality, not just "sounds good."
+- Long chat corpora need better units than arbitrary single lines. For this
+  project, merged same-author utterances and source-aware context windows are
+  the immediate practical layer.
+- Memory should be structured and cited. Fact-bank rows are candidate claims
+  with evidence, not verified truth.
+- Fine-tuning is a style prior. It is not memory. RAG and archive QA should own
+  facts, lore, and old-message evidence.
+- Resident/autonomous persona behavior should come after eval and retrieval
+  hardening, because it multiplies whatever quality level exists.
+
+## Current Strengths
+
+- SQLite/FTS archive with live capture and imported Chatterino logs.
+- Alias-aware search, stats, quotes, context windows, and user normalization.
+- One-shot persona commands with archive evidence, copy checks, output filter,
+  and local OpenAI-compatible LLM support.
+- Stylometry commands: `~whosaid`, `~markers`, `~like`, `~twin`.
+- Semantic commands/artifacts: `~vibes`, `~traits`, `~top`, `~distinct`,
+  `~why`, `~iq`, message index, and emote semantics.
+- First evidence-backed lore surface: `~askchat` plus offline `scripts/ask_chat.py`.
+- First memory prototype: `scripts/build_fact_bank.py` and
+  `scripts/query_fact_bank.py`.
+- Held-out reply eval harness exists, but the baseline run still needs to be
+  executed and compared against future changes.
+- Command health is repeatable with `scripts/audit_commands.py`.
+
+## Known Weak Points
+
+- Generated artifacts can become stale after alias merges, embedding-model
+  swaps, semantic-unit changes, or message-quality filter changes.
+- Some archive sources are author-only mirrors. They cannot safely provide
+  surrounding conversation unless another speaker is present in the same time
+  window.
+- Fact-bank claims are unreviewed candidates. They need contradiction grouping,
+  confidence calibration, and review tooling.
+- Persona generation still lacks a live reranker trained against held-out reply
+  cases and reaction feedback.
+- Resident persona controls are planned, not live.
+- Intent/irony probes are under-labeled and should stay diagnostic until the
+  label set is stronger.
+- IQ is a roster-relative text-register/cognition estimate. It needs receipts
+  (`~iqwhy` or a report) before users can audit why a ranking happened.
+
+## Ranked Next Work
+
+1. Finish or verify the full utterance-unit artifact rebuild, then restart the
+   bot worker so live commands see fresh artifacts.
+2. Run the held-out reply baseline on frozen cases with the current persona
+   pipeline.
+3. Improve archive-QA/lore v2: ranking, contradiction handling, answer
+   synthesis, and semantic evidence.
+4. Build a persona output reranker for contextual fit, target voice, copy risk,
+   and likely chat reaction.
+5. Build fact-bank v2: review queues, contradiction groups, confidence, and
+   recency/decay.
+6. Add IQ receipts: component z-scores, confidence, split deltas, and driver
+   utterances.
+7. Implement resident persona controls from
+   [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md): `~botpersona`,
+   `~botmode`, `~botcontext`, and `~botchance`.
+8. Continue the intent/irony label loop, then decide whether probes should
+   influence retrieval/generation.
+9. Build the real-or-AI game after eval plumbing is stable enough to turn the
+   game into useful feedback.
+10. Consider domain-adapted embeddings only after stable eval targets exist.
+11. Consider LoRA v3 only after context-pair export and baseline eval. Do not
+    use LoRA as a substitute for memory.
+12. Polish public anonymized similarity maps and site visuals after the live
+    bot quality loop is healthier.
+
+## Nightly / Return Checklist
+
+```powershell
+.\.venv\Scripts\python.exe scripts\freshness_check.py
+.\.venv\Scripts\python.exe -m unittest tests.test_pure_functions
+```
+
+If aliases, filters, embedding model, or semantic units changed, run:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\rebuild_persona_artifacts.py --semantic-unit utterance --continue-on-error
+```
+
+For unattended Windows runs, use:
+
+```powershell
+.\scripts\start_rebuild_background.ps1 -SemanticUnit utterance
+```
