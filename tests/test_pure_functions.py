@@ -25,7 +25,7 @@ def install_fake_config():
 
 install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
-from utils import archive_qa, chat_archive, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm  # noqa: E402
+from utils import archive_qa, chat_archive, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona  # noqa: E402
 from commands import markers  # noqa: E402
 
 
@@ -420,6 +420,28 @@ class PersonaIqPureTests(unittest.TestCase):
     def test_roster_canonicalizes_aliases_and_drops_noise(self):
         roster = persona_iq._canonical_roster(["oldalt", "mainuser", "helperbot"])
         self.assertEqual(roster, ["mainuser"])
+
+
+class ResidentPersonaPureTests(unittest.TestCase):
+    def test_format_line_replaces_persona_label_with_prefix(self):
+        state = {"persona": "normanbiz", "prefix": "tickpooJAWLINE \U0001f4e3"}
+        line = resident_persona.format_line(state, "normanbiz: tickpooJAWLINE hello")
+        self.assertEqual(line, "tickpooJAWLINE \U0001f4e3 hello")
+
+    def test_format_line_does_not_return_prefix_only_message(self):
+        state = {"persona": "normanbiz", "prefix": "tickpooJAWLINE \U0001f4e3"}
+        self.assertEqual(resident_persona.format_line(state, "normanbiz:"), "")
+
+    def test_normalize_state_clamps_probability_fields(self):
+        state = resident_persona._normalize_state(
+            "ThickPoo",
+            {"persona": "NormanBiz", "chance": 2, "directed_chance": -1, "cooldown": -5},
+        )
+        self.assertEqual(state["channel"], "thickpoo")
+        self.assertEqual(state["persona"], "normanbiz")
+        self.assertEqual(state["chance"], 1.0)
+        self.assertEqual(state["directed_chance"], 0.0)
+        self.assertEqual(state["cooldown"], 0.0)
 
 
 class PersonaRetrievalPureTests(unittest.TestCase):

@@ -45,26 +45,31 @@ the persona pipeline's rules.
 Stored per Twitch user in the settings DB (gen_combos table); combos expand
 one level (a combo may not reference another combo).
 
-## 3. Bot modes (SPEC — not yet implemented)
+## 3. Bot modes (PARTLY IMPLEMENTED)
 
-Super-admin only. The bot gets a "resident persona" (any ~generate recipe,
-including saved combos) and a response mode:
+Super-admin only. The bot can now get a channel-scoped "resident persona"
+using one real chatter voice. Full `~generate` recipes and saved combos as
+resident personas are still future work.
 
-- **regular** — responds of its own volition: per-message, an LLM gate asks
-  "would <persona> jump in here?" (cheap context check) capped by a rate
-  limit; persona decides what to react to. Optional extra prompt context
-  ("be zany", "make everything about world of warcraft").
+- **regular** — may respond to normal incoming chat, with higher odds for
+  greetings and direct messages, capped by a cooldown and output filter.
+  Optional extra prompt context can steer the standing roleplay.
 - **response** — only replies when @mentioned, in the resident persona.
 - **random** — random chance per message (chance settable by command).
 - **silent** — commands only.
 
-Proposed commands:
-    ~botmode regular|response|random|silent [minutes]   (auto-revert after)
-    ~botpersona <recipe tags or combo name>
-    ~botcontext <free text>            (extra standing instruction; 'clear')
-    ~botchance 0.002                   (random-mode odds; also reaction odds)
-@-mention responses use the resident persona when set, else the old behavior.
-Time-limited modes revert to silent when the timer lapses.
+Live commands:
+
+    ~botpersona status [chat=<channel>]
+    ~botpersona off [chat=<channel>]
+    ~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular|response|random|silent]
+    ~botmode regular|response|random|silent [minutes] [chat=<channel>]
+    ~botcontext [chat=<channel>] <free text|clear>
+    ~botchance <base> [directed] [chat=<channel>]
+
+Time-limited modes expire automatically. Resident output can also carry a
+configured prefix, which is live runtime state in `data/unsynced` rather than
+public repository config.
 
 ## 4. Admin & abuse controls (PARTLY IMPLEMENTED)
 
@@ -76,14 +81,14 @@ Time-limited modes revert to silent when the timer lapses.
 - **Still missing:** explicit LLM queue-depth feedback. Today `services.llm`
   serializes calls, but users do not get a "queue full / N ahead" response.
 
-## Implementation notes for whoever picks up 3/4
+## Remaining implementation notes
 
 - The queue belongs around services/llm.chat's _chat_lock (it already
   serializes; add a counter + reject/notify at depth >= 3).
-- Mode state: small table or config-backed dict {channel: (mode, persona,
-  context, until_ts)}; check in message_service.handle/maybe_react.
-- The volition gate for regular mode can reuse the persona prompt with a
-  cheap "reply or STAY SILENT" instruction and max_tokens=8 — but it costs a
-  model call per message, so guard with rate limits + random pre-gate.
+- Current resident mode state is `data/unsynced/resident_personas.json`.
+- A future richer volition gate could use a cheap "reply or STAY SILENT"
+  classifier before generation. The current live path uses probability,
+  direct/greeting heuristics, cooldown, and a STOP instruction in the persona
+  prompt to keep model calls bounded.
 - Ban list: data/synced settings DB, cached set, checked first thing in
   process_command. Implemented.

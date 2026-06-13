@@ -16,6 +16,7 @@ CATEGORIES = [
     ]),
     ("personas", [
         "markov", "mimic", "persona", "hyper", "generate",
+        "botpersona", "botmode", "botcontext", "botchance",
     ]),
     ("analysis", [
         "whosaid", "markers", "like", "vibes", "twin", "traits", "top",

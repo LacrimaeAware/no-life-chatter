@@ -121,6 +121,8 @@ class MessageService:
             logging.info(f"Google translation not configured ({e}).")
 
         self._last_reaction = {}  # channel -> last persona-reaction timestamp
+        self._resident_last = {}  # channel -> last resident-persona timestamp
+        self._resident_bot_streak = {}  # channel -> bot resident lines since real chat
         self.can_translate = self.deepl_enabled or (self.translator is not None)
         if self.deepl_enabled:
             logging.info("Translation: DeepL enabled.")
@@ -173,6 +175,135 @@ class MessageService:
         if cand and len(cand.split()) >= 2 and is_clean(cand):
             return cand
         return None
+
+    def _noise_author(self, author):
+        name = (author or "").lower()
+        return (
+            not name
+            or name == (self.bot.nick or "").lower()
+            or name in getattr(config, "EXCLUDE_USERS", set())
+            or name.endswith("bot")
+        )
+
+    def _directed_to_resident(self, content, state):
+        names = [state.get("persona") or ""]
+        prefix = (state.get("prefix") or "").replace("\U0001f4e3", "").strip()
+        if prefix:
+            display = prefix.split()[0].strip()
+            if len(display) >= 4:
+                names.append(display)
+        return bool(self._directed_persona_targets(content, names))
+
+    def _looks_like_greeting(self, content):
+        text = (content or "").lower().strip()
+        return bool(re.search(
+            r"(^|\b)(gm|good\s+morning|morning|hello|hi|hey|yo|sup|gn|good\s+night)(\b|$)",
+            text,
+        ))
+
+    def _resident_prompt(self, state, message, directed, greeting):
+        author = message.author.name if message.author else "someone"
+        content = message.content or ""
+        context = state.get("context") or ""
+        instruction = (
+            f"{author} just said in chat: {content}\n"
+            "You are temporarily hanging out as this chatter, not answering as an assistant. "
+            "Reply only if this chatter would naturally jump in here. "
+            "If the best move is to stay quiet, output exactly STOP. "
+            "Do not mention being a bot or a persona. Do not include any name label or prefix; "
+            "the chat system will add the emote prefix."
+        )
+        if directed:
+            instruction += " This message is directed at you, so a reply is usually natural."
+        elif greeting:
+            instruction += " This looks like a greeting; a short normal greeting back is usually natural."
+        if context:
+            instruction += f"\nStanding instruction: {context}"
+        return instruction
+
+    async def maybe_resident_react(self, message):
+        """Channel-scoped resident persona mode controlled by live state."""
+        channel = message.channel.name
+        try:
+            from utils import persona_llm, resident_persona
+            from utils.chat_archive import normalize_author
+            from utils.output_filter import is_clean
+            from utils import reaction_tracker
+
+            state = resident_persona.get(channel)
+            if not state or state.get("mode") == "silent":
+                return False
+
+            author = message.author.name if message.author else ""
+            if self._noise_author(author):
+                return False
+
+            persona = state.get("persona")
+            if normalize_author(author) == normalize_author(persona):
+                return False
+
+            # A real chatter has spoken, so the resident bot is no longer
+            # talking into an empty room after its own previous line.
+            self._resident_bot_streak[channel] = 0
+
+            if self._resident_bot_streak.get(channel, 0) >= int(state.get("max_bot_streak", 2)):
+                return False
+
+            mode = state.get("mode") or "regular"
+            directed = self._directed_to_resident(message.content, state)
+            greeting = self._looks_like_greeting(message.content)
+            if mode == "response" and not directed:
+                return False
+
+            if mode == "random":
+                chance = float(state.get("directed_chance", 0.65) if directed else state.get("chance", 0.02))
+            elif mode == "regular":
+                if directed:
+                    chance = float(state.get("directed_chance", 0.65))
+                elif greeting:
+                    chance = float(state.get("greeting_chance", 0.75))
+                else:
+                    chance = float(state.get("chance", 0.02))
+            else:
+                chance = float(state.get("directed_chance", 0.65) if directed else 0.0)
+            if chance <= 0 or random.random() >= chance:
+                return False
+
+            cooldown = float(state.get("cooldown", 180.0))
+            if time.time() - self._resident_last.get(channel, 0) < cooldown:
+                return False
+
+            prompt = self._resident_prompt(state, message, directed, greeting)
+            line = await persona_llm.generate(
+                persona,
+                channel,
+                prompt,
+                mode="normal",
+                copy_strategy="drop",
+                invoked_by=author,
+                candidates=1,
+            )
+            if not line or is_stop_followup(line):
+                return False
+            line = resident_persona.format_line(state, line)
+            if not line or not is_clean(line):
+                return False
+            if len(line) > 450:
+                line = line[:449] + "..."
+            self._resident_last[channel] = time.time()
+            self._resident_bot_streak[channel] = self._resident_bot_streak.get(channel, 0) + 1
+            logging.info(f"Resident persona in #{channel} as {persona}: {line!r}")
+            await message.channel.send(line)
+            reaction_tracker.watch(channel, line, {
+                "kind": "resident",
+                "persona": persona,
+                "mode": mode,
+                "directed": directed,
+            })
+            return True
+        except Exception as e:
+            logging.warning(f"maybe_resident_react failed: {e}")
+            return False
 
     async def _maybe_continue_reaction(self, message, target, first_line, is_clean, persona_llm):
         chance = getattr(config, "REACTION_CONTINUE_CHANCE", 0.0)
@@ -265,7 +396,9 @@ class MessageService:
     async def handle_regular_message(self, message):
         logging.info(f"Handling regular message from {message.author.name}: {message.content}")
 
-        await self.maybe_react(message)
+        resident_responded = await self.maybe_resident_react(message)
+        if not resident_responded:
+            await self.maybe_react(message)
 
         user_settings = get_user_settings(message.author.id)
         log_user_activity(message.channel.name, message.author.name)

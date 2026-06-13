@@ -49,10 +49,16 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~generate save <name> <tags...>` | anyone | Save a per-user generation recipe. |
 | `~generate <name> [more tags]` | anyone | Use a saved recipe and optionally stack more tags. |
 | `~generate list` / `~generate del <name>` | anyone | List or delete your saved recipes. |
+| `~botpersona status [chat=<channel>]` | super admin | Inspect the resident persona for a channel. |
+| `~botpersona off [chat=<channel>]` | super admin | Clear the resident persona for a channel. |
+| `~botpersona <user> [chat=<channel>] [minutes=360] [mode=regular\|response\|random\|silent]` | super admin | Set a channel-scoped resident persona that can autonomously reply. |
+| `~botmode regular\|response\|random\|silent [minutes] [chat=<channel>]` | super admin | Change resident persona response mode and optional expiry. |
+| `~botcontext [chat=<channel>] <text\|clear>` | super admin | Set extra standing instruction for the resident persona. |
+| `~botchance <base> [directed] [chat=<channel>]` | super admin | Tune resident persona base and directed reply probabilities. |
 
 Important distinction: `~persona`, `~hyper`, and `~generate` are one-shot
-commands. The "act like a real chatter for five minutes" resident-persona mode
-is planned but not live yet.
+commands. The resident persona commands above are channel-scoped and
+super-admin-only.
 
 ### Stylometry, Similarity, Traits
 
@@ -90,18 +96,9 @@ comparisons, not clinical or total-person labels.
 
 ## Planned But Not Live
 
-These are documented in [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md), but no command module
-exists for them yet:
-
-| Planned command | Intended behavior |
-| --- | --- |
-| `~botmode regular|response|random|silent [minutes]` | Temporarily set how the bot participates in chat. |
-| `~botpersona <recipe tags or combo name>` | Set a resident persona or recipe for autonomous replies. |
-| `~botcontext <free text>` | Add standing instructions for the resident persona. |
-| `~botchance <odds>` | Tune random-mode reply probability. |
-
-The existing ambient reaction code is global config-driven. It is not yet a
-runtime chat-control layer.
+The current resident layer supports one real chatter persona per channel. Full
+`~generate` recipes as resident personas and queue-depth feedback are still
+future work.
 
 ## Artifact Dependencies
 
