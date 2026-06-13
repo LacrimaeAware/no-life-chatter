@@ -1,3 +1,4 @@
+from utils import chat_archive
 from utils.persona_embeddings import available, load, neighbors
 
 description = (
@@ -13,7 +14,7 @@ async def handle_vibes(bot, message, params):
     if not params:
         await message.channel.send("Usage: ~vibes <user>")
         return
-    user = params[0].lstrip("@")
+    user = chat_archive.normalize_author(params[0].lstrip("@"))
     if not available():
         await message.channel.send(
             "No semantic vectors built yet (run scripts/build_persona_embeddings.py)."

@@ -30,7 +30,7 @@ async def handle_traits(bot, message, params):
     if not params:
         await message.channel.send("Usage: ~traits <user>")
         return
-    user = params[0].lstrip("@")
+    user = chat_archive.normalize_author(params[0].lstrip("@"))
     # first call may embed axis poles/emote names — keep it off the event loop
     traits = await asyncio.to_thread(_readout, user)
     if not traits:

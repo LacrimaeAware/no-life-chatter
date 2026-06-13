@@ -1,4 +1,5 @@
 from utils.persona_classifier import profile_for
+from utils import chat_archive
 
 description = (
     "A chatter's voice profile — favorite words and favorite word-pairs vs the "
@@ -36,7 +37,7 @@ async def handle_markers(bot, message, params):
     if not params:
         await message.channel.send("Usage: ~markers <user> [chat=all|<channel>] [year=2023]")
         return
-    user = params[0].lstrip("@")
+    user = chat_archive.normalize_author(params[0].lstrip("@"))
     prof = profile_for(user, channel=channel, year=year)
     if not prof:
         await message.channel.send(

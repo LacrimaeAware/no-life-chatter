@@ -1,5 +1,6 @@
 from utils.persona_classifier import most_like
 from commands.markers import _parse_scope, _scope_label
+from utils import chat_archive
 
 description = (
     "Who shares a chatter's distinctive voice — scored on signature vocabulary, "
@@ -15,7 +16,7 @@ async def handle_like(bot, message, params):
     if not params:
         await message.channel.send("Usage: ~like <user> [chat=all|<channel>] [year=2023]")
         return
-    user = params[0].lstrip("@")
+    user = chat_archive.normalize_author(params[0].lstrip("@"))
     sims = most_like(user, n=4, channel=channel, year=year)
     if not sims:
         await message.channel.send(

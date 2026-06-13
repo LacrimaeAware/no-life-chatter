@@ -75,7 +75,15 @@ def build_irony_queue(n):
         "SELECT id, channel, author, content FROM messages "
         "WHERE LENGTH(content) > 25 AND sent_at >= '2025-01-01' "
         "ORDER BY RANDOM() LIMIT 400").fetchall()
-    rows = [r for r in rows if pc._usable(r[3])][:350]
+
+    def _is_real_message(content):
+        stripped = content.lstrip()
+        # bot commands: <groq ..., <daily, <addquote, !xyz, etc.
+        if stripped and stripped[0] in ('<', '!'):
+            return False
+        return pc._usable(content)
+
+    rows = [r for r in rows if _is_real_message(r[3])][:350]
     iron = np.asarray(_axis_vectors()["ironic"])
     harm = harm_axis()
     texts = [pc.strip_emote_tokens(r[3]) for r in rows]

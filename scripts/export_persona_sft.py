@@ -27,7 +27,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config  # noqa: E402
-from utils import chat_archive  # noqa: E402
+from utils import chat_archive, message_quality  # noqa: E402
 
 SYSTEM_PROMPT = (
     "You are a local Twitch chat persona model. The active persona is written "
@@ -100,6 +100,8 @@ def _usable_output(content: str, min_words: int, max_chars: int, allow_urls: boo
     # or malformed line) — never a real chat message. Don't train on it.
     if TIMESTAMP_IN_TEXT_RE.search(content):
         return False
+    if not message_quality.usable_for_persona_exemplar(content, max_chars=max_chars):
+        return False
     return True
 
 
@@ -107,7 +109,7 @@ def _format_context(rows, max_chars: int) -> str:
     lines = []
     for row in rows:
         content = _clean_line(row["content"], max_chars)
-        if content and not content.startswith(config.PREFIX):
+        if content and message_quality.usable_for_snippet_context(content, max_chars=max_chars):
             lines.append(f'{row["author"]}: {content}')
     return "\n".join(lines)
 

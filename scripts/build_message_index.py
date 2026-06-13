@@ -21,7 +21,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config  # noqa: E402
-from utils import chat_archive, persona_classifier  # noqa: E402
+from utils import chat_archive, message_quality, persona_classifier  # noqa: E402
 from scripts.build_persona_embeddings import embed_batch  # noqa: E402
 
 OUT_DIR = os.path.join("data", "unsynced", "msg_index")
@@ -39,7 +39,21 @@ def main():
         return
     os.makedirs(OUT_DIR, exist_ok=True)
     model = persona_classifier.load()
-    roster = sorted((model.get("profiles") or {}).keys())
+    roster = sorted({
+        chat_archive.normalize_author(a)
+        for a in (model.get("profiles") or {}).keys()
+        if not chat_archive._is_noise_author(a)
+    })
+    if args.force:
+        keep = {f"{a}.npz" for a in roster}
+        stale = [
+            name for name in os.listdir(OUT_DIR)
+            if name.endswith(".npz") and name not in keep
+        ]
+        for name in stale:
+            os.remove(os.path.join(OUT_DIR, name))
+        if stale:
+            print(f"pruned {len(stale)} stale message-index files", flush=True)
     rng = random.Random(11)
     for i, a in enumerate(roster, 1):
         out = os.path.join(OUT_DIR, f"{a}.npz")
@@ -50,11 +64,8 @@ def main():
             print(f"  ({i}/{len(roster)}) {a}: rebuilding", flush=True)
         msgs = []
         for m in chat_archive.messages_for(a):
-            if not persona_classifier._usable(m):
-                continue
-            cleaned = persona_classifier.strip_emote_tokens(
-                persona_classifier._URL_RE.sub(" ", m)).strip()
-            if 4 <= len(cleaned.split()) <= 60:
+            cleaned = message_quality.semantic_text(m, min_words=4, max_words=60)
+            if cleaned:
                 msgs.append((cleaned, m))
         if len(msgs) < 30:
             print(f"  ({i}/{len(roster)}) {a}: too few messages, skipped", flush=True)

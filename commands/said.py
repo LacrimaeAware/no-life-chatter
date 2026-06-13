@@ -2,6 +2,7 @@ import time
 
 from utils.chat_archive import (
     nearest_author_lines,
+    normalize_author,
     normalize_channel,
     said,
     search_all,
@@ -56,6 +57,7 @@ def _format_rows(rows, everyone: bool):
     for sent_at, channel, *rest in rows:
         if everyone:
             author, content = rest
+            author = normalize_author(author)
             parts.append(f"{author}#{channel} {sent_at[:10]}: \"{_clip(content, 80)}\"")
         else:
             content = rest[0]
@@ -69,6 +71,7 @@ async def handle_said(bot, message, params):
         await message.channel.send("Usage: ~said <user|anyone> [chat=<channel>] <phrase>")
         return
     user, phrase = params[0], " ".join(params[1:])
+    display_user = normalize_author(user)
 
     if user.lower() in ("anyone", "*", "everyone"):
         total = search_all_count(phrase, channel=channel)
@@ -99,13 +102,13 @@ async def handle_said(bot, message, params):
         if near:
             score, sent_at, _channel, content = near[0]
             await message.channel.send(
-                f"No exact record for {user}{_scope_label(channel)}. "
+                f"No exact record for {display_user}{_scope_label(channel)}. "
                 f"Closest ({score:.0%}) on {sent_at[:10]}: "
                 f"\"{_clip(content)}\""
             )
             return
         await message.channel.send(
-            f"No record of {user} saying \"{_clip(phrase, 80)}\"{_scope_label(channel)}."
+            f"No record of {display_user} saying \"{_clip(phrase, 80)}\"{_scope_label(channel)}."
         )
         return
     times = "once" if total == 1 else f"{total} times"
@@ -120,7 +123,7 @@ async def handle_said(bot, message, params):
         })
     next_hint = " Use ~saidnext for more." if total > len(rows) else ""
     await message.channel.send(
-        f"{user} said that {times}{_scope_label(channel)}: "
+        f"{display_user} said that {times}{_scope_label(channel)}: "
         + _format_rows(rows, everyone=False)
         + next_hint
     )

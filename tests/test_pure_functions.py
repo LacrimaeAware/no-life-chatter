@@ -24,7 +24,7 @@ def install_fake_config():
 
 install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
-from utils import chat_archive, persona_classifier, persona_llm  # noqa: E402
+from utils import chat_archive, message_quality, persona_classifier, persona_iq, persona_llm  # noqa: E402
 from commands import markers  # noqa: E402
 
 
@@ -113,6 +113,28 @@ class PersonaClassifierPureTests(unittest.TestCase):
             prevalence={"signature": 1, "everyone": 9}, n_panel=10)
         self.assertIn("signature", profile)
         self.assertNotIn("everyone", profile)
+
+
+class MessageQualityPureTests(unittest.TestCase):
+    def test_rejects_command_and_bot_syntax(self):
+        self.assertFalse(message_quality.usable_for_persona_exemplar("$gpt tell me a thing"))
+        self.assertFalse(message_quality.usable_for_persona_exemplar("<groq what is this"))
+        self.assertFalse(message_quality.usable_for_iq("^guess a ^guess b ^guess c"))
+
+    def test_rejects_repeated_emote_or_token_spam(self):
+        text = "pepeLaugh pepeLaugh pepeLaugh pepeLaugh pepeLaugh pepeLaugh"
+        self.assertFalse(message_quality.usable_for_iq(text))
+
+    def test_keeps_reasonable_semantic_text(self):
+        text = "because jupyter needs the kernel packages installed for interactive python"
+        self.assertTrue(message_quality.usable_for_iq(text))
+        self.assertIsNotNone(message_quality.semantic_text(text))
+
+
+class PersonaIqPureTests(unittest.TestCase):
+    def test_roster_canonicalizes_aliases_and_drops_noise(self):
+        roster = persona_iq._canonical_roster(["oldalt", "mainuser", "helperbot"])
+        self.assertEqual(roster, ["mainuser"])
 
 
 class PersonaRetrievalPureTests(unittest.TestCase):

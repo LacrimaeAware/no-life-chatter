@@ -165,7 +165,13 @@ def classify(text, top_k=5, restrict_to=None):
         return []
     pipe = model["pipe"]
     probs = pipe.predict_proba([text])[0]
-    pairs = list(zip(pipe.classes_, probs))
+    collapsed = {}
+    for author, prob in zip(pipe.classes_, probs):
+        canon = chat_archive.normalize_author(author)
+        if chat_archive._is_noise_author(canon):
+            continue
+        collapsed[canon] = collapsed.get(canon, 0.0) + float(prob)
+    pairs = list(collapsed.items())
     if restrict_to is not None:
         keep = {chat_archive.normalize_author(a) for a in restrict_to}
         pairs = [(a, p) for a, p in pairs if a in keep]
@@ -436,9 +442,10 @@ def profile_for(author, channel=None, year=None, author_cap=20000):
     profiles = model.get("profiles") or {}
     canon = chat_archive.normalize_author(author)
     if not channel and not year:
-        prof = profiles.get(canon)
-        if prof and "words" in prof:
-            return prof
+        for key in [canon, *chat_archive.author_keys(canon)]:
+            prof = profiles.get(key)
+            if prof and "words" in prof:
+                return prof
     key = (canon, chat_archive.normalize_channel(channel) if channel else None, year)
     if key in _scoped_cache:
         return _scoped_cache[key]
@@ -470,9 +477,10 @@ def most_like(author, n=6, channel=None, year=None):
     target = profile_for(canon, channel=channel, year=year)
     if not target:
         return []
-    sims = []
+    sims = {}
     for c, prof in profiles.items():
-        if c == canon or "words" not in prof:
+        c_canon = chat_archive.normalize_author(c)
+        if c_canon == canon or chat_archive._is_noise_author(c_canon) or "words" not in prof:
             continue
         shared_w = [(k, target["words"][k] * prof["words"][k])
                     for k in target["words"] if k in prof["words"]]
@@ -491,9 +499,11 @@ def most_like(author, n=6, channel=None, year=None):
         in_pairs = {t for p in pair_ev for t in p.split()}
         word_ev = [k for k, _ in shared_w if k not in in_pairs][:3]
         emote_ev = [k for k, _ in shared_e[:2]]
-        sims.append((c, score, (pair_ev + emote_ev + word_ev)[:5]))
-    sims.sort(key=lambda kv: -kv[1])
-    return sims[:n]
+        row = (c_canon, score, (pair_ev + emote_ev + word_ev)[:5])
+        if c_canon not in sims or score > sims[c_canon][1]:
+            sims[c_canon] = row
+    ranked = sorted(sims.values(), key=lambda kv: -kv[1])
+    return ranked[:n]
 
 
 def signature_words(author, n=12, author_cap=5000, bg_cap=40000, min_count=3, seed=13):

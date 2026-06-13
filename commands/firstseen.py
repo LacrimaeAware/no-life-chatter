@@ -1,4 +1,4 @@
-from utils.chat_archive import first_seen
+from utils.chat_archive import first_seen, normalize_author
 
 description = (
     "First archived message from a user.\n"
@@ -10,6 +10,7 @@ async def handle_firstseen(bot, message, params):
     if not params:
         await message.channel.send("Usage: ~firstseen <user>")
         return
+    params[0] = normalize_author(params[0])
     row = first_seen(params[0])
     if not row:
         await message.channel.send(f"Nothing archived for {params[0]} yet.")

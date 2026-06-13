@@ -60,10 +60,19 @@ def similarities(author):
         return {}
     vectors = _centered()
     canon = chat_archive.normalize_author(author)
-    v = vectors.get(canon)
+    key = _vector_key(vectors, canon)
+    v = vectors.get(key) if key else None
     if v is None:
         return {}
-    return {c: float(v @ w) for c, w in vectors.items() if c != canon}
+    sims = {}
+    for other, w in vectors.items():
+        other_canon = chat_archive.normalize_author(other)
+        if other_canon == canon or chat_archive._is_noise_author(other_canon):
+            continue
+        score = float(v @ w)
+        if other_canon not in sims or score > sims[other_canon]:
+            sims[other_canon] = score
+    return sims
 
 
 def neighbors(author, n=5):
@@ -72,9 +81,27 @@ def neighbors(author, n=5):
         return []
     vectors = _centered()
     canon = chat_archive.normalize_author(author)
-    v = vectors.get(canon)
+    key = _vector_key(vectors, canon)
+    v = vectors.get(key) if key else None
     if v is None:
         return []
-    sims = [(c, float(v @ w)) for c, w in vectors.items() if c != canon]
+    best = {}
+    for other, w in vectors.items():
+        other_canon = chat_archive.normalize_author(other)
+        if other_canon == canon or chat_archive._is_noise_author(other_canon):
+            continue
+        score = float(v @ w)
+        if other_canon not in best or score > best[other_canon]:
+            best[other_canon] = score
+    sims = list(best.items())
     sims.sort(key=lambda kv: -kv[1])
     return sims[:n]
+
+
+def _vector_key(vectors: dict, canon: str) -> str | None:
+    if canon in vectors:
+        return canon
+    for key in chat_archive.author_keys(canon):
+        if key in vectors:
+            return key
+    return None

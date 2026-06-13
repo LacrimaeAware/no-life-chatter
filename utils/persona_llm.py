@@ -22,7 +22,7 @@ from collections import Counter
 
 import config
 from services import llm
-from utils import chat_archive
+from utils import chat_archive, message_quality
 from utils.log_rotation import rotate_file
 
 
@@ -70,37 +70,15 @@ MODE_INSTRUCTION = {
 
 
 def _usable_exemplar(message: str) -> bool:
-    if not message:
-        return False
-    stripped = message.lstrip()
-    if stripped.startswith(config.PREFIX) or stripped.startswith("<"):
-        return False  # commands to this bot or to other bots (<grok, <news ...)
-    if "http://" in message or "https://" in message or "www." in message:
-        return False  # links teach nothing about voice and leak into output
-    words = message.split()
-    if len(words) < 2 or len(message) > 240:
-        return False
-    if _repeated_token_spam(words):
-        return False  # repeated-token spam is topical noise, not voice evidence
-    # require at least one real lowercase word — drops pure ping+emote lines
-    return any(re.search(r"[a-z]{3}", w) for w in words)
+    return message_quality.usable_for_persona_exemplar(message)
 
 
 def _repeated_token_spam(words) -> bool:
-    norm_words = [chat_archive.line_match_key(w) for w in words]
-    norm_words = [w for w in norm_words if w]
-    if len(norm_words) < 6:
-        return False
-    counts = Counter(norm_words)
-    return len(counts) <= 4 and counts.most_common(1)[0][1] / len(norm_words) >= 0.45
+    return message_quality.repeated_token_spam(words)
 
 
 def _usable_snippet_context(message: str) -> bool:
-    if not message or len(message) > 240:
-        return False
-    if "http://" in message or "https://" in message or "www." in message:
-        return False
-    return not _repeated_token_spam(message.split())
+    return message_quality.usable_for_snippet_context(message)
 
 
 def _unique_messages(messages, n: int, seen=None):

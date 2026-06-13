@@ -1,4 +1,4 @@
-from utils import persona_embeddings
+from utils import chat_archive, persona_embeddings
 from utils.persona_classifier import most_like
 
 description = (
@@ -22,7 +22,7 @@ async def handle_twin(bot, message, params):
     if not params:
         await message.channel.send("Usage: ~twin <user>")
         return
-    user = params[0].lstrip("@")
+    user = chat_archive.normalize_author(params[0].lstrip("@"))
     lex = {a: s for a, s, _ in most_like(user, n=200)}
     sem = persona_embeddings.similarities(user)
     if not lex and not sem:

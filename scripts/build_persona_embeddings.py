@@ -22,7 +22,7 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config  # noqa: E402
-from utils import chat_archive, persona_classifier  # noqa: E402
+from utils import chat_archive, message_quality, persona_classifier  # noqa: E402
 
 OUT = os.path.join("data", "unsynced", "persona_embeddings.pkl")
 
@@ -48,11 +48,8 @@ def person_vector(author, per_author, rng):
     import numpy as np
     msgs = []
     for m in chat_archive.messages_for(author):
-        if not persona_classifier._usable(m):
-            continue
-        cleaned = persona_classifier.strip_emote_tokens(
-            persona_classifier._URL_RE.sub(" ", m))
-        if 4 <= len(cleaned.split()) <= 60:
+        cleaned = message_quality.semantic_text(m, min_words=4, max_words=60)
+        if cleaned:
             msgs.append(cleaned)
     if len(msgs) < 30:
         return None, 0

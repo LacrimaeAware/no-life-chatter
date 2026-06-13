@@ -1,22 +1,23 @@
 import asyncio
 
 from utils.persona_iq import leaderboard, score
+from utils import chat_archive
 
 description = (
-    "A text-register estimate styled like IQ — NOT actual IQ (text can't "
-    "measure intelligence; this is calibrated to this chat, average here = "
-    "100). Built from top-decile vocabulary rarity, sustained syntax, lexical "
-    "diversity, topic breadth and niche depth — deliberately different "
-    "machinery from the professor axis.\n"
-    "  ~iq <user>   ·   ~iq top [n]   ·   ~iq bottom [n]"
+    "Text-IQ: a roster-relative estimate of peak expressed cognition in chat. "
+    "Uses top-decile utterances, lexical/syntax signals, embedding reasoning "
+    "axes, topic breadth, niche depth, and confidence from split stability.\n"
+    "  ~iq <user>   |   ~iq top [n]   |   ~iq bottom [n]"
 )
 
 
 def _fmt(a, d):
     parts = []
-    for c in ("vocab", "syntax", "breadth", "depth"):
-        parts.append(f"{c} {d[c]:+.1f}")
-    return f"{a}: {d['iq']} ({' · '.join(parts)})"
+    for c in ("reasoning", "abstraction", "vocab", "syntax", "breadth", "depth"):
+        if c in d:
+            parts.append(f"{c} {d[c]:+.1f}")
+    tail = f"pct {d.get('percentile', '?')} | conf {d.get('confidence', '?')}"
+    return f"{a}: {d['iq']} ({' | '.join(parts)}) [{tail}]"
 
 
 async def handle_iq(bot, message, params):
@@ -29,11 +30,17 @@ async def handle_iq(bot, message, params):
         n = max(1, min(int(params[1]), 10))
     if sub in ("top", "bottom"):
         rows = await asyncio.to_thread(leaderboard, n, sub == "bottom")
-        parts = [f"{i}. {a} ({d['iq']})" for i, (a, d) in enumerate(rows, 1)]
-        await message.channel.send(f"🧠 {sub} estimated text-IQ: " + " · ".join(parts))
+        parts = [
+            f"{i}. {a} ({d['iq']}, {d.get('confidence', '?')})"
+            for i, (a, d) in enumerate(rows, 1)
+        ]
+        await message.channel.send(f"{sub} text-IQ: " + " | ".join(parts))
         return
+    display_user = chat_archive.normalize_author(sub)
     d = await asyncio.to_thread(score, sub)
     if not d:
-        await message.channel.send(f"Not enough data for {sub} (needs 50+ utterances in the index).")
+        await message.channel.send(
+            f"Not enough data for {display_user} (needs enough merged utterances in the archive)."
+        )
         return
-    await message.channel.send(f"🧠 {_fmt(sub, d)}  [chat-relative estimate, not real IQ]")
+    await message.channel.send(_fmt(display_user, d))

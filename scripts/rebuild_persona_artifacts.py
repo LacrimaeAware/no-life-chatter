@@ -6,7 +6,8 @@ Default pipeline:
 2. Rebuild lexical voice profiles in the classifier pickle.
 3. Rebuild semantic person vectors through the configured local embedding model.
 4. Rebuild the per-message semantic index used by burst leaderboards and RAG.
-5. Smoke-check trait axes/leaderboards.
+5. Rebuild the v2 `~iq` text-IQ ensemble cache.
+6. Smoke-check trait axes/leaderboards.
 
 Use --dry-run to print the commands without running them. Use --skip-embeddings
 when LM Studio's embedding endpoint is not running; that also skips the message
@@ -72,6 +73,13 @@ def main() -> int:
     parser.add_argument("--no-message-index-force", action="store_true",
                         help="leave existing per-author message index files in place")
 
+    parser.add_argument("--skip-iq", action="store_true")
+    parser.add_argument("--iq-max-utterances", type=int, default=600)
+    parser.add_argument("--iq-min-utterances", type=int, default=80)
+    parser.add_argument("--iq-author-cap", type=int, default=15000)
+    parser.add_argument("--iq-judge", action="store_true",
+                        help="also run the optional local-LLM judge layer")
+
     parser.add_argument("--skip-trait-smoke", action="store_true")
     parser.add_argument("--trait-smoke-n", type=int, default=3)
     args = parser.parse_args()
@@ -112,6 +120,18 @@ def main() -> int:
         if not args.no_message_index_force:
             cmd.append("--force")
         steps.append(("semantic message index", cmd))
+
+    if not args.skip_iq:
+        cmd = [py, "scripts/build_iq_v2.py",
+               "--force",
+               "--max-utterances", str(args.iq_max_utterances),
+               "--min-utterances", str(args.iq_min_utterances),
+               "--author-cap", str(args.iq_author_cap)]
+        if args.skip_embeddings:
+            cmd.append("--no-embeddings")
+        if args.iq_judge:
+            cmd.append("--judge")
+        steps.append(("text-IQ v2", cmd))
 
     if not args.skip_trait_smoke:
         steps.append(("trait axis smoke", [
