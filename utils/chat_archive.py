@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sqlite3
+import threading
 import unicodedata
 from collections import Counter
 from difflib import SequenceMatcher
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS ingested_files (
 """
 
 _conn = None
+_thread_state = threading.local()
 
 
 def _base_name(name: str) -> str:
@@ -176,16 +178,20 @@ def line_similarity(left: str, right: str) -> float:
 
 def connect() -> sqlite3.Connection:
     global _conn
-    if _conn is None:
+    conn = getattr(_thread_state, "conn", None)
+    if conn is None:
         os.makedirs(os.path.dirname(config.ARCHIVE_DB), exist_ok=True)
         # WAL + generous busy timeout so the bot's live writes and in-chat
         # queries keep working while an ingest run holds long write
         # transactions in another process.
-        _conn = sqlite3.connect(config.ARCHIVE_DB, timeout=30)
-        _conn.execute("PRAGMA journal_mode=WAL")
-        _conn.execute("PRAGMA synchronous=NORMAL")
-        _conn.executescript(_SCHEMA)
-    return _conn
+        conn = sqlite3.connect(config.ARCHIVE_DB, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.executescript(_SCHEMA)
+        _thread_state.conn = conn
+        if _conn is None:
+            _conn = conn
+    return conn
 
 
 # ----------------------- Chatterino log parsing -----------------------

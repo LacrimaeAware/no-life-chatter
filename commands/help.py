@@ -15,10 +15,14 @@ CATEGORIES = [
         "chatstats", "regulars",
     ]),
     ("personas", [
-        "markov", "mimic", "persona", "hyper",
+        "markov", "mimic", "persona", "hyper", "generate",
     ]),
     ("analysis", [
         "whosaid", "markers", "like", "vibes", "twin", "traits", "top",
+        "distinct", "why", "emote", "iq", "irony",
+    ]),
+    ("moderation", [
+        "banuser", "unbanuser", "warnings",
     ]),
     ("utility", [
         "help", "ping",

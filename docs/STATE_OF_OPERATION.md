@@ -51,6 +51,8 @@ reports, user rosters, model outputs, aliases, logs, and tokens stay ignored in
 
 ## Current Commands
 
+Full command details live in [COMMANDS.md](COMMANDS.md).
+
 Translation:
 `~autotl`, `~setlang`, `~tloutput`, `~chan_autotl`, `~global_autotl`,
 `~practice`, `~romanize`, `~speak`
@@ -61,7 +63,7 @@ Archive:
 
 Analysis:
 `~whosaid`, `~markers`, `~like`, `~twin`, `~traits`, `~top`, `~vibes`,
-`~iq`, `~distinct`, `~why`
+`~iq`, `~distinct`, `~why`, `~irony`
 
 Personas:
 `~markov`, `~mimic`, `~persona`, `~hyper`, `~generate`
@@ -239,6 +241,7 @@ It should not narrate private operating rules or expose real chat evidence.
 ## Useful Entry Points
 
 - Current-state map: `docs/STATE_OF_OPERATION.md`
+- Command bible: `docs/COMMANDS.md`
 - Persona/archive narrative: `docs/HANDOFF.md`
 - Fine-tuning runbook: `docs/FINE_TUNING.md`
 - Persona roadmap: `docs/PERSONA_BOT_ROADMAP.md`

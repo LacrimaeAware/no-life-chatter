@@ -103,6 +103,10 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 
 ## Commands
 
+The full live command list is maintained in
+[docs/COMMANDS.md](docs/COMMANDS.md). In chat, `~help` shows grouped pages and
+`~help <command>` shows details for a single command.
+
 | Command | Who | Description |
 | --- | --- | --- |
 | `~help [page|command]` | anyone | List grouped command pages, or details for one command. |

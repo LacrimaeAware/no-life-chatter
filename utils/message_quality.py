@@ -21,8 +21,9 @@ URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
 INVISIBLE_RE = re.compile("[\u200b-\u200f\u2060\ufeff\U000e0000-\U000e007f]")
 COMMAND_TOKEN_RE = re.compile(r"^[!$^?<][\w-]+", re.UNICODE)
 BOT_TEXT_RE = re.compile(
-    r"(<groq|<gpt|\$gpt|\$ll|\$alias|!eval|here's the translation|"
-    r"i was unable to translate|your message was not sent because|automod:|"
+    r"(<groq|<gpt|\$gpt|\$ll|\$alias|!eval|\[translation\]|"
+    r"here's the translation|i was unable to translate|i'?m not allowed to translate|"
+    r"your message was not sent because|automod:|"
     r"\U0001f916\s*@)",
     re.I,
 )
@@ -36,7 +37,51 @@ def clean_text(text: str, *, strip_emotes: bool = True, strip_urls: bool = True)
         text = URL_RE.sub(" ", text)
     if strip_emotes:
         text = pc.strip_emote_tokens(text)
-    return re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return collapse_repeated_spans(text)
+
+
+def _span_key(words: list[str]) -> tuple[str, ...]:
+    return tuple(
+        re.sub(r"[^\w]+", "", word.casefold()).strip("_")
+        for word in words
+    )
+
+
+def collapse_repeated_spans(text: str, *, max_span: int = 18) -> str:
+    """Collapse adjacent repeated word spans from merged chat bursts.
+
+    This targets archive artifacts like "because X because X" or copied bot
+    output repeated twice inside one merged utterance. It only collapses exact
+    adjacent spans of at least two tokens, so ordinary emphasis mostly survives.
+    """
+    words = (text or "").split()
+    if len(words) < 8:
+        return text or ""
+    out = []
+    i = 0
+    while i < len(words):
+        collapsed = False
+        largest = min(max_span, (len(words) - i) // 2)
+        for span in range(largest, 1, -1):
+            key = _span_key(words[i:i + span])
+            if not all(key):
+                continue
+            repeats = 1
+            while i + (repeats + 1) * span <= len(words):
+                nxt = _span_key(words[i + repeats * span:i + (repeats + 1) * span])
+                if nxt != key:
+                    break
+                repeats += 1
+            if repeats >= 2:
+                out.extend(words[i:i + span])
+                i += repeats * span
+                collapsed = True
+                break
+        if not collapsed:
+            out.append(words[i])
+            i += 1
+    return " ".join(out)
 
 
 def letter_count(text: str) -> int:
@@ -106,6 +151,20 @@ def repeated_token_spam(words) -> bool:
     return len(counts) <= 4 and counts.most_common(1)[0][1] / len(norm_words) >= 0.45
 
 
+def repeated_phrase_spam(toks: list[str]) -> bool:
+    if len(toks) < 12:
+        return False
+    for n in (2, 3, 4, 5, 6):
+        grams = [tuple(toks[i:i + n]) for i in range(0, len(toks) - n + 1)]
+        if not grams:
+            continue
+        count = Counter(grams).most_common(1)[0][1]
+        if count >= 3 and (count * n) / len(toks) >= 0.45:
+            return True
+    half = len(toks) // 2
+    return half >= 6 and toks[:half] == toks[half:half * 2]
+
+
 def spam_like(text: str, toks: list[str] | None = None) -> bool:
     toks = toks if toks is not None else tokens(text)
     compact = re.sub(r"\s+", "", text or "")
@@ -129,6 +188,8 @@ def spam_like(text: str, toks: list[str] | None = None) -> bool:
         bigrams = list(zip(toks, toks[1:]))
         if bigrams and Counter(bigrams).most_common(1)[0][1] / len(bigrams) >= 0.22:
             return True
+    if repeated_phrase_spam(toks):
+        return True
     return False
 
 

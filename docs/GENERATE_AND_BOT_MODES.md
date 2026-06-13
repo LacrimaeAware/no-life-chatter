@@ -1,8 +1,8 @@
 # ~generate, saved combos, and bot modes — design
 
 User-requested feature family, 2026-06-11. Part 1 (~generate + saved combos)
-is implemented; parts 2-4 are specced here for implementation (bot modes,
-admin controls, queueing).
+is implemented; bot modes and queue-depth feedback are still specced here for
+implementation. Ban/cooldown controls now exist.
 
 ## 1. ~generate — tag-driven example generation (IMPLEMENTED)
 
@@ -66,14 +66,15 @@ Proposed commands:
 @-mention responses use the resident persona when set, else the old behavior.
 Time-limited modes revert to silent when the timer lapses.
 
-## 4. Admin & abuse controls (SPEC — not yet implemented)
+## 4. Admin & abuse controls (PARTLY IMPLEMENTED)
 
-- ~banuser <name> / ~unbanuser <name> — super admin; banned users' commands
-  are ignored entirely (checked in command_processor before dispatch).
-- **Queue + cooldown**: LLM commands run through a small queue; if 3+ jobs
-  are pending, the bot replies once "queue full (3 ahead), hold on" and
-  processes when space frees. Per-user cooldown (e.g. one LLM command per
-  20s) with a polite nudge instead of silence.
+- `~banuser <name>` / `~unbanuser <name>` is implemented. Super-admin only;
+  banned users' commands are ignored entirely by `command_processor`.
+- Escalating anti-spam cooldowns are implemented for command stacking while a
+  previous command is still pending. Recent offenses are reviewable with
+  `~warnings`.
+- **Still missing:** explicit LLM queue-depth feedback. Today `services.llm`
+  serializes calls, but users do not get a "queue full / N ahead" response.
 
 ## Implementation notes for whoever picks up 3/4
 
@@ -85,4 +86,4 @@ Time-limited modes revert to silent when the timer lapses.
   cheap "reply or STAY SILENT" instruction and max_tokens=8 — but it costs a
   model call per message, so guard with rate limits + random pre-gate.
 - Ban list: data/synced settings DB, cached set, checked first thing in
-  process_command.
+  process_command. Implemented.

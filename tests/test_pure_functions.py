@@ -1,6 +1,7 @@
 import importlib
 import math
 import sys
+import threading
 import types
 import unittest
 from collections import Counter
@@ -45,6 +46,18 @@ class ArchiveNormalizationTests(unittest.TestCase):
     def test_author_alias_chains_and_author_keys(self):
         self.assertEqual(chat_archive.normalize_author("@OldAlt,"), "mainuser")
         self.assertEqual(chat_archive.author_keys("oldalt"), ["altone", "mainuser", "oldalt"])
+
+    def test_archive_connections_are_thread_local(self):
+        main_conn = chat_archive.connect()
+        seen = []
+
+        def worker():
+            seen.append(chat_archive.connect())
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+        self.assertIsNot(main_conn, seen[0])
 
     def test_alias_cycle_stops_instead_of_looping_forever(self):
         aliases = {"a": "b", "b": "a"}
@@ -120,10 +133,17 @@ class MessageQualityPureTests(unittest.TestCase):
         self.assertFalse(message_quality.usable_for_persona_exemplar("$gpt tell me a thing"))
         self.assertFalse(message_quality.usable_for_persona_exemplar("<groq what is this"))
         self.assertFalse(message_quality.usable_for_iq("^guess a ^guess b ^guess c"))
+        self.assertFalse(message_quality.usable_for_iq("[Translation] I am not allowed to translate that"))
 
     def test_rejects_repeated_emote_or_token_spam(self):
         text = "pepeLaugh pepeLaugh pepeLaugh pepeLaugh pepeLaugh pepeLaugh"
         self.assertFalse(message_quality.usable_for_iq(text))
+        phrase = "because the model copied the same clause " * 4
+        self.assertFalse(message_quality.usable_for_iq(phrase))
+
+    def test_collapses_repeated_spans(self):
+        text = "i mean this because it works i mean this because it works"
+        self.assertEqual(message_quality.clean_text(text), "i mean this because it works")
 
     def test_keeps_reasonable_semantic_text(self):
         text = "because jupyter needs the kernel packages installed for interactive python"

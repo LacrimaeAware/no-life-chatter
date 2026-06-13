@@ -5,7 +5,7 @@ from utils import irony
 description = (
     "Guess whether a message is ironic or sincere (and why). Recognized emotes "
     "are resolved to their meaning first. Add context= to shift the read.\n"
-    "  ~irony <message>   ·   ~irony context=women DansGame asldkasd"
+    "  ~irony <message>   |   ~irony context=women DansGame asldkasd"
 )
 
 
@@ -23,4 +23,5 @@ async def handle_irony(bot, message, params):
         return
     verdict, zi, zh = await asyncio.to_thread(irony.read, text, context)
     await message.channel.send(
-        f"🎭 {verdict}  (sarcasm {zi:+.1f} · content-extremity {zh:+.1f})")
+        f"{verdict} (sarcasm {zi:+.1f} | content-extremity {zh:+.1f})"
+    )
