@@ -131,14 +131,33 @@ Best next improvement:
 
 1. Resident persona controls: `~botpersona`, `~botmode`, `~botcontext`,
    `~botchance`, with per-channel state and timed auto-revert.
-2. LLM queue/cap feedback around `services.llm.chat`, so heavy persona commands
+2. Semantic utterance chunking for persona embeddings and the message index.
+   This is now implemented for future rebuilds: those scripts default to
+   `--unit utterance`, while `--unit message` remains available for A/B.
+3. LLM queue/cap feedback around `services.llm.chat`, so heavy persona commands
    fail gracefully instead of feeling frozen.
-3. IQ receipts: a command or report that explains component drivers per user.
-4. Real-or-AI game, because it uses existing archive/persona machinery and gives
+4. IQ receipts: a command or report that explains component drivers per user.
+5. Real-or-AI game, because it uses existing archive/persona machinery and gives
    chat a direct eval loop.
-5. Archive lore/emote QA with retrieval evidence.
-6. More intent/irony labels, then retrain probes. The current seed model is not
+6. Archive lore/emote QA with retrieval evidence.
+7. More intent/irony labels, then retrain probes. The current seed model is not
    enough to make irony a primary live decision layer.
+
+## Follow-Up Implementation Note
+
+After this audit, the semantic rebuild path was changed so person embeddings and
+the semantic message index use merged same-author utterances by default. This
+does not retrain or rewrite current artifacts by itself. It changes the next
+planned rebuild from "embed isolated chat fragments" to "embed conversational
+turns," which should improve persona retrieval, `~vibes`, `~why`, trait burst
+evidence, and IQ embedding features without tuning any one user's score.
+
+The authorship classifier still trains on individual messages. That is
+intentional for now because `~whosaid` often receives a single line, so changing
+the classifier's unit should be a separate A/B, not a blind migration. Its
+line-level filter now uses the shared message-quality rules, so future
+classifier/style-profile rebuilds also drop bot commands, translation
+boilerplate, and repeated spam.
 
 ## Operational Rule
 

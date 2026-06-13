@@ -14,7 +14,6 @@ import unicodedata
 from collections import Counter
 
 import config
-from utils import persona_classifier as pc
 
 WORD_RE = re.compile(r"[\w']+", re.UNICODE)
 URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -30,13 +29,18 @@ BOT_TEXT_RE = re.compile(
 PASTED_LOG_RE = re.compile(r"(?:^|\s)\d{1,2}:\d{2}\s+[A-Za-z0-9_]{2,25}:")
 
 
+def _pc():
+    from utils import persona_classifier
+    return persona_classifier
+
+
 def clean_text(text: str, *, strip_emotes: bool = True, strip_urls: bool = True) -> str:
     text = unicodedata.normalize("NFKC", text or "")
     text = INVISIBLE_RE.sub("", text)
     if strip_urls:
         text = URL_RE.sub(" ", text)
     if strip_emotes:
-        text = pc.strip_emote_tokens(text)
+        text = _pc().strip_emote_tokens(text)
     text = re.sub(r"\s+", " ", text).strip()
     return collapse_repeated_spans(text)
 
@@ -194,7 +198,7 @@ def spam_like(text: str, toks: list[str] | None = None) -> bool:
 
 
 def usable_for_iq(raw: str, clean: str | None = None, toks: list[str] | None = None) -> bool:
-    if not raw or not pc._usable(raw):
+    if not raw:
         return False
     clean = clean_text(raw) if clean is None else clean
     toks = tokens(clean) if toks is None else toks

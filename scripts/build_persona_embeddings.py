@@ -2,13 +2,13 @@
 
 The token-statistics layer (~markers/~like) can only see which exact words
 someone overuses; this is the semantic layer that sees what they talk ABOUT.
-For every voice-profile roster author: sample their usable messages, embed
+For every voice-profile roster author: sample their usable utterances, embed
 each via LM Studio's /v1/embeddings (config [llm] embed_model — runs fully
 local), mean-pool into one L2-normalized person vector, and store the lot in
 a gitignored pickle. Downstream: semantic ~like / ~vibes, clustering for the
 personality-map idea, trait axes (docs/CHAT_PERSONALITY_RESEARCH.md).
 
-    python scripts/build_persona_embeddings.py [--per-author 200] [--report]
+    python scripts/build_persona_embeddings.py [--per-author 1000] [--report]
 """
 
 import argparse
@@ -38,7 +38,21 @@ def embed_batch(texts):
     return [d["embedding"] for d in data["data"]]
 
 
-def person_vector(author, per_author, rng):
+def _semantic_units(author: str, unit: str) -> list[str]:
+    source = (
+        chat_archive.utterances_for(author)
+        if unit == "utterance"
+        else chat_archive.messages_for(author)
+    )
+    out = []
+    for text in source:
+        cleaned = message_quality.semantic_text(text, min_words=4, max_words=70)
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
+def person_vector(author, per_author, rng, unit="utterance"):
     """Mean-pooled, L2-normalized embedding of a sample of their messages.
 
     Emote tokens and URLs are stripped BEFORE embedding and a message must
@@ -46,11 +60,7 @@ def person_vector(author, per_author, rng):
     emote usage is its own profile channel. (One-emote lines taught the old
     vectors nothing and diluted everyone toward the same point.)"""
     import numpy as np
-    msgs = []
-    for m in chat_archive.messages_for(author):
-        cleaned = message_quality.semantic_text(m, min_words=4, max_words=60)
-        if cleaned:
-            msgs.append(cleaned)
+    msgs = _semantic_units(author, unit)
     if len(msgs) < 30:
         return None, 0
     rng.shuffle(msgs)
@@ -66,6 +76,8 @@ def main():
     import numpy as np
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--per-author", type=int, default=1000)
+    ap.add_argument("--unit", choices=("utterance", "message"), default="utterance",
+                    help="semantic unit to embed; utterance merges same-author bursts")
     ap.add_argument("--report", action="store_true",
                     help="print nearest neighbors per author when done")
     args = ap.parse_args()
@@ -75,20 +87,21 @@ def main():
 
     model = persona_classifier.load()
     roster = sorted((model.get("profiles") or {}).keys())
-    print(f"embedding {len(roster)} chatters, ~{args.per_author} msgs each...")
+    print(f"embedding {len(roster)} chatters, ~{args.per_author} {args.unit}s each...")
     rng = random.Random(7)
     vectors = {}
     for i, a in enumerate(roster, 1):
-        v, n = person_vector(a, args.per_author, rng)
+        v, n = person_vector(a, args.per_author, rng, unit=args.unit)
         if v is None:
-            print(f"  ({i}/{len(roster)}) {a}: too few usable messages, skipped")
+            print(f"  ({i}/{len(roster)}) {a}: too few usable {args.unit}s, skipped")
             continue
         vectors[a] = v
-        print(f"  ({i}/{len(roster)}) {a}: {n} msgs embedded", flush=True)
+        print(f"  ({i}/{len(roster)}) {a}: {n} {args.unit}s embedded", flush=True)
 
     with open(OUT, "wb") as fh:
         pickle.dump({"model": config.LLM_EMBED_MODEL,
                      "per_author": args.per_author,
+                     "unit": args.unit,
                      "vectors": vectors}, fh)
     print(f"\n{len(vectors)} person vectors -> {OUT}")
 

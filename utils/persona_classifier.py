@@ -22,14 +22,14 @@ import random
 import re
 
 import config
-from utils import chat_archive
+from utils import chat_archive, message_quality
 
 _MODEL = None
 _WORD_RE = re.compile(r"[\w']+", re.UNICODE)
 
 
 def _usable(msg):
-    return bool(msg and len(msg.split()) >= 2 and not msg.lstrip().startswith(config.PREFIX))
+    return message_quality.usable_for_persona_exemplar(msg, max_chars=500)
 
 
 def _dedupe_canonical(names, max_authors=None):

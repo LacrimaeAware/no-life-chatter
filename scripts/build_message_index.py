@@ -1,6 +1,6 @@
-"""Per-message embedding index for roster authors (Bucket C #17b/#18 base).
+"""Per-utterance embedding index for roster authors (Bucket C #17b/#18 base).
 
-Person-level mean vectors answer "who is this person overall"; per-MESSAGE
+Person-level mean vectors answer "who is this person overall"; per-unit
 vectors unlock the two things means can't do:
 - burst traits: someone who is extremely doomer in 10% of messages and
   neutral otherwise averages to mild — per-message projections catch the tail
@@ -8,7 +8,7 @@ vectors unlock the two things means can't do:
   to the live conversation, instead of FTS keyword overlap
 
 Storage: data/unsynced/msg_index/<author>.npz with float16 vectors + the
-message texts (aligned). ~3MB per 1000 messages per author; loaded lazily.
+texts (aligned). ~3MB per 1000 units per author; loaded lazily.
 
     python scripts/build_message_index.py [--per-author 1500]
 """
@@ -31,6 +31,8 @@ def main():
     import numpy as np
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--per-author", type=int, default=1500)
+    ap.add_argument("--unit", choices=("utterance", "message"), default="utterance",
+                    help="semantic unit to embed; utterance merges same-author bursts")
     ap.add_argument("--force", action="store_true",
                     help="overwrite existing per-author index files")
     args = ap.parse_args()
@@ -63,12 +65,17 @@ def main():
         if os.path.exists(out):
             print(f"  ({i}/{len(roster)}) {a}: rebuilding", flush=True)
         msgs = []
-        for m in chat_archive.messages_for(a):
-            cleaned = message_quality.semantic_text(m, min_words=4, max_words=60)
+        source = (
+            chat_archive.utterances_for(a)
+            if args.unit == "utterance"
+            else chat_archive.messages_for(a)
+        )
+        for m in source:
+            cleaned = message_quality.semantic_text(m, min_words=4, max_words=70)
             if cleaned:
                 msgs.append((cleaned, m))
         if len(msgs) < 30:
-            print(f"  ({i}/{len(roster)}) {a}: too few messages, skipped", flush=True)
+            print(f"  ({i}/{len(roster)}) {a}: too few {args.unit}s, skipped", flush=True)
             continue
         rng.shuffle(msgs)
         msgs = msgs[:args.per_author]
@@ -79,9 +86,10 @@ def main():
         V /= (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
         tmp = out + ".tmp.npz"
         np.savez_compressed(tmp, vectors=V.astype("float16"),
-                            texts=np.array([orig for _, orig in msgs], dtype=object))
+                            texts=np.array([orig for _, orig in msgs], dtype=object),
+                            unit=np.array(args.unit, dtype=object))
         os.replace(tmp, out)
-        print(f"  ({i}/{len(roster)}) {a}: {len(msgs)} messages indexed", flush=True)
+        print(f"  ({i}/{len(roster)}) {a}: {len(msgs)} {args.unit}s indexed", flush=True)
     print(f"done -> {OUT_DIR}")
 
 

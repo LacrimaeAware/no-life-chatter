@@ -65,6 +65,9 @@ def main() -> int:
     parser.add_argument("--style-bg-cap", type=int, default=120000)
 
     parser.add_argument("--skip-embeddings", action="store_true")
+    parser.add_argument("--semantic-unit", choices=("utterance", "message"),
+                        default="utterance",
+                        help="unit for semantic embeddings/index; utterance merges same-author bursts")
     parser.add_argument("--embedding-per-author", type=int, default=1000)
     parser.add_argument("--embedding-report", action="store_true")
 
@@ -109,14 +112,16 @@ def main() -> int:
 
     if not args.skip_embeddings:
         cmd = [py, "scripts/build_persona_embeddings.py",
-               "--per-author", str(args.embedding_per_author)]
+               "--per-author", str(args.embedding_per_author),
+               "--unit", args.semantic_unit]
         if args.embedding_report:
             cmd.append("--report")
         steps.append(("semantic embeddings", cmd))
 
     if not args.skip_embeddings and not args.skip_message_index:
         cmd = [py, "scripts/build_message_index.py",
-               "--per-author", str(args.message_index_per_author)]
+               "--per-author", str(args.message_index_per_author),
+               "--unit", args.semantic_unit]
         if not args.no_message_index_force:
             cmd.append("--force")
         steps.append(("semantic message index", cmd))

@@ -115,3 +115,5 @@ Some commands read live SQLite tables only; others need offline artifacts:
 
 After identity merges, embedding-model changes, or major filter changes, run
 `10-rebuild-persona-artifacts.bat` or `scripts/rebuild_persona_artifacts.py`.
+The default semantic unit for embeddings/indexes is now a merged utterance; use
+`--semantic-unit message` only for a deliberate A/B against the old behavior.

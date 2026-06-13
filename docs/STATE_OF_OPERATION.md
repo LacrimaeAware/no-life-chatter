@@ -155,6 +155,13 @@ Moderation/utility:
   `https://lacrimaeaware.github.io/no-life-chatter/`.
 - The rebuild pipeline now includes the per-message semantic index, so a single
   rebuild actually refreshes the artifacts that alias merges affect.
+- The next semantic rebuild will use merged same-author utterances by default
+  for person embeddings and the message index (`--semantic-unit utterance`).
+  This changes semantic retrieval units without changing line-level classifier
+  training.
+- Future classifier/style-profile rebuilds still train on individual messages,
+  but now use the shared message-quality filter instead of a minimal
+  "two words and not a prefix command" gate.
 
 ## First Thing To Do When Returning
 
@@ -170,15 +177,18 @@ whether masking/shock and literal alignment improve.
 
 High priority:
 
-1. Label the private `nolifechatter_intent_axes_v2` review queue, retrain with
+1. Run the next artifact rebuild when a long rebuild is acceptable. It should
+   pick up alias changes and the new utterance-based semantic units.
+2. Label the private `nolifechatter_intent_axes_v2` review queue, retrain with
    `12-train-intent-probes.bat`, then compare the new report.
-2. Run focused smoke tests for persona RAG after the current bge rebuild.
-3. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
+3. Run focused smoke tests for persona RAG after the utterance-based semantic
+   rebuild.
+4. Decide whether the fine-tune path deserves a v3 dataset/model run, or whether
    RAG + better retrieval is the better short-term win.
-4. Implement the Turing-test game: real archived line versus generated persona
+5. Implement resident persona controls from `GENERATE_AND_BOT_MODES.md`:
+   `~botpersona`, `~botmode`, `~botcontext`, and `~botchance`.
+6. Implement the Turing-test game: real archived line versus generated persona
    line, chat guesses, then reveal.
-5. Add bot-mode controls from `GENERATE_AND_BOT_MODES.md`: resident persona,
-   response chance, cooldowns, queueing, and temporary modes.
 
 Medium priority:
 
