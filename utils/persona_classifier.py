@@ -20,6 +20,7 @@ import os
 import pickle
 import random
 import re
+import time
 
 import config
 from utils import chat_archive, message_quality
@@ -122,6 +123,18 @@ def train(authors=None, per_author=3000, test_frac=0.1, seed=1337,
     except FileNotFoundError:
         model = {}
     model.update({"pipe": pipe, "authors": list(pipe.classes_)})
+    meta = dict(model.get("__meta__") or {})
+    meta["classifier"] = {
+        "built_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "authors": len(authors),
+        "per_author": per_author,
+        "min_messages": min_messages,
+        "max_authors": max_authors,
+        "test_frac": test_frac,
+        "seed": seed,
+        "quality_filter": "message_quality.usable_for_persona_exemplar",
+    }
+    model["__meta__"] = meta
     os.makedirs(os.path.dirname(config.CLASSIFIER_FILE), exist_ok=True)
     with open(config.CLASSIFIER_FILE, "wb") as fh:
         pickle.dump(model, fh)
@@ -420,6 +433,18 @@ def build_style_profiles(roster=None, words_top=300, phrases_top=150,
     model = load()
     model["profiles"] = profiles
     model["prevalence"] = prevalence
+    meta = dict(model.get("__meta__") or {})
+    meta["style_profiles"] = {
+        "built_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "profiles": len(profiles),
+        "words_top": words_top,
+        "phrases_top": phrases_top,
+        "bg_cap": bg_cap,
+        "min_messages": min_messages,
+        "max_roster": max_roster,
+        "quality_filter": "message_quality.usable_for_persona_exemplar",
+    }
+    model["__meta__"] = meta
     model.pop("style", None)
     model.pop("centroids", None)
     with open(config.CLASSIFIER_FILE, "wb") as fh:

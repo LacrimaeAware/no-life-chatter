@@ -111,6 +111,7 @@ The full live command list is maintained in
 | --- | --- | --- |
 | `~help [page|command]` | anyone | List grouped command pages, or details for one command. |
 | `~ping` | anyone | Latency + host stats. |
+| `~artifacts` | anyone | Compact status for generated persona artifacts and stale semantic caches. |
 | `~practice on <langs> [native]` | anyone | Start practice mode. e.g. `~practice on es,ja en` |
 | `~practice off` / `~practice show` | anyone | Stop / inspect practice mode. |
 | `~romanize on\|off\|show` | anyone | Toggle romanized readings in practice mode. |

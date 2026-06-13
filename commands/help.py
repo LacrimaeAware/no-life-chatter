@@ -25,7 +25,7 @@ CATEGORIES = [
         "banuser", "unbanuser", "warnings",
     ]),
     ("utility", [
-        "help", "ping",
+        "help", "ping", "artifacts",
     ]),
 ]
 

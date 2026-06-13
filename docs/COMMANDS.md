@@ -65,7 +65,7 @@ is planned but not live yet.
 | `~twin <user>` | anyone | Overall nearest match, blending lexical and semantic similarity. |
 | `~traits <user>` | anyone | Project a chatter onto built-in trait axes relative to the room average. |
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. |
-| `~distinct [n]` | anyone | Chatters farthest from the room average across built-in trait axes. |
+| `~distinct [top\|bottom] [n]` | anyone | Chatters farthest from or closest to the room average across built-in trait axes. |
 | `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. |
 | `~emote <emote>` | anyone | Explain what the bot thinks an emote means from registry facts and usage-context neighbors. |
 | `~irony <message> [context=...]` | anyone | Experimental irony/sincerity read using sarcasm and content-extremity axes. |
@@ -81,6 +81,7 @@ comparisons, not clinical or total-person labels.
 | --- | --- | --- |
 | `~help [page|command]` | anyone | List commands or show details for one command. |
 | `~ping` | anyone | Latency and host stats. |
+| `~artifacts` | anyone | Compact status for generated persona artifacts and stale semantic caches. |
 | `~banuser <name>` | super admin | Ban a chatter from using bot commands. Translation/archive capture are unaffected. |
 | `~banuser list` | super admin | Show command-banned users. |
 | `~unbanuser <name>` | super admin | Remove a command ban. |
@@ -112,6 +113,9 @@ Some commands read live SQLite tables only; others need offline artifacts:
 | `data/unsynced/persona_embeddings.pkl` | `scripts/build_persona_embeddings.py` | `~vibes`, `~twin`, trait averages |
 | `data/unsynced/msg_index/` | `scripts/build_message_index.py` | `~why`, burst `~top`, semantic persona retrieval |
 | `data/unsynced/iq_scores.pkl` | `scripts/build_iq_v2.py` | `~iq` |
+
+Use `~artifacts` or `python scripts/artifact_status.py` to check whether these
+artifacts are missing, legacy, or built with the current semantic unit/model.
 
 After identity merges, embedding-model changes, or major filter changes, run
 `10-rebuild-persona-artifacts.bat` or `scripts/rebuild_persona_artifacts.py`.

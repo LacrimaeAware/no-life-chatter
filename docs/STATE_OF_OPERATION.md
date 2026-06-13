@@ -166,6 +166,12 @@ Moderation/utility:
 - Future classifier/style-profile rebuilds still train on individual messages,
   but now use the shared message-quality filter instead of a minimal
   "two words and not a prefix command" gate.
+- Generated artifact freshness is now visible through `~artifacts` and
+  `scripts/artifact_status.py`. Current status: `~iq` has v2 metadata, while
+  the person semantic vectors and semantic message index are legacy/missing
+  semantic-unit metadata until the next long rebuild.
+- Future classifier/style-profile rebuilds now write build metadata into the
+  shared classifier pickle, so stale profile state is easier to identify.
 - The next-work ranking was refreshed in
   `docs/NEXT_WORK_RANKING_2026-06-13.md`. The top implementation is now a
   held-out reply eval harness, because it measures whether persona/RAG changes
@@ -177,13 +183,16 @@ Moderation/utility:
 
 ## First Thing To Do When Returning
 
-The full artifact rebuild already ran on 2026-06-12 with the bge-m3 embedder
-and alias merges. Only re-run `10-rebuild-persona-artifacts.bat` after new
-identity confirmations or embedding-model changes land. The active follow-up is
-now the oracle-label pipeline: the first intent probes and v2 review queue
-exist. The next human step is labeling
-`nolifechatter_intent_axes_v2.jsonl`, then retraining the probes and checking
-whether masking/shock and literal alignment improve.
+Check `~artifacts` or `python scripts/artifact_status.py` before trusting
+persona artifact rankings. The semantic vectors and message index still need
+the next long rebuild to become utterance-unit artifacts; use
+`10-rebuild-persona-artifacts.bat` or
+`python scripts/rebuild_persona_artifacts.py --semantic-unit utterance --continue-on-error`
+when that runtime cost is acceptable. The active follow-up is still the
+oracle-label pipeline: the first intent probes and v2 review queue exist. The
+next human step is labeling `nolifechatter_intent_axes_v2.jsonl`, then
+retraining the probes and checking whether masking/shock and literal alignment
+improve.
 
 ## Next Work
 

@@ -346,7 +346,7 @@ def axis_scores(axis_name):
     return dict(zip(names, z))
 
 
-def most_distinct(n=5):
+def most_distinct(n=5, reverse=False):
     """People whose personality deviates most from the room average — total
     |z| summed across the five built-in axes. Returns
     [(author, total, [defining trait labels]), ...]. The built-in axes only,
@@ -362,7 +362,7 @@ def most_distinct(n=5):
         top3 = sorted(zs, key=lambda kv: -abs(kv[1]))[:3]
         labels = [AXES[ax][1] if z >= 0 else AXES[ax][0] for ax, z in top3]
         out.append((a, total, labels))
-    out.sort(key=lambda kv: -kv[1])
+    out.sort(key=lambda kv: kv[1] if reverse else -kv[1])
     return out[:n]
 
 
