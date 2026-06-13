@@ -146,20 +146,18 @@ AXES = [
             "effect? This is about transparency of stance, not magnitude. Normal emote/slang "
             "use is zero unless it clearly creates a performed persona or fake stance."
         ),
-        options=["anti_roleplay", "low_or_none", "playful", "unclear"],
+        options=["low_or_none", "playful", "unclear"],
         option_labels={
-            "anti_roleplay": "negative / anti-bit sincerity",
-            "low_or_none": "zero / ordinary stance",
-            "playful": "positive / roleplay stance",
+            "low_or_none": "ordinary stance",
+            "playful": "roleplay stance",
             "unclear": "unclear",
         },
         option_help={
-            "anti_roleplay": "Explicitly refuses the bit/role or insists on plain sincerity. Use sparingly.",
-            "low_or_none": "Zero: ordinary transparent stance, normal emote/slang use, or no clear performed role.",
-            "playful": "Positive: the speaker adopts a role, fake emotion, performed authority, doomer persona, mock anger, or other staged stance for effect.",
+            "low_or_none": "Ordinary transparent stance, normal emote/slang use, or no clear performed role.",
+            "playful": "The speaker adopts a role, fake emotion, performed authority, doomer persona, mock anger, or other staged stance for effect.",
             "unclear": "You cannot tell whether there is a performed role/stance.",
         },
-        option_keys=["q", "w", "e", "r"],
+        option_keys=["w", "e", "r"],
     ),
     AxisQueueSpec(
         target="masking_facework",
