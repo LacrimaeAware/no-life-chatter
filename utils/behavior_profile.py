@@ -44,10 +44,12 @@ def _is_emote(tok):
     ('there', 'omg') and all-caps shouting/words ('HELP', 'YOU') are excluded.
     Within mixed-case, accept camelCase shape OR an exact registry match.
 
-    LIMIT: this undercounts (loses all-caps emotes like KEKW/OMEGALUL, and
-    lowercase-typed emotes). It is unavoidable — 7TV emotes are named after
-    common words and the archive stores text, not what rendered. Emote rate here
-    is an approximate lower bound, not exact."""
+    Capitalization disambiguates most word/emote collisions ('Pain' the emote vs
+    'in pain' the word), which is the main signal. Known residual errors:
+    sentence-initial capitalized words ('Pain is temporary' counts 'Pain'), and
+    all-caps emotes (KEKW/OMEGALUL) are dropped to avoid flagging SHOUTING. Could
+    be improved with per-channel active-emote sets and token position. Treat the
+    rate as a good approximation / lower bound, not exact."""
     t = tok.strip(",.!?:;\"'")
     if len(t) < 2:
         return False
