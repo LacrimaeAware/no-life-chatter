@@ -49,6 +49,30 @@ a human who knows them would describe them — not a vibe that breaks immersion.
    training must be scoped to a chosen dataset (e.g. the two home chats), not
    pooled blindly across every channel and era.
 
+## The core split: structural traits vs. intent/disposition traits
+
+The single most important finding from labeling the whole roster and testing
+behavioral proxies against the human read: **personality traits fall into two
+kinds, and only one of them is measurable from data we have.**
+
+1. **Structural traits — HOW someone types.** Emote-reliance, verbosity, caps/
+   intensity, deadpan (low exclamation), attention-via-@mentions, copypasta/
+   doubling. These ARE captured by topic-free behavioral features
+   (`scripts/behavior_axes.py`) and match the human read.
+2. **Intent / disposition traits — WHAT someone means / WHO they are.** Irony,
+   sincerity, hostility, Schadenfreude, masking, performative-vs-genuine. These
+   are NOT recoverable from surface features: the same words carry opposite
+   intent. Measured directly — a chatter whose edgy lines are an ironic *bit*
+   ranked #1 on a hostility keyword proxy, above the chatters the human calls
+   genuinely cruel; the proxy ranks delivery, not intent. Same wall as irony.
+   These need context + the speaker's prior + who the line is aimed at
+   (subject attribution), and the **human oracle is their only ground truth.**
+
+Design consequence: build the structural half from behavior now; treat the
+intent/disposition half as the hard frontier that depends on subject-attribution
+and a speaker model, not on more surface features. Do not promise a behavioral
+"hostility" or "irony" score — it will rank the loudest ironist as the cruelest.
+
 ## The design: two layers and a bridge
 
 **Layer 1 — Behavioral axes (the measurable personality space).**
