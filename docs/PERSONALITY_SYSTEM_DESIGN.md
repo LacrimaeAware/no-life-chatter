@@ -33,6 +33,21 @@ a human who knows them would describe them — not a vibe that breaks immersion.
    topic axes (mean correlation 0.22). (`scripts/behavior_axes.py`)
 5. **Human labels on PEOPLE are the ground truth we were underusing** — the
    "oracle on people, not messages."
+6. **SUBJECT ATTRIBUTION is the single biggest missing capability.** A message's
+   sentiment and identity must be assigned to *the right referent*: the speaker,
+   the person addressed, or a third party — and the system must recognize when it
+   is genuinely ambiguous. "they're not a bot, just [from country X]" is the
+   speaker mocking a third party, not the speaker's own nationality; "shit bait
+   hating on everyone" can be a person *quoting* someone else's behavior, not
+   being hateful themselves. Reading sentiment/nationality/trait off the words
+   without resolving the referent is the root of repeated misreads. This is the
+   top forward capability.
+7. **Behavior is dataset/chat-and-era dependent.** The same person looks very
+   different across chats: in a big streamer's chat *everyone* emote-spams, so the
+   emote-spam axis is largely a chat-CULTURE artifact, and an account from an
+   older era can behave unlike the same person's newer account. Behavioral
+   training must be scoped to a chosen dataset (e.g. the two home chats), not
+   pooled blindly across every channel and era.
 
 ## The design: two layers and a bridge
 
@@ -75,8 +90,24 @@ truth, not in arbitrary pole sentences.
 4. **Bridge:** train the behavior→label classifier; report held-out accuracy.
 5. **Ship:** a `~personality`/`~style` read from the validated system; keep the
    old axes only for topic-vibe.
-6. **Hard, later:** target/relationship + whole-context features for irony — the
-   part single messages can't do.
+6. **Subject-attribution layer (high priority, not "later"):** resolve who each
+   message is about (speaker / addressee / third party) and flag ambiguity, so
+   sentiment and traits attach to the right person. Start with cheap signals
+   (@mentions, second-vs-third-person pronouns, quotation framing) and a "can't
+   tell" class; this is the prerequisite for trustworthy irony and trait reads.
+7. **Dataset scoping:** build the behavioral/personality layer on a chosen,
+   coherent dataset (the home chats), not pooled across every channel/era, since
+   chat culture and era dominate raw behavior.
+8. **Candidate axis to test:** energy-expression vs. social-conformity — how much
+   a person prioritizes expressing their own energy vs. going along with the
+   room. Likely correlates with the over-the-top/attention dimension but the
+   owner believes it is distinct; measure it.
+
+Note on the "professor" axis: it measures *presentation* (long, articulate
+sentences), not intelligence — a high scorer can read as low social-intelligence
+while an actual physicist scores high for different reasons, and professor and
+brainrot co-occur in the same person. Do not equate any single axis with a value
+judgment.
 
 ## Honestly not solvable cheaply
 
