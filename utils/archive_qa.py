@@ -190,6 +190,107 @@ def _author_hits(author: str, query: str, *, channel: str | None = None, limit: 
     return out
 
 
+def _recover_author_meta(author: str, texts: list[str], *, channel: str | None = None) -> dict:
+    """{line_match_key: row-dict} for dense-only hits, so a paraphrase line the
+    embedder found (but bm25 never keyword-matched) still carries its real
+    id/sent_at/channel. One batched query over the author's own rows."""
+    texts = [t for t in texts if t]
+    if not texts:
+        return {}
+    conn = chat_archive.connect()
+    keys = chat_archive.author_keys(chat_archive.normalize_author(author))
+    a_ph = ",".join("?" for _ in keys)
+    t_ph = ",".join("?" for _ in texts)
+    chan_sql, chan_params = chat_archive._channel_filter(channel, alias="m")
+    rows = conn.execute(
+        f"SELECT m.id, m.sent_at, m.channel, m.content FROM messages m "
+        f"WHERE m.author IN ({a_ph}) AND m.content IN ({t_ph}){chan_sql}",
+        [*keys, *texts, *chan_params],
+    ).fetchall()
+    out = {}
+    for row_id, sent_at, row_channel, content in rows:
+        key = chat_archive.line_match_key(content)
+        if key and key not in out:
+            out[key] = {"id": row_id, "sent_at": sent_at, "channel": row_channel,
+                        "author": chat_archive.normalize_author(author), "text": content}
+    return out
+
+
+def _rrf_author_hits(author: str, query: str, *, channel: str | None = None,
+                     limit: int = 5, rrf_k: int = 60) -> list[dict]:
+    """Author archive hits fusing the bm25 lane (_author_hits) with the dense
+    semantic lane (persona_msg_index) by Reciprocal Rank Fusion:
+
+        score(line) = 1/(k + rank_bm25) + 1/(k + rank_dense)
+
+    RRF needs no score calibration between bm25 and cosine (it is rank-only),
+    so it is robust on the un-whitened embedding space and can never rank below
+    the better single lane. bm25 stays the first lane so the strong keyword
+    baseline is never silently lost; dense only ADDS paraphrase recall (the
+    'does X like cars' -> 'my civic rips' case that shares no keywords). Falls
+    back to pure bm25 when the index or embedder is unavailable.
+
+    Each returned item keeps the archive schema (id/sent_at/channel/author/text)
+    plus a 'lanes' tag for transparency."""
+    from utils import persona_msg_index
+
+    pool = max(limit * 4, 12)
+    bm25 = _author_hits(author, query, channel=channel, limit=pool)
+
+    dense_pairs = []
+    if persona_msg_index.available(author):
+        try:
+            dense_pairs = persona_msg_index.semantic_hits(author, query, k=pool)
+        except Exception:
+            dense_pairs = []   # embedder down -> bm25-only, never break QA
+    if not dense_pairs:
+        return bm25[:limit]
+
+    # dense lane, quality-gated with the same filters as bm25
+    focus = _focus_terms(query, author)
+    dense_ranked = []
+    for _score, text in dense_pairs:
+        if not _usable_hit(text) or not _matches_focus(text, focus):
+            continue
+        key = chat_archive.line_match_key(text)
+        if key:
+            dense_ranked.append((key, text))
+
+    # recover metadata for dense lines bm25 didn't surface
+    bm25_by_key = {chat_archive.line_match_key(h["text"]): h for h in bm25}
+    bm25_by_key.pop(None, None)
+    missing = [t for k, t in dense_ranked if k not in bm25_by_key]
+    recovered = _recover_author_meta(author, missing, channel=channel)
+
+    scores: dict[str, float] = {}
+    items: dict[str, dict] = {}
+    lanes: dict[str, set] = {}
+
+    for rank, hit in enumerate(bm25):
+        key = chat_archive.line_match_key(hit["text"])
+        if not key:
+            continue
+        scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
+        items.setdefault(key, hit)
+        lanes.setdefault(key, set()).add("bm25")
+
+    for rank, (key, text) in enumerate(dense_ranked):
+        meta = bm25_by_key.get(key) or recovered.get(key)
+        if not meta:
+            continue   # dense-only paraphrase whose row we couldn't recover
+        scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
+        items.setdefault(key, meta)
+        lanes.setdefault(key, set()).add("dense")
+
+    ordered = sorted(scores, key=lambda k: -scores[k])
+    out = []
+    for key in ordered[:limit]:
+        item = dict(items[key])
+        item["lanes"] = sorted(lanes[key])
+        out.append(item)
+    return out
+
+
 def _chatworthy_fact(fact: dict) -> bool:
     support = int(fact.get("support_count") or 0)
     return support >= CHAT_FACT_MIN_SUPPORT
@@ -275,7 +376,7 @@ def build_report(query: str, *, author: str | None = None,
     query = _strip_scoped_author_terms(query, author)
     channel = chat_archive.normalize_channel(channel) if channel else None
     facts = _fact_hits(author, query, limit=4)
-    archive = _author_hits(author, query, channel=channel, limit=limit) if author else (
+    archive = _rrf_author_hits(author, query, channel=channel, limit=limit) if author else (
         _search_all_hits(query, channel=channel, limit=limit)
     )
     near = [] if archive or not author else _near_author(author, query, channel=channel)

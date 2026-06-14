@@ -22,6 +22,20 @@ _DATA = None
 _CENTERED = None
 _MTIME = None
 
+# All-but-the-top-k isotropy correction (Mu & Viswanath, ICLR 2018) applied
+# AFTER mean-centering. Centering already does the heavy lifting (mean
+# |off-diagonal cosine| 0.983 raw -> 0.165 centered); k chosen EMPIRICALLY by
+# scripts/eval_geometry.py, not by theory, because the effect is non-monotonic:
+#   k=0  person-cos 0.165 / axis-score-corr 0.302
+#   k=1  person-cos 0.157 / axis-score-corr 0.335  (k=1 tangles the trait axes!)
+#   k=2  person-cos 0.149 / axis-score-corr 0.249  (improves BOTH)
+# k=1 removes a direction that carried axis-discriminative signal; the 2nd
+# component is a shared nuisance whose removal helps person similarity AND trait
+# decorrelation. At k=2 every trait axis still retains >=0.94 of its energy
+# (eval_geometry guard: doomer 0.943 lowest, unhinged 0.995 highest), so the
+# dials are not blunted. Set to 0 to disable.
+ABTT_K = 2
+
 
 def load():
     """Cached pickle, hot-reloaded when the file changes (an offline rebuild
@@ -47,10 +61,15 @@ def _centered():
         import numpy as np
         vectors = load()["vectors"]
         names = list(vectors)
-        M = np.vstack([vectors[a] for a in names])
+        M = np.vstack([vectors[a] for a in names]).astype("float64")
         M = M - M.mean(axis=0)
+        if ABTT_K > 0 and M.shape[0] > ABTT_K + 1:
+            # remove the top-k principal directions of the centered cloud
+            _u, _s, vt = np.linalg.svd(M, full_matrices=False)
+            pcs = vt[:ABTT_K]
+            M = M - (M @ pcs.T) @ pcs
         M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-9)
-        _CENTERED = {a: M[i] for i, a in enumerate(names)}
+        _CENTERED = {a: M[i].astype("float32") for i, a in enumerate(names)}
     return _CENTERED
 
 

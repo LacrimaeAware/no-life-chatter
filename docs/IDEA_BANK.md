@@ -97,6 +97,61 @@ Plan sketch:
    sentences, embed them, measure where each chatter falls) — "second-order"
    personality traits separated from first-order topic/word overlap.
 
+## Curated baseline axis bank instead of always-on-the-fly (wanted)
+
+Right now `~top <anything>` builds a trait axis on the fly when one doesn't
+exist (`persona_axes.resolve_axis`), and the saved set has already grown to ~72
+custom axes. On-the-fly generation is useful for novelty but produces confusing
+or wrong results for ordinary requests — a chatter expects a sensible answer and
+instead gets something like "Slovaks are related to farts" because an LLM
+invented a bad pole pair. The fix is not to remove on-the-fly generation but to
+front it with a vetted baseline.
+
+Sketch:
+- Pre-generate and curate ~100-200 baseline axes (common traits, identities,
+  moods, interests). Validate each the way `_generate_poles` already validates
+  (the term's own embedding must align with its pole) AND keep a human-curated
+  allowlist of pole sentences so the common cases are stable and not re-rolled
+  per request.
+- `resolve_axis` checks the curated bank first; on-the-fly generation stays as
+  the fallback for genuinely novel terms only, and novel auto-built axes are
+  flagged as "experimental" in the output so users know the difference.
+- This also de-risks the axis geometry: with a fixed baseline set, the Löwdin
+  decorrelation and the entanglement number in `docs/GROUND_TRUTH.md` become
+  stable instead of shifting as chat builds random axes.
+- Testable: sample common trait requests, rate "is the axis sensible" for the
+  curated answer vs the on-the-fly answer — curation should measurably cut the
+  nonsense rate. Note this is about *choosing better axes*, not only about the
+  five built-ins; the built-ins themselves were picked by judgment, not data
+  (see `CHAT_PERSONALITY_RESEARCH.md` open question #3 and the data-driven-basis
+  item in `RESEARCH_TO_APPLIED.md` §5).
+
+## Persona memory / fact-based grounding (wanted, recurring ask)
+
+The single highest-leverage direction for persona quality (raised repeatedly):
+generated personas should remember and reference what a person has actually said
+and believes over time, not just imitate their surface style. Style imitation
+without memory is why personas can sound right but say nothing true to the
+person.
+
+Sketch:
+- Grow the fact bank (`utils/fact_bank.py`, `scripts/build_fact_bank.py`) from
+  candidate-claim rows into a real per-person memory: topics they care about,
+  stances they've taken, running bits, relationships, recurring references —
+  with evidence and confidence, deduped and contradiction-grouped (fact-bank v2
+  on the ROADMAP).
+- Retrieve those facts into the persona prompt alongside the RAG message
+  evidence, so `~persona`/resident modes can ground a reply in something the
+  person genuinely said, not just their cadence. The new RRF retrieval
+  (`archive_qa._rrf_author_hits`) is the retrieval substrate; the rerank/answer
+  layer is the missing piece.
+- Training on more messages per person helps the style prior, but memory is the
+  part that fixes "sounds like them but says nothing real." Fine-tuning is a
+  style prior; RAG + a fact memory own the truth (this is already a stated
+  research rule — keep them separate).
+- Dependency: fact-bank v2 (review queues, contradiction groups, confidence,
+  recency/decay) and a persona-prompt slot for retrieved facts.
+
 ## Chat personality maps / psychometrics research (wanted, bigger idea)
 
 Full working note: [CHAT_PERSONALITY_RESEARCH.md](CHAT_PERSONALITY_RESEARCH.md).

@@ -100,6 +100,11 @@ def _embed(texts):
 
 
 def _axis_vectors():
+    """RAW axis directions (mean(pos) - mean(neg), normalized). These are the
+    directions used for axis BUILDING and merge decisions in persona_axes
+    (synonym detection needs the un-rotated direction). For SCORING people, use
+    ortho_axis_vectors() — the raw directions are mutually correlated (the five
+    poles share a 'negativity' component), so raw projections double-count."""
     global _AXIS_VECS
     if _AXIS_VECS is None:
         import numpy as np
@@ -112,6 +117,40 @@ def _axis_vectors():
             vecs[name] = v / (float((v ** 2).sum()) ** 0.5 + 1e-9)
         _AXIS_VECS = vecs
     return _AXIS_VECS
+
+
+_ORTHO_VECS = None
+
+
+def ortho_axis_vectors():
+    """The SCORING directions: the five built-in axes symmetrically
+    orthogonalized (Löwdin, A_orth = (A Aᵀ)^{-1/2} A) so that a person's five
+    trait z-scores stop double-counting a shared component.
+
+    Why this and not Gram-Schmidt: the raw poles are correlated (menace·doomer
+    ≈ 0.64 on bge-m3), so projecting onto raw directions makes the per-person
+    scores correlate ~0.48 across the roster — 'all the axes feel the same'.
+    Gram-Schmidt removes that too, but it is ORDER-DEPENDENT: whichever axis is
+    last keeps only its residual (doomer stayed just 0.73 aligned with its own
+    name). Löwdin is the orthogonal matrix closest to the raw set, so it shares
+    the distortion evenly — every axis stays 0.92+ aligned with its label and
+    no axis is privileged. Measured: score-correlation 0.483 raw → 0.302 here.
+    See scripts/eval_geometry.py for the numbers and docs/RESEARCH_TO_APPLIED.md
+    for the structured-transform-discovery lineage."""
+    global _ORTHO_VECS
+    if _ORTHO_VECS is None:
+        import numpy as np
+        raw = _axis_vectors()
+        names = list(raw)
+        A = np.vstack([np.asarray(raw[n], dtype="float64") for n in names])
+        G = A @ A.T
+        w, U = np.linalg.eigh(G)
+        w = np.clip(w, 1e-9, None)
+        inv_sqrt = U @ np.diag(w ** -0.5) @ U.T
+        R = inv_sqrt @ A
+        R /= (np.linalg.norm(R, axis=1, keepdims=True) + 1e-9)
+        _ORTHO_VECS = {n: R[i].astype("float32") for i, n in enumerate(names)}
+    return _ORTHO_VECS
 
 
 def pole_map():
@@ -134,7 +173,7 @@ def leaderboard(pole, n=5):
     vectors = persona_embeddings._centered()
     names = list(vectors)
     M = np.vstack([vectors[a] for a in names])
-    scores = M @ _axis_vectors()[axis]
+    scores = M @ ortho_axis_vectors()[axis]
     z = (scores - scores.mean()) / (scores.std() or 1.0)
     order = (sign * z).argsort()[::-1][:n]
     return [(names[i], float(sign * z[i])) for i in order]
@@ -151,7 +190,7 @@ def traits_for(author):
     canon = persona_embeddings.chat_archive.normalize_author(author)
     if canon not in vectors:
         return []
-    axes = _axis_vectors()
+    axes = ortho_axis_vectors()   # decorrelated scoring dials (see ortho docstring)
     names = list(vectors)
     M = np.vstack([vectors[a] for a in names])
     out = []

@@ -1,6 +1,20 @@
 # Roadmap
 
-Last refreshed: 2026-06-13.
+Last refreshed: 2026-06-14.
+
+## Recently Shipped (2026-06-14) — embedding-geometry pass
+
+Driven by findings ported from the `structured-transform-discovery` research
+repo; full write-up in [RESEARCH_TO_APPLIED.md](RESEARCH_TO_APPLIED.md).
+
+- `scripts/eval_geometry.py` — the geometry dial (anisotropy, axis collinearity,
+  axis-score entanglement, ABTT safety guard). Build the number before the fix.
+- Trait axes decorrelated via **Löwdin** orthogonalization, unified across
+  `~traits`/`~top`/`~top burst` (entanglement 0.483 -> 0.249).
+- **ABTT-2** isotropy correction in `persona_embeddings._centered()` (k chosen
+  empirically; the effect is non-monotonic).
+- **RRF** bm25+dense fusion in `archive_qa` author QA (paraphrase recall, bm25
+  kept as an independent lane).
 
 ## Verdict
 
@@ -72,8 +86,9 @@ trusting rankings.
    bot worker so live commands see fresh artifacts.
 2. Run the held-out reply baseline on frozen cases with the current persona
    pipeline.
-3. Improve archive-QA/lore v2: ranking, contradiction handling, answer
-   synthesis, and semantic evidence.
+3. Improve archive-QA/lore v2: contradiction handling and answer synthesis.
+   (Semantic evidence + RRF bm25/dense ranking now landed for the author path;
+   remaining: all-channel dense index, contradiction grouping, a rerank step.)
 4. Build a persona output reranker for contextual fit, target voice, copy risk,
    and likely chat reaction.
 5. Build fact-bank v2: review queues, contradiction groups, confidence, and
@@ -84,10 +99,31 @@ trusting rankings.
    [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md): `~botpersona`,
    `~botmode`, `~botcontext`, and `~botchance`.
 8. Continue the intent/irony label loop, then decide whether probes should
-   influence retrieval/generation.
+   influence retrieval/generation. **Now has a concrete payoff target:** the
+   measured charged-axis confound (`scripts/irony_confound.py`,
+   `docs/GROUND_TRUTH.md` known limitations). The zero-shot "ironic" axis cannot
+   detect deadpan/charged irony (an ironic chatter scores "sincere", yet scores
+   mid-high on "menace" off joke lines), and a naive irony-discount does not work
+   (irony↔menace corr +0.17, no signal to discount). Path: train a supervised
+   irony/intent detector from the oracle queue labels, then use it to make
+   charged-axis scoring (`~traits`/`~top` on menace/racism/misogyny-type axes)
+   intent-aware so it stops reading bits as sincere belief.
 9. Build the real-or-AI game after eval plumbing is stable enough to turn the
    game into useful feedback.
 10. Consider domain-adapted embeddings only after stable eval targets exist.
+    Geometry frontier (all gated on `scripts/eval_geometry.py` + a held-out
+    baseline showing the cheap fixes plateaued, per
+    [RESEARCH_TO_APPLIED.md](RESEARCH_TO_APPLIED.md) §5): a curved-orbit vs
+    steering-vector replication study on text personas; a distributional person
+    model (per-message clouds + 2-Wasserstein, replacing the mean-pool); and a
+    reconstruction-pressure latent for genuine voice transfer. **First slice
+    SHIPPED (2026-06-14): a self-contradiction reliability flag.**
+    `persona_msg_index.contradiction_scores(axis)` measures both-pole occupancy
+    from the per-message clouds, and `~traits` now marks a charged-axis lean ⚡
+    when the chatter occupies both poles (a performativity proxy that needs no
+    irony oracle). Diagnostic: `scripts/contradiction.py`. Remaining: extend the
+    flag to `~top`/`~why`, and the full distributional model (2-Wasserstein) +
+    the held-out reply benchmark to validate it. See `docs/RESEARCH_TO_APPLIED.md` §6.
 11. Consider LoRA v3 only after context-pair export and baseline eval. Do not
     use LoRA as a substitute for memory.
 12. Polish public anonymized similarity maps and site visuals after the live

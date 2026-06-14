@@ -25,6 +25,7 @@ DIR = os.path.join("data", "unsynced", "msg_index")
 _CACHE = OrderedDict()  # author -> (vectors fp32, texts)
 _CACHE_MAX = 8
 _burst_cache = {}  # axis_name -> {author: percentile_score}
+_contra_cache = {}  # axis_name -> {author: contradiction_z}
 
 
 def _path(author):
@@ -81,8 +82,11 @@ def burst_scores(axis_name, pct=90):
     import numpy as np
     if axis_name in _burst_cache:
         return _burst_cache[axis_name]
-    from utils.persona_axes import _all_axis_vectors
-    av, _p, _n = _all_axis_vectors()[axis_name]
+    # same decorrelated dial as axis_scores/traits_for: built-ins use the Löwdin
+    # ortho directions, custom axes project on their own raw direction.
+    from utils.persona_axes import _ortho_builtin, _all_axis_vectors
+    ortho = _ortho_builtin()
+    av = ortho[axis_name] if axis_name in ortho else _all_axis_vectors()[axis_name][0]
     raw = {}
     for f in os.listdir(DIR):
         if not f.endswith(".npz"):
@@ -96,4 +100,39 @@ def burst_scores(axis_name, pct=90):
     z = (vals - vals.mean()) / (vals.std() or 1.0)
     out = dict(zip(raw.keys(), z))
     _burst_cache[axis_name] = out
+    return out
+
+
+def contradiction_scores(axis_name, lo_pct=10, hi_pct=90):
+    """{author: z} for self-contradiction on an axis: how much a person occupies
+    BOTH poles at once. A sincere chatter clusters at one end; a performative /
+    ironic one has messages at both (the user's 'high in both feminism and
+    misogyny' signal). Computed as sqrt(frac above the global hi-pole percentile
+    * frac below the global lo-pole percentile), z-scored across the roster.
+
+    No oracle, no single-message intent call: it reads the per-message cloud the
+    mean-pool throws away. A high score means the person's CHARGED-axis mean is
+    unreliable — they perform both ends. Same axis selection as burst_scores."""
+    import numpy as np
+    if axis_name in _contra_cache:
+        return _contra_cache[axis_name]
+    from utils.persona_axes import _ortho_builtin, _all_axis_vectors
+    ortho = _ortho_builtin()
+    av = ortho[axis_name] if axis_name in ortho else _all_axis_vectors()[axis_name][0]
+    proj = {}
+    for f in os.listdir(DIR):
+        if not f.endswith(".npz"):
+            continue
+        author = f[:-4]
+        V, _texts = _load(author)
+        proj[author] = np.asarray(V @ av, dtype="float32")
+    if not proj:
+        return {}
+    allp = np.concatenate(list(proj.values()))
+    lo, hi = float(np.percentile(allp, lo_pct)), float(np.percentile(allp, hi_pct))
+    raw = {a: float(np.sqrt(((p > hi).mean()) * ((p < lo).mean()))) for a, p in proj.items()}
+    vals = np.array(list(raw.values()))
+    z = (vals - vals.mean()) / (vals.std() or 1.0)
+    out = dict(zip(raw.keys(), z))
+    _contra_cache[axis_name] = out
     return out

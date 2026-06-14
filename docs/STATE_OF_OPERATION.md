@@ -1,6 +1,6 @@
 # State Of Operation
 
-Last refreshed: 2026-06-13.
+Last refreshed: 2026-06-14.
 
 Read this first after a break. Then read [ROADMAP.md](ROADMAP.md) for the
 ranked next work and [COMMANDS.md](COMMANDS.md) for the live command bible.
@@ -89,6 +89,46 @@ They are not live commands yet.
   next-step item.
 - The full artifact rebuild should be checked before trusting rankings after
   alias/filter/semantic-unit changes.
+- **Embedding-geometry pass (2026-06-14, see
+  [RESEARCH_TO_APPLIED.md](RESEARCH_TO_APPLIED.md)):**
+  - `scripts/eval_geometry.py` is the geometry dial — anisotropy, axis
+    collinearity, axis-score entanglement, ABTT safety guard. Run it before/after
+    any embedding-space change; it reads on-disk artifacts (embedder needed only
+    for the axis section).
+  - Trait axes are now decorrelated with **Löwdin symmetric orthogonalization**
+    in `persona_traits.ortho_axis_vectors()` (single source of truth).
+    `traits_for`, `leaderboard`, `axis_scores`, and `burst_scores` all route
+    through it, so `~traits`/`~top`/`~top burst` finally agree. Axis-score
+    entanglement dropped 0.483 -> 0.249.
+  - `persona_embeddings._centered()` applies an **ABTT-k isotropy correction**
+    (`ABTT_K = 2`, chosen empirically — the effect is non-monotonic). Every
+    cosine consumer inherits it.
+  - `archive_qa.build_report` (author path) now fuses bm25 + dense semantic
+    retrieval by **Reciprocal Rank Fusion** (`_rrf_author_hits`); bm25 stays an
+    independent lane and dense adds paraphrase recall. Safe no-op when the
+    message index or embedder is down.
+  - `scripts/irony_confound.py` measured the charged-axis irony confound: the
+    zero-shot "ironic" axis cannot detect deadpan/charged irony, so `~traits`/
+    `~top` on charged axes read words not intent, and naive irony-discounting
+    does not work (corr +0.17). Recorded as a **known limitation** in
+    `docs/GROUND_TRUTH.md`; real fix is a supervised irony detector from the
+    oracle queue (ROADMAP item 8).
+  - **Self-contradiction reliability flag (shipped).**
+    `persona_msg_index.contradiction_scores(axis)` measures both-pole occupancy
+    from the per-message clouds (the no-oracle "performative person" signal), and
+    `~traits` now marks a charged-axis lean ⚡ when the chatter also lives at the
+    opposite pole. Diagnostic: `scripts/contradiction.py`. First slice of the
+    distributional person model.
+  - **Data-driven axis discovery (research finding, not yet a command).**
+    `scripts/discover_axes.py` (unsupervised PCA/ICA over person vectors) showed
+    the embedding space is dominated by TOPIC and LANGUAGE, not personality — the
+    ceiling on embedding-based personas. `scripts/behavior_axes.py` discovers
+    personality axes from topic-free BEHAVIORAL features (caps/emote/length/
+    mentions/profanity/doubling rates); the behavioral axes are ~0.22 correlated
+    with the topic axes (mostly independent) and match human reads. This is the
+    foundation for the "better axes" direction. `scripts/person_cards.py` renders
+    per-person cards (readout + real messages) for labeling; labels in
+    `_private/PERSON_LABELS.md`. See `docs/RESEARCH_TO_APPLIED.md` §7.
 
 ## Artifact Rule
 

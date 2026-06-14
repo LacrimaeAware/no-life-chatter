@@ -290,35 +290,19 @@ def _emote_vectors():
     return vecs
 
 
-_ORTHO_CACHE = None
-# fixed priority: each later axis is stripped of all earlier axes' components
-_ORTHO_ORDER = ["menace", "ironic", "unhinged", "professor", "doomer"]
-
-
 def _ortho_builtin():
-    """Gram-Schmidt over the built-in axes. On strong embedders the raw pole
-    directions share a dominant 'negativity' component (menace~doomer score
-    correlation hit +0.91 on bge-m3 — one axis wearing two names). Later axes
-    in the order become 'their residual meaning beyond the earlier ones':
-    doomer = pessimism that ISN'T already explained by hostility."""
-    global _ORTHO_CACHE
-    if _ORTHO_CACHE is None:
-        import numpy as np
-        from utils.persona_traits import _axis_vectors
-        raw = _axis_vectors()
-        done = {}
-        basis = []
-        for name in _ORTHO_ORDER:
-            v = np.asarray(raw[name], dtype="float32").copy()
-            for b in basis:
-                v -= float(v @ b) * b
-            n = float(np.linalg.norm(v))
-            if n > 1e-6:
-                v /= n
-            done[name] = v
-            basis.append(v)
-        _ORTHO_CACHE = done
-    return _ORTHO_CACHE
+    """Decorrelated built-in scoring axes — single source of truth lives in
+    persona_traits.ortho_axis_vectors() so ~traits and ~top agree.
+
+    The raw pole directions share a 'negativity' component (menace·doomer ≈
+    0.64 on bge-m3), which made the five per-person z-scores correlate ~0.48
+    across the roster — 'every axis feels the same'. This used to be a fixed-
+    order Gram-Schmidt here, but that privileged whichever axis came first and
+    left the last one (doomer) only 0.73 aligned with its own label. The shared
+    Löwdin orthogonalization is order-independent: every axis stays 0.92+
+    aligned and score-correlation drops to ~0.30. (See docs/RESEARCH_TO_APPLIED.md.)"""
+    from utils.persona_traits import ortho_axis_vectors
+    return ortho_axis_vectors()
 
 
 def axis_scores(axis_name):

@@ -21,12 +21,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 ACTIVE_DOCS = {
+    "docs/GROUND_TRUTH.md",
     "docs/README.md",
     "docs/STATE_OF_OPERATION.md",
     "docs/ROADMAP.md",
     "docs/COMMANDS.md",
     "docs/CHAT_ARCHIVE.md",
     "docs/CHAT_PERSONALITY_RESEARCH.md",
+    "docs/RESEARCH_TO_APPLIED.md",
     "docs/GENERATE_AND_BOT_MODES.md",
     "docs/FINE_TUNING.md",
     "docs/IDEA_BANK.md",
@@ -149,6 +151,15 @@ def artifact_status_step() -> Step:
     return Step("artifact status", status, _fmt_output(result, max_lines=20))
 
 
+def ground_truth_step() -> Step:
+    # Re-verify the numbers recorded in docs/GROUND_TRUTH.md against live state.
+    # DRIFT is a WARN, not a hard fail: a legitimate artifact rebuild moves the
+    # numbers and should prompt a re-baseline, not block the worktree.
+    result = _run([sys.executable, "scripts/ground_truth_check.py"], timeout=90)
+    status = "OK" if result.returncode == 0 else "WARN"
+    return Step("ground truth", status, _fmt_output(result, max_lines=14))
+
+
 def _rebuild_pids() -> list[str]:
     if os.name == "nt":
         command = (
@@ -230,6 +241,7 @@ def main() -> int:
         command_audit_step(),
         command_doc_step(),
         artifact_status_step(),
+        ground_truth_step(),
         rebuild_log_step(),
         git_status_step(),
     ]

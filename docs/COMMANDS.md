@@ -70,7 +70,7 @@ super-admin-only.
 | `~like <user> [chat=all|<channel>] [year=YYYY]` | anyone | Lexical/emote voice neighbors with shared-marker evidence. Useful for alt-hunting. |
 | `~vibes <user>` | anyone | Semantic embedding-space neighbors: same topics/energy even without shared catchphrases. |
 | `~twin <user>` | anyone | Overall nearest match, blending lexical and semantic similarity. |
-| `~traits <user>` | anyone | Project a chatter onto built-in trait axes relative to the room average. |
+| `~traits <user>` | anyone | Project a chatter onto built-in trait axes relative to the room average. ⚡ marks an axis where they occupy both poles, so that lean is an unreliable read (ironic performance or just genuine range — the data can't tell). |
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. |
 | `~distinct [top\|bottom] [n]` | anyone | Chatters farthest from or closest to the room average across built-in trait axes. |
 | `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. |

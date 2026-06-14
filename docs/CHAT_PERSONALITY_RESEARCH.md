@@ -56,6 +56,36 @@ irony at all; it is a direct claim in roundabout clothing. Deadpan irony
 SINCERE line in its conversation, because deadpan is sincere-looking by
 construction. Emote-stripping deletes tone markers (FeelsOkayMan) on top.
 
+**Measured confirmation, and a consequence for trait scoring (2026-06-14,
+`scripts/irony_confound.py`).** Tested on a chatter known to be highly ironic
+(says charged things as inside-joke bits): their per-message projection on the
+zero-shot "ironic" axis spans only ≈0.20 (p95−p5) and sits near zero, and
+`traits_for` scores them as "sincere" (z=−0.63). So the axis genuinely cannot see
+their irony. The consequence: this chatter scores mid-high on the **charged**
+"menace" axis (z=+0.72) off crude joke lines a human reads as bits — the axis
+measures surface words, and there is no working intent signal to discount. The
+tempting fix ("down-weight a person's ironic messages on charged axes") fails:
+person-level irony↔menace correlation is only +0.17, and there is no reliable
+irony signal to down-weight in the first place. **This is the case for the
+supervised irony detector** (the oracle queue below): the zero-shot axis is not
+just weak, it is the wrong instrument for deadpan/charged irony. Until then,
+charged-axis output is a words-based mirror, not a measure of sincere belief —
+recorded as a known limitation in `docs/GROUND_TRUTH.md`.
+
+**A no-oracle partial read: self-contradiction (2026-06-14,
+`scripts/contradiction.py`).** Since per-message irony is undetectable but a
+*performative* person is detectable from their data, measure whether a person
+occupies BOTH poles of a charged axis at once (the user's "high in both feminism
+and misogyny — impossible as an axis value, ordinary in one person's messages").
+On the menace axis the known-ironic chatter ranks in the top ~18% by this
+contradiction score and shows both edgy and wholesome lines, while their mean
+projection is a bland midpoint — confirming mean-pooling destroys the signal.
+This is a performativity proxy (topic variety also produces range), not an irony
+detector, but it requires no oracle, no single-message call, and no
+whole-conversation context, and its product form is a reliability flag on charged
+trait scores. It is also the first concrete payoff of the distributional person
+model (keep the cloud, don't mean-pool).
+
 The user's theory of how humans actually do it, as design directions:
 
 1. **First-order vs second-order meaning.** First order = what the words
@@ -222,8 +252,20 @@ Implications, in order of force:
 3. **Are the five built-in axes the right basis?** They were chosen by
    judgment, not data. Alternatives: PCA/ICA over person vectors to find the
    community's ACTUAL principal personality dimensions, then name them
-   (LLM-label the extremes). Orthogonalization order also embeds judgment
-   (menace-first means doomer = pessimism-beyond-hostility, not vice versa).
+   (LLM-label the extremes). **Update 2026-06-14:** the orthogonalization-order
+   judgment problem is now fixed. The raw axes are correlated (they are
+   mean-difference "steering vectors" sharing a negativity component; per-person
+   scores were 0.483 correlated across the roster), and the old Gram-Schmidt fix
+   was order-dependent — whichever axis came last kept only its residual (doomer
+   collapsed to 0.73 of its own label). They now use **Löwdin symmetric
+   orthogonalization** (`persona_traits.ortho_axis_vectors`), which is
+   order-independent and keeps every axis 0.92+ aligned with its name; entangle-
+   ment dropped to 0.249 with an ABTT-2 isotropy correction. This is a direct
+   port of the steering-vector / nuisance-subspace findings from the
+   `structured-transform-discovery` research repo — see
+   [RESEARCH_TO_APPLIED.md](RESEARCH_TO_APPLIED.md). The data-driven-basis
+   question (PCA/ICA over the per-message clouds, i.e. within-author differences)
+   is still open and is the natural next step.
 4. **Identity should be id-dominant.** Names change; Twitch ids don't. The
    author_ids table + live id capture make future merges factual; dead old
    logins (pre-capture) remain inference territory (temporal handoff + NCD).
