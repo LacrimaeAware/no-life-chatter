@@ -28,20 +28,23 @@ PROFAN = re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|cunt\w*|nigg\w*|retard\w*|ass\
 ELONG = re.compile(r"(.)\1\1")
 WORD = re.compile(r"[a-z']+", re.I)
 
-# friendly labels: feature -> (high-pole phrase, low-pole phrase)
+# plain-language labels: feature -> (high-pole phrase, low-pole phrase).
+# NOTE: whole-message doubling ("X X") is NOT included as a trait — it is mostly
+# a logging/import artifact (duplicated rows), not a behavior. We still collapse
+# it per-message before counting everything else, so it doesn't inflate the
+# other features.
 LABELS = {
-    "words":    ("verbose", "terse"),
-    "caps":     ("SHOUTY", "soft-spoken"),
-    "emote":    ("emote-spammer", "barely uses emotes"),
-    "exclaim":  ("exclamatory", None),
-    "question": ("inquisitive", None),
-    "repeat":   ("repetitive", None),
-    "elong":    ("draws words ouuut", None),
-    "mention":  ("talks AT people", "broadcasts to the room"),
-    "laugh":    ("always laughing", None),
-    "profan":   ("foul-mouthed", "clean-mouthed"),
-    "vocab":    ("rich vocabulary", "simple vocabulary"),
-    "doubles":  ("copypastes/doubles", None),
+    "words":    ("writes long messages", "writes short messages"),
+    "caps":     ("TYPES IN CAPS A LOT", "types in all-lowercase"),
+    "emote":    ("uses lots of emotes", "rarely uses emotes"),
+    "exclaim":  ("lots of exclamation marks", None),
+    "question": ("asks lots of questions", None),
+    "repeat":   ("repeats words/emotes in a message", None),
+    "elong":    ("stretches letters (soooo / loool)", None),
+    "mention":  ("replies @ people directly", "posts to the room, not at people"),
+    "laugh":    ("laughs a lot (LUL/KEK/lmao)", None),
+    "profan":   ("swears a lot", "rarely swears"),
+    "vocab":    ("varied vocabulary", "simple/repetitive vocabulary"),
 }
 
 _PROFILES = None   # {author: feature dict}
@@ -58,11 +61,10 @@ def features(texts):
     if n == 0:
         return None
     tot_words = caps_up = caps_alpha = emote_n = 0
-    excl = ment = ques = rep = elong = laugh = prof = doubled_n = 0
+    excl = ment = ques = rep = elong = laugh = prof = 0
     vocab = set()
     for t in texts:
-        t, was_doubled = (lambda s: (_dedouble(s), _dedouble(s) != s))(str(t))
-        doubled_n += was_doubled
+        t = _dedouble(str(t))   # collapse logging/import doubling before counting
         toks = t.split()
         ws = WORD.findall(t)
         tot_words += len(ws)
@@ -90,7 +92,7 @@ def features(texts):
         "words": tot_words / n, "caps": caps_up / (caps_alpha + 1e-9), "emote": emote_n / n,
         "exclaim": excl / n, "question": ques / n, "repeat": rep / n, "elong": elong / n,
         "mention": ment / n, "laugh": laugh / n, "profan": prof / n,
-        "vocab": len(vocab) / (tot_words + 1e-9), "doubles": doubled_n / n,
+        "vocab": len(vocab) / (tot_words + 1e-9),
     }
 
 

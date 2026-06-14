@@ -30,6 +30,7 @@ ACTIVE_DOCS = {
     "docs/CHAT_PERSONALITY_RESEARCH.md",
     "docs/RESEARCH_TO_APPLIED.md",
     "docs/PERSONALITY_SYSTEM_DESIGN.md",
+    "docs/INVESTIGATION_LOG.md",
     "docs/GENERATE_AND_BOT_MODES.md",
     "docs/FINE_TUNING.md",
     "docs/IDEA_BANK.md",

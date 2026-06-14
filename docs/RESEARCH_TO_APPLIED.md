@@ -296,7 +296,7 @@ geometry, is the foundation for the "better axes" the owner asked for.
 
 This is one of the better portfolio stories in the project because it is the full
 loop: **independent research → a falsifiable diagnosis → a measured production
-change → an honest account of what the measurement overturned.** It demonstrates
+change → an honest account of what the measurement overturned.** It shows
 (a) reading one's own research as an instrument rather than a trophy, (b)
 building the dial before the fix, and (c) the empirical humility to ship k=2 over
 the "obvious" k=1 because the data said so. The reproducible numbers all come

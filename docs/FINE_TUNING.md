@@ -12,7 +12,7 @@ fine-tuning teaches style and habits; RAG retrieves exact memories.
 4. Re-export and train the durable run.
 
 Older logs are useful, but not mandatory. They mostly help with rare users,
-old bits, and long-running references. Current logs are enough to prove whether
+old bits, and long-running references. Current logs are enough to test whether
 the training pipeline improves voice.
 
 ## Local export
