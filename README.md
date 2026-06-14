@@ -133,6 +133,7 @@ The table below is a project overview, not the audited source of truth.
 | `~like <user> [chat=] [year=]` | anyone | Who shares their distinctive voice, with the shared markers as evidence — also a decent alt-account detector. |
 | `~twin <user>` | anyone | Overall nearest match, blending vocabulary/emotes with semantic similarity. |
 | `~traits <user>` | anyone | Semantic trait readout against the room average. |
+| `~style <user>` | anyone | Behavioral read — how a chatter types (emotes, verbosity, caps, mentions, profanity) vs the room. |
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard for any word — built-in axes answer instantly, novel words build a saved axis on the fly. `burst` ranks peak moments. |
 | `~axis <trait> [n]` | anyone | Inspect what a trait/custom axis is semantically closest to. |
 | `~generate <tags...>` | anyone | Example message from a bag of tags: chatter names (several = fusion), trait poles, `chat=`, `year=`, topic, `engine=markov\|llm`. Save per-user recipes. |
