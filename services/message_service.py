@@ -256,7 +256,12 @@ class MessageService:
             display = prefix.split()[0].strip()
             if len(display) >= 4:
                 names.append(display)
-        return bool(self._directed_persona_targets(content, names))
+        if self._directed_persona_targets(content, names):
+            return True
+        # extra triggers (e.g. the streamer's name) fire ONLY on an explicit
+        # @mention — the bare name is said constantly in that streamer's chat.
+        text = (content or "").lower()
+        return any(f"@{t}" in text for t in (state.get("triggers") or []) if t)
 
     def _looks_like_greeting(self, content):
         text = (content or "").lower().strip()

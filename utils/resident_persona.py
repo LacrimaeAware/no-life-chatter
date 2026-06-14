@@ -35,6 +35,7 @@ DEFAULTS = {
     "prefix": "",
     "context": "",
     "until": 0.0,
+    "triggers": [],
 }
 
 
@@ -92,6 +93,14 @@ def _normalize_state(channel: str, state: dict) -> dict:
         out["max_bot_streak"] = DEFAULTS["max_bot_streak"]
     out["prefix"] = str(out.get("prefix") or "")
     out["context"] = str(out.get("context") or "")
+    # extra names that ALSO count as @-ing the resident (besides the persona name
+    # and the bot's own nick): stored as literal lowercased words to match chat
+    # text, e.g. the streamer's name. Accepts a list or comma-separated string.
+    trig = out.get("triggers") or []
+    if isinstance(trig, str):
+        trig = re.split(r"[,\s]+", trig)
+    out["triggers"] = sorted({str(t).lstrip("@").strip().lower()
+                              for t in trig if str(t).strip()})
     raw_reply = out.get("reply_to_trigger")
     if isinstance(raw_reply, str):
         out["reply_to_trigger"] = raw_reply.strip().lower() not in {"0", "false", "no", "off"}
