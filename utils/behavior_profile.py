@@ -17,37 +17,45 @@ import re
 
 from utils import chat_archive, emote_meaning, persona_msg_index as pmi
 
-try:
-    from utils.persona_classifier import _is_emote_token as _shape_emote
-except Exception:
-    def _shape_emote(t):
-        return bool(re.match(r"[A-Z][a-z]+[A-Z]", t)) or (t.isalpha() and t.isupper() and len(t) >= 3)
-
 _EMOTES = None
+_CAMEL = re.compile(r"[a-z][A-Z]")   # a lowercase immediately followed by an uppercase
 
 
 def _emote_set():
-    """Real emote names from the 7TV/BTTV/FFZ registry (3000+), lowercased."""
+    """Registered emote names, EXACT case. Twitch/7TV emotes are case-sensitive
+    ('Pog' renders, 'pog' does not), so matching exact-case avoids flagging
+    common lowercase words ('there', 'this') that collide with an emote name."""
     global _EMOTES
     if _EMOTES is None:
         reg = emote_meaning.registry() or {}
-        s = {k.lower() for k in reg}
+        s = set(reg.keys())
         for info in reg.values():
             o = (info or {}).get("original")
             if o:
-                s.add(str(o).lower())
+                s.add(str(o))
         _EMOTES = s
     return _EMOTES
 
 
 def _is_emote(tok):
-    """A token is an emote if it's a REGISTERED emote (Sadge, Pog, Aware, …) OR
-    is emote-shaped (camelCase/ALLCAPS: PagChomp, KEKW, forsenE). The registry
-    catches the Capitalized-first ones the shape heuristic alone misses."""
+    """Best-effort emote detection from text. Requires MIXED case (an upper AND a
+    lower letter) — Pog/Sadge/Lemon/FeelsDankMan/fernardoAnalysis qualify, while
+    the common-word emotes that cause false positives do not: lowercase words
+    ('there', 'omg') and all-caps shouting/words ('HELP', 'YOU') are excluded.
+    Within mixed-case, accept camelCase shape OR an exact registry match.
+
+    LIMIT: this undercounts (loses all-caps emotes like KEKW/OMEGALUL, and
+    lowercase-typed emotes). It is unavoidable — 7TV emotes are named after
+    common words and the archive stores text, not what rendered. Emote rate here
+    is an approximate lower bound, not exact."""
     t = tok.strip(",.!?:;\"'")
-    if not t:
+    if len(t) < 2:
         return False
-    return t.lower() in _emote_set() or _shape_emote(t)
+    has_upper = any(c.isupper() for c in t)
+    has_lower = any(c.islower() for c in t)
+    if not (has_upper and has_lower):
+        return False
+    return bool(_CAMEL.search(t)) or t in _emote_set()
 
 LAUGH = re.compile(r"\b(l+u+l+w?|ke+kw?|lma+o+|lo+l|xd+|kekw|omegalul|icant|pepelaugh)\b", re.I)
 PROFAN = re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|cunt\w*|nigg\w*|retard\w*|ass\w*|dick\w*|pussy\w*)\b", re.I)
@@ -60,15 +68,15 @@ WORD = re.compile(r"[a-z']+", re.I)
 # it per-message before counting everything else, so it doesn't inflate the
 # other features.
 LABELS = {
-    "words":    ("writes long messages", "writes short messages"),
-    "caps":     ("TYPES IN CAPS A LOT", "types in all-lowercase"),
-    "emote":    ("uses lots of emotes", "fewer emotes than most in this chat"),
-    "exclaim":  ("lots of exclamation marks", None),
+    "words":    ("wordy", "terse"),
+    "caps":     ("lots of CAPS", "all-lowercase"),
+    "emote":    ("emote-heavy", "low on emotes (vs this chat)"),
+    "exclaim":  ("exclamation-heavy", None),
     "question": ("asks lots of questions", None),
-    "mention":  ("replies @ people directly", "posts to the room, not at people"),
-    "laugh":    ("laughs a lot (LUL/KEK/lmao)", None),
-    "profan":   ("swears a lot", "rarely swears"),
-    "vocab":    ("varied vocabulary", "simple/repetitive vocabulary"),
+    "mention":  ("@s people directly", "posts to the room"),
+    "laugh":    ("laughs a lot", None),
+    "profan":   ("swears a lot", "barely swears"),
+    "vocab":    ("rich vocabulary", "simple vocabulary"),
 }
 
 _PROFILES = None   # {author: feature dict}
