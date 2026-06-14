@@ -134,6 +134,7 @@ wins; fix the others.
 | Ranked next work | `docs/ROADMAP.md` | Recently-shipped + frontier. |
 | Live command bible | `docs/COMMANDS.md` (+ `README.md` table) | Kept in sync by `scripts/check_readme_commands.py`. |
 | Embedding/persona geometry rationale + research lineage | `docs/RESEARCH_TO_APPLIED.md` | Porting `structured-transform-discovery` findings. |
+| Personality-system design (what we keep/replace + the plan) | `docs/PERSONALITY_SYSTEM_DESIGN.md` | The coherent synthesis: behavioral axes + human oracle + bridge classifier. |
 | Personality-research questions + ethics | `docs/CHAT_PERSONALITY_RESEARCH.md` | Private/art-first; no public clinical claims. |
 | Archive/FTS schema + query rules | `docs/CHAT_ARCHIVE.md` | FTS-first `CROSS JOIN` performance rule lives here. |
 | Future ideas (not tasks) | `docs/IDEA_BANK.md` | Ideas graduate to ROADMAP when chosen. |
