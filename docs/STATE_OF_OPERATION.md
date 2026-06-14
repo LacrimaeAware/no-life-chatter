@@ -129,6 +129,15 @@ They are not live commands yet.
     foundation for the "better axes" direction. `scripts/person_cards.py` renders
     per-person cards (readout + real messages) for labeling; labels in
     `_private/PERSON_LABELS.md`. See `docs/RESEARCH_TO_APPLIED.md` §7.
+  - **`~style` command (shipped) + the core conclusion.** The behavioral axes are
+    now live as `~style <user>` (`utils/behavior_profile.py`): how a chatter types
+    vs the room, the structural-personality read. The whole investigation's
+    conclusion (`docs/INVESTIGATION_LOG.md`, `docs/PERSONALITY_SYSTEM_DESIGN.md`):
+    traits split into STRUCTURAL (measurable, → `~style`) and INTENT/disposition
+    (irony/hostility/sincerity — NOT recoverable from surface features; parked
+    behind subject-attribution + labeled messages). The 34 person-labels are an
+    answer key / association source, too few to train. Emote detection in `~style`
+    is an approximate lower bound (see GROUND_TRUTH known limitations).
 
 ## Artifact Rule
 

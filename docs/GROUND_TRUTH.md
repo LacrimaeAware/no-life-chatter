@@ -116,9 +116,17 @@ commands are accurate. Re-measure with `scripts/irony_confound.py`.
 - **Multilingual confound.** The embedder (BGE-M3) is multilingual; a chatter who
   writes in another language (e.g. Brazilian Portuguese) can land near others by
   language as much as by voice/topic. Watch for this in `~like`/`~whosaid`.
+- **`~style` measures STRUCTURE, not intent; emote rate is approximate.** `~style`
+  reads *how* a chatter types (the part of personality that IS measurable). It
+  cannot read irony/sincerity/hostility — those are intent (see
+  `docs/INVESTIGATION_LOG.md` §5). Its emote rate is an approximate lower bound:
+  emote detection from archived text is hard because 7TV emotes are named after
+  common words; the current rule uses capitalization + the registry and drops
+  all-caps emotes to avoid flagging shouting. σ in `~style`/`~traits` is relative
+  to THIS roster (an emote-spam-heavy chat), not to humans generally.
 
-These are honest open problems, not bugs to hide. The trait/attribution commands
-are a fun mirror, not a measurement of what a person sincerely is.
+These are honest open problems, not bugs to hide. The trait/attribution/style
+commands are a fun mirror, not a measurement of what a person sincerely is.
 
 ---
 

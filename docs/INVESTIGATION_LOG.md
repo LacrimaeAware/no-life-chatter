@@ -91,10 +91,42 @@ don't re-introduce a dead claim or repeat a falsified step.
   association source**, used so far to validate the structural reads and to show
   the intent traits are *not* behaviorally recoverable.
 
+## 7. `~style` build + emote detection (a worked example of the discipline)
+
+- FOUND: behavioral features surface per-person as `~style`, z-scored vs the
+  roster; the reads match the owner's labels (e.g. the emote-spammer, the
+  cleanest-mouthed, the @-everyone chatter land where expected).
+- CORRECTED — emote detection, **twice, each caught only by reading real
+  messages**:
+  - A shape-only heuristic UNDER-counted (it missed Capitalized-first emotes:
+    Sadge/Pog/Lemon) — read as near-zero for a heavy emote user.
+  - A case-insensitive registry match then OVER-counted — it flagged common
+    words ("there", "omg") that collide with 7TV emote names, and an all-caps
+    rule flagged every SHOUTED word ("HELP", "YOU").
+  - Current rule: require MIXED case, then camelCase OR exact-case registry. This
+    uses the two real signals the owner pointed out — **capitalization** ("Pain"
+    the emote vs "in pain" the word) and **registry membership**. Residual:
+    sentence-initial capitalized words; all-caps emotes (KEKW/OMEGALUL) dropped to
+    avoid flagging shouting (most emotes are NOT all-caps, so this loss is a
+    minority — a small allow-list could recover them). Emote rate is an
+    approximate **lower bound**, not exact.
+  - LESSON: each error was invisible in aggregate and obvious in the messages.
+    Verify feature extractors against real messages, not intuition.
+- CORRECTED: a "doubles" feature (whole-message "X X") was a logging/import
+  artifact, not a behavior — removed from `~style`.
+- FOUND (a genuine use of the oracle): the 12 over-the-top/low-key labels define
+  a behavioral direction; scoring all 34 on it **generalizes the labels** — it
+  surfaced un-labeled candidates and flagged disagreements (the owner's two
+  accounts split his behavior across eras). Useful, honest — not a trained model.
+
 ## Do-not-repeat list (for auditors)
 
 - Do not reintroduce "centering leaves cosines at 0.99" or "menace~doomer 0.91."
 - Do not claim a behavioral "irony" or "hostility" score — it ranks the loudest
   ironist as the cruelest.
 - Do not call the 34 person-labels a training set, or any of this "proof."
+- Do not trust an emote/feature extractor without checking real messages, and do
+  not call emote rate exact — it is an approximate lower bound.
+- Do not declare something "fundamentally impossible" when capitalization,
+  the registry, or token position carry real signal.
 - Do not infer a chatter's nationality/identity from the language a message is in.

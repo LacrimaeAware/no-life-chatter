@@ -15,6 +15,12 @@ repo; full write-up in [RESEARCH_TO_APPLIED.md](RESEARCH_TO_APPLIED.md).
   empirically; the effect is non-monotonic).
 - **RRF** bm25+dense fusion in `archive_qa` author QA (paraphrase recall, bm25
   kept as an independent lane).
+- **`~style` command** (`utils/behavior_profile.py`) — data-driven behavioral
+  personality read (how a chatter types vs the room). The structural half of
+  personality; intent traits (irony/hostility) parked as not behaviorally
+  measurable. Full trajectory + overturned claims in
+  [INVESTIGATION_LOG.md](INVESTIGATION_LOG.md); design in
+  [PERSONALITY_SYSTEM_DESIGN.md](PERSONALITY_SYSTEM_DESIGN.md).
 
 ## Verdict
 
