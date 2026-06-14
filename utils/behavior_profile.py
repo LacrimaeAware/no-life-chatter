@@ -15,13 +15,39 @@ from __future__ import annotations
 import os
 import re
 
-from utils import chat_archive, persona_msg_index as pmi
+from utils import chat_archive, emote_meaning, persona_msg_index as pmi
 
 try:
-    from utils.persona_classifier import _is_emote_token as _emote_tok
+    from utils.persona_classifier import _is_emote_token as _shape_emote
 except Exception:
-    def _emote_tok(t):
+    def _shape_emote(t):
         return bool(re.match(r"[A-Z][a-z]+[A-Z]", t)) or (t.isalpha() and t.isupper() and len(t) >= 3)
+
+_EMOTES = None
+
+
+def _emote_set():
+    """Real emote names from the 7TV/BTTV/FFZ registry (3000+), lowercased."""
+    global _EMOTES
+    if _EMOTES is None:
+        reg = emote_meaning.registry() or {}
+        s = {k.lower() for k in reg}
+        for info in reg.values():
+            o = (info or {}).get("original")
+            if o:
+                s.add(str(o).lower())
+        _EMOTES = s
+    return _EMOTES
+
+
+def _is_emote(tok):
+    """A token is an emote if it's a REGISTERED emote (Sadge, Pog, Aware, …) OR
+    is emote-shaped (camelCase/ALLCAPS: PagChomp, KEKW, forsenE). The registry
+    catches the Capitalized-first ones the shape heuristic alone misses."""
+    t = tok.strip(",.!?:;\"'")
+    if not t:
+        return False
+    return t.lower() in _emote_set() or _shape_emote(t)
 
 LAUGH = re.compile(r"\b(l+u+l+w?|ke+kw?|lma+o+|lo+l|xd+|kekw|omegalul|icant|pepelaugh)\b", re.I)
 PROFAN = re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|cunt\w*|nigg\w*|retard\w*|ass\w*|dick\w*|pussy\w*)\b", re.I)
@@ -36,11 +62,9 @@ WORD = re.compile(r"[a-z']+", re.I)
 LABELS = {
     "words":    ("writes long messages", "writes short messages"),
     "caps":     ("TYPES IN CAPS A LOT", "types in all-lowercase"),
-    "emote":    ("uses lots of emotes", "rarely uses emotes"),
+    "emote":    ("uses lots of emotes", "fewer emotes than most in this chat"),
     "exclaim":  ("lots of exclamation marks", None),
     "question": ("asks lots of questions", None),
-    "repeat":   ("repeats words/emotes in a message", None),
-    "elong":    ("stretches letters (soooo / loool)", None),
     "mention":  ("replies @ people directly", "posts to the room, not at people"),
     "laugh":    ("laughs a lot (LUL/KEK/lmao)", None),
     "profan":   ("swears a lot", "rarely swears"),
@@ -61,7 +85,7 @@ def features(texts):
     if n == 0:
         return None
     tot_words = caps_up = caps_alpha = emote_n = 0
-    excl = ment = ques = rep = elong = laugh = prof = 0
+    excl = ment = ques = laugh = prof = 0
     vocab = set()
     for t in texts:
         t = _dedouble(str(t))   # collapse logging/import doubling before counting
@@ -74,23 +98,18 @@ def features(texts):
                 caps_alpha += 1
                 if ch.isupper():
                     caps_up += 1
-        emote_n += sum(1 for tk in toks if _emote_tok(tk.strip(",.!?")))
+        emote_n += sum(1 for tk in toks if _is_emote(tk))
         excl += t.count("!")
         ment += t.count("@")
         if t.strip().endswith("?") or re.match(r"\s*(what|why|how|who|when|where|is|are|do|does|did|can|should)\b", t, re.I):
             ques += 1
-        low = [w.lower() for w in toks]
-        if any(low[i] == low[i + 1] and len(low[i]) >= 2 for i in range(len(low) - 1)):
-            rep += 1
-        if ELONG.search(t):
-            elong += 1
         if LAUGH.search(t):
             laugh += 1
         if PROFAN.search(t):
             prof += 1
     return {
         "words": tot_words / n, "caps": caps_up / (caps_alpha + 1e-9), "emote": emote_n / n,
-        "exclaim": excl / n, "question": ques / n, "repeat": rep / n, "elong": elong / n,
+        "exclaim": excl / n, "question": ques / n,
         "mention": ment / n, "laugh": laugh / n, "profan": prof / n,
         "vocab": len(vocab) / (tot_words + 1e-9),
     }
