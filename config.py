@@ -108,6 +108,13 @@ MIN_FOREIGN_SIGNAL: float = float(_tr.get("min_foreign_signal", 0.10))
 # (0.95) clears it; "nah fam"/"ge"/emote junk (~0.25) does not.
 MIN_SHORT_CONFIDENCE: float = float(_tr.get("min_short_confidence", 0.55))
 
+# --------------------------------- comedy --------------------------------
+# Default chats for the ~funny comedy-influence ranking. Should be the
+# conversational chats (not big stream chats where laughter reacts to the
+# stream). Empty falls back to all joined channels.
+_co = _cfg.get("comedy", {})
+COMEDY_CHANNELS: list[str] = [c.lower() for c in _co.get("channels", [])]
+
 # ------------------------------ speaker profiles -------------------------
 # The bot learns which languages each user writes in, to translate them more
 # reliably (and to avoid translating users who only ever write English).

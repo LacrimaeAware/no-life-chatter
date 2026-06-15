@@ -71,7 +71,7 @@ super-admin-only.
 | `~like <user> [chat=all|<channel>] [year=YYYY]` | anyone | Lexical/emote voice neighbors with shared-marker evidence. Useful for alt-hunting. |
 | `~vibes <user>` | anyone | Semantic embedding-space neighbors: same topics/energy even without shared catchphrases. |
 | `~twin <user>` | anyone | Overall nearest match, blending lexical and semantic similarity. |
-| `~traits <user>` | anyone | Project a chatter onto built-in trait axes relative to the room average. ⚡ marks an axis where they occupy both poles, so that lean is an unreliable read (ironic performance or just genuine range — the data can't tell). |
+| `~traits <user>` | anyone | Project a chatter onto built-in trait axes relative to the room average. ⚡ marks an axis where their messages span both poles, not one side. |
 | `~style <user>` | anyone | How a chatter TYPES — standout behaviors vs the room (emote rate, verbosity, caps, @mentions, profanity, vocabulary). Data-driven "structural" personality; unlike ~traits it doesn't touch the topic embedder. |
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. |
 | `~bottom <trait> [n] [burst]` | anyone | Reverse leaderboard — who leans LEAST toward a trait (most toward its opposite). |
@@ -82,6 +82,8 @@ super-admin-only.
 | `~irony <message> [context=...]` | anyone | Experimental irony/sincerity read using sarcasm and content-extremity axes. |
 | `~iq <user>` | anyone | Roster-relative text-IQ style score: peak expressed cognition in chat, not actual IQ. |
 | `~iq top [n]` / `~iq bottom [n]` | anyone | Highest or lowest text-IQ style scores in the current cache. |
+| `~funny <user>` | anyone | Comedy-influence score: how much more OTHER people laugh in the ~30s after you talk than the ~30s before (before/after delta cancels stream-wide reactions). Roster-relative index (100 = average chatter); `breadth` = distinct people you've made laugh. Self-laughs excluded; bot/command lines excluded. Default chats are the configured conversational ones; `chat=` overrides. |
+| `~funny top [n]` / `~funny bottom [n]` | anyone | Funniest / least-funny chatters by comedy influence across the configured chats. |
 
 The analysis commands are exploratory. They are useful for debugging and fun
 comparisons, not clinical or total-person labels.

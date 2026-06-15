@@ -135,6 +135,7 @@ The table below is a project overview, not the audited source of truth.
 | `~twin <user>` | anyone | Overall nearest match, blending vocabulary/emotes with semantic similarity. |
 | `~traits <user>` | anyone | Semantic trait readout against the room average. |
 | `~style <user>` | anyone | Behavioral read — how a chatter types (emotes, verbosity, caps, mentions, profanity) vs the room. |
+| `~funny <user>` / `~funny top\|bottom [n]` | anyone | Comedy ranking: how much more others laugh in the ~30s after you talk than before, so a chat reacting to the stream cancels out. Roster-relative index (100 = average); `breadth` = how many different people you've made laugh. Runs on the configured conversational chats. |
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard for any word — built-in axes answer instantly, novel words build a saved axis on the fly. `burst` ranks peak moments. |
 | `~bottom <trait> [n] [burst]` | anyone | Reverse of `~top` — who leans least toward a trait. |
 | `~axis <trait> [n]` | anyone | Inspect what a trait/custom axis is semantically closest to. |

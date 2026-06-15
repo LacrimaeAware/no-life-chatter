@@ -168,6 +168,13 @@ candidates = 2
 semantic_retrieval = false
 semantic_min_score = 0.50
 semantic_unanchored_min_score = 0.62
+
+[comedy]
+# Default chats for the ~funny comedy-influence ranking. Use conversational
+# chats (not big stream chats, where laughter reacts to the stream, not to each
+# other). Empty = fall back to all joined channels.
+channels = []
+
 [speaker]
 # Write a language this many times (confidently) and the bot treats you as a
 # speaker of it — translating even your short messages. A simple count
