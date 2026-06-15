@@ -27,7 +27,7 @@ from utils import persona_traits as pt  # noqa: E402
 
 
 def _clean(t: str) -> str:
-    return " ".join(str(t).split())[:78]
+    return " ".join(str(t).split())[:120]
 
 
 def card(name, menace_axis, contra, rng):
@@ -50,22 +50,20 @@ def card(name, menace_axis, contra, rng):
         rparts.append(f"{(pos if z>=0 else neg)} {abs(z):.1f}")
     flag = f"  [contradiction(menace) z={contra:+.2f}{' ⚡' if contra and contra>1.0 else ''}]" if contra is not None else ""
 
-    edgy = [i for i in m.argsort()[::-1][:3]]
-    nice = [i for i in m.argsort()[:3]]
-    used = set(edgy) | set(nice)
+    # a BIG mixed sample so a human has real context: some of their most
+    # negative-leaning, some most positive, and a broad random draw — shuffled
+    # together as a flat list (no interpretive labels; just what they say).
+    neg = list(m.argsort()[::-1][:5])
+    pos = list(m.argsort()[:5])
+    used = set(neg) | set(pos)
     pool = [i for i in range(n) if i not in used]
-    rnd = rng.sample(pool, min(4, len(pool)))
+    rnd = rng.sample(pool, min(15, len(pool)))
+    idxs = neg + pos + rnd
+    rng.shuffle(idxs)
 
-    # NOTE: the menace axis tracks NEGATIVITY broadly (dislike/sad/doom), not
-    # edginess specifically — label the buckets by the axis, not an interpretation.
-    out = [f"=== {name} ===  ({n} msgs)",
-           "  readout: " + " · ".join(rparts) + flag,
-           "  ↑menace-axis (most negative-leaning):"]
-    out += [f"    {m[i]:+.2f}  {_clean(texts[i])!r}" for i in edgy]
-    out.append("  ↓menace-axis (most positive/neutral-leaning):")
-    out += [f"    {m[i]:+.2f}  {_clean(texts[i])!r}" for i in nice]
-    out.append("  RANDOM:")
-    out += [f"          {_clean(texts[i])!r}" for i in rnd]
+    out = [f"=== {name} ===  ({n} msgs)  readout: " + " · ".join(rparts),
+           "  " + (flag.strip() if flag.strip() else "")]
+    out += [f"   - {_clean(texts[i])}" for i in idxs]
     return "\n".join(out)
 
 
