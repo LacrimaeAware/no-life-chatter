@@ -53,8 +53,8 @@ async def handle_funny(bot, message, params):
     if not d:
         await message.channel.send(
             f"Not enough data to score {user} in {'/'.join(chans)} "
-            f"(needs {ci.MIN_SETUPS}+ lines with others around, who laughed at "
-            f"{ci.MIN_BREADTH}+ different times)."
+            f"(needs {ci.MIN_SETUPS}+ lines with others around, and several "
+            f"different people laughing — not just one clique)."
         )
         return
     best = d.get("best_text") or ""
