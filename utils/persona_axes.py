@@ -350,10 +350,11 @@ def most_distinct(n=5, reverse=False):
     return out[:n]
 
 
-def top(term, n=5, burst=False):
+def top(term, n=5, burst=False, bottom=False):
     """(rows, note): leaderboard toward any term — builtin, saved, or freshly
     built. rows=None if the axis couldn't be made. burst=True ranks by
-    peak-moment percentile (needs the per-message index) instead of average."""
+    peak-moment percentile (needs the per-message index) instead of average.
+    bottom=True ranks toward the OPPOSITE pole (the LEAST of the term)."""
     resolved = resolve_axis(term)
     if not resolved:
         return None, None
@@ -367,5 +368,6 @@ def top(term, n=5, burst=False):
             note = (note or "") + " [no message index yet — showing averages]"
     else:
         scores = axis_scores(axis)
-    ranked = sorted(scores.items(), key=lambda kv: -sign * kv[1])[:n]
-    return [(a, sign * z) for a, z in ranked], note
+    s = -sign if bottom else sign
+    ranked = sorted(scores.items(), key=lambda kv: -s * kv[1])[:n]
+    return [(a, s * z) for a, z in ranked], note

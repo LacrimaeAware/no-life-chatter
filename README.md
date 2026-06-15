@@ -124,6 +124,7 @@ The table below is a project overview, not the audited source of truth.
 | `~regex <user|anyone> <pattern>` | anyone | Case-insensitive regex search over the archive. |
 | `~userregex <pattern> [chat=ch]` | anyone | Find archived usernames matching a regex. |
 | `~quote <user>` | anyone | Random real quote from the chat archive. |
+| `~random <word> [user=] [chat=]` | anyone | Random real quote containing a word; anyone by default, optional user/chat filters. |
 | `~firstseen <user>` | anyone | A user's first archived message. |
 | `~chatstats <user> [chat=ch]` | anyone | Archive stats: count, first/last seen, busiest hour. |
 | `~regulars [channel] [min] [n]` | anyone | Top chatters of a channel above a message floor, bots excluded. |
@@ -135,6 +136,7 @@ The table below is a project overview, not the audited source of truth.
 | `~traits <user>` | anyone | Semantic trait readout against the room average. |
 | `~style <user>` | anyone | Behavioral read — how a chatter types (emotes, verbosity, caps, mentions, profanity) vs the room. |
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard for any word — built-in axes answer instantly, novel words build a saved axis on the fly. `burst` ranks peak moments. |
+| `~bottom <trait> [n] [burst]` | anyone | Reverse of `~top` — who leans least toward a trait. |
 | `~axis <trait> [n]` | anyone | Inspect what a trait/custom axis is semantically closest to. |
 | `~generate <tags...>` | anyone | Example message from a bag of tags: chatter names (several = fusion), trait poles, `chat=`, `year=`, topic, `engine=markov\|llm`. Save per-user recipes. |
 | `~botpersona` / `~botmode` / `~botcontext` / `~botchance` | super admin | Channel-scoped resident persona controls for timed autonomous chat, topic-weighted reactions, and idle chat. |

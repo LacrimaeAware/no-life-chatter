@@ -1138,6 +1138,47 @@ def search_all(phrase: str, limit: int = 10, offset: int = 0,
     return unique[:limit]
 
 
+def random_match(phrase: str, author: str = None, channel: str = None,
+                 include_commands: bool = False, min_words: int = 3):
+    """A RANDOM archived message matching `phrase` (full-text), optionally by
+    `author` and/or in `channel`. Returns (sent_at, channel, author, content) or
+    None. Skips bot commands and prefers messages with >= min_words real words.
+
+    Random order on the FTS-matched set (bounded by the phrase's frequency), so
+    it stays cheap for normal words; very common words pull a larger pool."""
+    q = _fts_phrase(phrase)
+    if not q:
+        return None
+    conn = connect()
+    chan_sql, chan_params = _channel_filter(channel)
+    cmd_sql, cmd_params = _command_filter(include_commands)
+    auth_sql, auth_params = "", []
+    if author and author.lower() not in ("anyone", "*", "everyone"):
+        placeholders, auth_params = _in_clause(author_keys(author))
+        auth_sql = f" AND m.author IN ({placeholders}) "
+    rows = conn.execute(
+        "SELECT m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
+        "CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? {auth_sql}{chan_sql}{cmd_sql}"
+        "ORDER BY RANDOM() LIMIT 40",
+        [q, *auth_params, *chan_params, *cmd_params],
+    ).fetchall()
+    if not rows:
+        return None
+    # skip OTHER bots' command invocations ($gpt, !x, <groq, #cmd); the bot's own
+    # ~ prefix is already filtered in SQL.
+    def _ok(content):
+        return content.lstrip()[:1] not in ("$", "!", "<", "#")
+    for sent_at, ch, auth, content in rows:
+        if _ok(content) and len(content.split()) >= min_words:
+            return (sent_at, ch, normalize_author(auth), content)
+    for sent_at, ch, auth, content in rows:
+        if _ok(content):
+            return (sent_at, ch, normalize_author(auth), content)
+    sent_at, ch, auth, content = rows[0]
+    return (sent_at, ch, normalize_author(auth), content)
+
+
 def author_name_search(pattern: str, channel: str = None, limit: int = 12,
                        include_bots: bool = False):
     """Regex-search archived usernames. Returns [(author, count, first, last), ...]."""
