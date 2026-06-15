@@ -113,6 +113,7 @@ The table below is a project overview, not the audited source of truth.
 | Command | Who | Description |
 | --- | --- | --- |
 | `~help [page|command]` | anyone | List grouped command pages, or details for one command. |
+| `~admin` | anyone | List the admin / super-admin commands (kept out of public `~help`). |
 | `~ping` | anyone | Latency + host stats. |
 | `~artifacts` | anyone | Compact status for generated persona artifacts and stale semantic caches. |
 | `~practice on <langs> [native]` | anyone | Start practice mode. e.g. `~practice on es,ja en` |

@@ -92,7 +92,8 @@ comparisons, not clinical or total-person labels.
 
 | Command | Access | What it does |
 | --- | --- | --- |
-| `~help [page|command]` | anyone | List commands or show details for one command. |
+| `~help [page|command]` | anyone | List commands or show details for one command. `~mimic`/`~markov` work but are unlisted; admin commands are listed only via `~admin`. |
+| `~admin` | anyone | List the admin / super-admin commands (kept out of the public `~help`; the commands still enforce their own permissions). |
 | `~ping` | anyone | Latency and host stats. |
 | `~artifacts` | anyone | Compact status for generated persona artifacts and stale semantic caches. |
 | `~banuser <name>` | super admin | Ban a chatter from using bot commands. Translation/archive capture are unaffected. |
