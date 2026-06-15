@@ -7,7 +7,8 @@ description = (
     "Interpretability: WHICH of a chatter's real messages most drive their "
     "score on an axis — the receipts behind ~top/~traits. Add 'words' to see "
     "which WORDS in their top message carry the correlation (occlusion: "
-    "re-embed with each word removed).\n"
+    "re-embed with each word removed). σ is vs the roster average; a near-zero "
+    "σ means the lean is weak and the example messages are noise.\n"
     "  ~why <user> <trait> [words]"
 )
 
@@ -101,15 +102,7 @@ async def handle_why(bot, message, params):
         await message.channel.send(
             f"🔬 \"{pos[0][0][:120]}\" reads '{trait}' because of: {parts}")
         return
-    # honesty about signal strength: a weak overall score means these
-    # 'most/least' examples are basically noise — say so
-    if abs(person_z) >= 1.0:
-        strength = f"{person_z:+.1f}σ overall"
-    elif abs(person_z) >= 0.4:
-        strength = f"{person_z:+.1f}σ overall — weak, examples are shaky"
-    else:
-        strength = f"{person_z:+.1f}σ overall — basically uncorrelated, examples below are NOISE"
-    msg = (f"🔍 {user} on '{trait}' ({strength}) — "
+    msg = (f"🔍 {user} on '{trait}' ({person_z:+.1f}σ overall) — "
            f"most ({pos[0][1]:+.1f}): \"{pos[0][0]}\"")
     if len(pos) > 1 and abs(person_z) >= 0.4:
         msg += f" · also ({pos[1][1]:+.1f}): \"{pos[1][0][:80]}\""

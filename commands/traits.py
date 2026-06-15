@@ -50,16 +50,10 @@ async def handle_traits(bot, message, params):
     # lean toward, σ = standard deviations from the roster average. ⚡ flags an
     # axis where they occupy BOTH poles, so the lean is a mean-pool artifact.
     parts = []
-    flagged = False
     for axis, z, contra in traits:
         neg, pos = AXES[axis][0], AXES[axis][1]
         label = pos if z >= 0 else neg
-        tag = ""
-        if contra is not None and contra > CONTRA_FLAG_Z and abs(z) >= MIN_LEAN_FOR_FLAG:
-            tag = "⚡"
-            flagged = True
+        tag = "⚡" if (contra is not None and contra > CONTRA_FLAG_Z
+                       and abs(z) >= MIN_LEAN_FOR_FLAG) else ""
         parts.append(f"{label} {abs(z):.1f}σ{tag}")
-    msg = f"🧪 {user}: " + " · ".join(parts)
-    if flagged:
-        msg += "  (⚡ = spans both poles of that axis)"
-    await message.channel.send(msg)
+    await message.channel.send(f"🧪 {user}: " + " · ".join(parts))

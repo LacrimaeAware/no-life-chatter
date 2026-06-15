@@ -43,7 +43,7 @@ async def handle_bottom(bot, message, params):
         if len(shown) >= n:
             break
 
-    parts = [f"{i}. {author} ({z:+.1f}sigma)" for i, (author, z) in enumerate(shown, 1)]
+    parts = [f"{i}. {author} ({z:+.1f}σ)" for i, (author, z) in enumerate(shown, 1)]
     mode = " (peak moments)" if burst else ""
     msg = f"least {trait}{mode}: " + " | ".join(parts)
     if note:
