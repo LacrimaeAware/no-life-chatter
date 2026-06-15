@@ -401,6 +401,30 @@ def build_report(query: str, *, author: str | None = None,
     }
 
 
+# Human-readable rendering of a fact's claim KIND. Without this the raw kind
+# token (e.g. "self_negative_identity", a fact_bank.CLAIM_PATTERNS category for
+# "I'm not ..." lines) leaks into chat and reads like a person/source — which is
+# alarming and wrong. A claim is always attributed to its real chatter author.
+_KIND_PHRASE = {
+    "self_identity": "says they are",
+    "self_negative_identity": "says they're not",
+    "preference_positive": "likes",
+    "preference_negative": "dislikes",
+    "belief": "thinks",
+    "possession": "has",
+    "activity": "does",
+}
+
+
+def _fact_phrase(fact: dict, claim_len: int = 150) -> str:
+    """Render a fact-bank claim as a human sentence attributed to its author."""
+    who = fact.get("author") or "someone"
+    verb = _KIND_PHRASE.get(fact.get("kind", ""), "said")
+    count = fact.get("support_count", 1) or 1
+    rep = f" ({count}x)" if count > 1 else ""
+    return f"{who} {verb} \"{clip(fact['claim'], claim_len)}\"{rep}"
+
+
 def evidence_items(report: dict, max_items: int = 6) -> list[dict]:
     """Evidence lines safe to give an answer model.
 
@@ -427,10 +451,7 @@ def evidence_items(report: dict, max_items: int = 6) -> list[dict]:
     for fact in [f for f in report.get("facts", []) if _chatworthy_fact(f)][:2]:
         items.append({
             "label": f"F{len([i for i in items if i['label'].startswith('F')]) + 1}",
-            "text": (
-                f"claim {fact['kind']} support={fact['support_count']} "
-                f"{fact.get('sent_at', '')[:10]}: \"{clip(fact['claim'], 160)}\""
-            ),
+            "text": _fact_phrase(fact, 160),
         })
     for emote in report.get("emotes", [])[:1]:
         bits = []
@@ -500,14 +521,7 @@ def format_chat(report: dict, max_chars: int = 470) -> str:
 
     chat_facts = [fact for fact in report.get("facts", []) if _chatworthy_fact(fact)]
     for fact in chat_facts[:2]:
-        bit = (
-            f"claim {fact['kind']} '{clip(fact['claim'], 70)}' "
-            f"({fact['support_count']}x"
-        )
-        if fact.get("sent_at"):
-            bit += f", {fact['sent_at'][:10]}"
-        bit += ")"
-        parts.append(bit)
+        parts.append(_fact_phrase(fact, 70))
 
     for emote in report.get("emotes", [])[:1]:
         bits = []
@@ -540,8 +554,7 @@ def format_cli(report: dict) -> str:
         lines.append("\nclaims:")
         for fact in report["facts"]:
             lines.append(
-                f"- {fact['author']} {fact['kind']} support={fact['support_count']} "
-                f"conf={fact['confidence']}: {fact['claim']}"
+                f"- {_fact_phrase(fact)} [{fact['kind']}] conf={fact['confidence']}"
             )
             if fact.get("evidence"):
                 lines.append(f"  {fact.get('sent_at')} #{fact.get('channel')}: {fact['evidence']}")
