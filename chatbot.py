@@ -2,13 +2,12 @@ import json
 import logging
 import sqlite3
 import threading
-import time
 
 from twitchio.ext import commands
 
 import config
 from handlers import MessageHandler
-from utils.token_manager import manage_token_lifecycle
+from utils import token_manager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -28,9 +27,14 @@ def get_token():
         return None
 
 
-def start_token_management():
-    """Start the background thread that keeps the OAuth token fresh."""
-    token_thread = threading.Thread(target=manage_token_lifecycle, daemon=True)
+def start_token_management(on_refresh=None):
+    """Start the background thread that keeps the OAuth token fresh. on_refresh
+    is called after each successful refresh so the live bot can adopt it."""
+    token_thread = threading.Thread(
+        target=token_manager.manage_token_lifecycle,
+        kwargs={"on_refresh": on_refresh},
+        daemon=True,
+    )
     token_thread.start()
 
 
@@ -60,6 +64,7 @@ class Bot(commands.Bot):
         self.token = get_token()
         self.client_id = config.TWITCH_CLIENT_ID
         self.prefix = config.PREFIX
+        self._auth_failures = 0
 
         super().__init__(
             token=self.token,
@@ -71,7 +76,52 @@ class Bot(commands.Bot):
         self.handler = MessageHandler(self)
         initialize_channel_settings(config.CHANNELS)
 
+    def apply_current_token(self):
+        """Push the latest token from disk into the LIVE twitchio session.
+
+        The background refresher writes new tokens to the file, but twitchio
+        (2.10) strips 'oauth:' at init and caches the token on both the websocket
+        (`_connection._token`) and the HTTP client (`_http.token`); on reconnect
+        it re-sends that cached token. So after a refresh the live socket keeps
+        presenting the OLD token and Twitch answers 'Login authentication failed'
+        forever until a restart. Re-applying the current file token here makes the
+        next (re)connect and Helix call use the fresh one. Returns True if the
+        live token changed. (Touches twitchio internals — pinned to 2.10.0.)"""
+        raw = get_token()
+        if not raw:
+            return False
+        bare = raw.replace("oauth:", "")
+        changed = False
+        conn = getattr(self, "_connection", None)
+        if conn is not None and getattr(conn, "_token", None) != bare:
+            conn._token = bare
+            changed = True
+        http = getattr(self, "_http", None)
+        if http is not None and getattr(http, "token", None) != bare:
+            http.token = bare
+            changed = True
+        if changed:
+            logging.info("Applied refreshed token to the live connection.")
+        return changed
+
+    def _handle_auth_failure(self):
+        """Self-heal the recurring stale-token wedge: when Twitch rejects login,
+        re-read the (refreshed) file token and apply it so the next reconnect
+        succeeds. If applying changes nothing AND failures persist, the refresh
+        token itself is dead — say so loudly instead of looping silently."""
+        self._auth_failures += 1
+        if self.apply_current_token():
+            logging.warning(
+                "Login auth failed — re-applied the current disk token; the next "
+                "reconnect will use it.")
+        elif self._auth_failures >= 6:
+            logging.critical(
+                "Login auth still failing after %d tries and the disk token is "
+                "unchanged — the refresh token is likely revoked. Re-authorize "
+                "with scripts/get_initial_token.py.", self._auth_failures)
+
     async def event_ready(self):
+        self._auth_failures = 0
         logging.info(f"Ready | Logged in as {self.nick} (id {self.user_id})")
         logging.info(f"Joined channels: {[c.name for c in self.connected_channels]}")
         self.handler.message_service.start_resident_idle_loop()
@@ -102,6 +152,8 @@ class Bot(commands.Bot):
         for line in data.split("\r\n"):
             if " NOTICE " in line and "tmi.twitch.tv" in line:
                 logging.warning(f"Twitch NOTICE: {line.strip()}")
+                if "Login authentication failed" in line:
+                    self._handle_auth_failure()
 
     async def event_error(self, error, data=None):
         logging.error(f"twitchio event error: {error!r} | data={data!r}")
@@ -127,11 +179,18 @@ def acquire_single_instance_lock():
 
 def main():
     instance_lock = acquire_single_instance_lock()  # noqa: F841
-    logging.info("Starting token management thread...")
-    start_token_management()
-    time.sleep(2)  # give the token manager a moment to refresh if needed
+
+    # Refresh synchronously BEFORE connecting so the bot reads a fresh file token
+    # (no startup race), then start the background loop that adopts later
+    # refreshes into the live session.
+    logging.info("Checking token freshness before connect...")
+    try:
+        token_manager.check_and_refresh_token()
+    except Exception as e:
+        logging.error(f"Startup token check failed: {e}")
 
     bot = Bot()
+    start_token_management(on_refresh=bot.apply_current_token)
     bot.run()
 
 

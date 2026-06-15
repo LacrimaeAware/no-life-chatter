@@ -32,6 +32,15 @@ rules and numbers that, if wrong, cause real mistakes.
 - **Never edit `_bot-loop.bat` while the loop is running.**
 - Code changes in `utils/`, `services/`, `commands/` only reach the live bot
   after a worker restart.
+- **OAuth token refresh:** `token_manager` refreshes the token in
+  `config.TOKEN_FILE`, but twitchio (2.10) caches the token captured at startup
+  and re-sends it on every reconnect. The bot now adopts each refresh into the
+  live session (`Bot.apply_current_token`, wired to the refresher's `on_refresh`
+  callback and to the `Login authentication failed` NOTICE) so reconnects use the
+  fresh token — this was the recurring auth-fail wedge where the FILE token was
+  valid (check with `/oauth2/validate`) but the running process kept the stale
+  one. If you see repeated `Login authentication failed` plus a CRITICAL about a
+  revoked refresh token, re-authorize with `scripts/get_initial_token.py`.
 
 **Privacy boundary**
 - `_private/`, `config.toml`, `.env`, `data/synced/`, `data/unsynced/`, logs,

@@ -72,27 +72,36 @@ def refresh_access_token() -> bool:
     return False
 
 
-def check_and_refresh_token() -> None:
+def check_and_refresh_token() -> bool:
+    """Refresh the token if it is at/near expiry. Returns True iff a refresh
+    actually happened (so callers can push the new token into a live session)."""
     token_data = read_token_data()
     try:
         expiry = float(token_data["expiry_time"])
     except (KeyError, ValueError, TypeError):
         logging.warning("Expiry missing/invalid; forcing refresh.")
-        refresh_access_token()
-        return
+        return refresh_access_token()
 
     if time.time() > expiry:
         logging.info("Token expired — refreshing...")
-        refresh_access_token()
-    else:
-        logging.info("Token still valid.")
+        return refresh_access_token()
+    logging.info("Token still valid.")
+    return False
 
 
-def manage_token_lifecycle() -> None:
+def manage_token_lifecycle(on_refresh=None) -> None:
+    """Background loop: refresh the file token before it expires. When a refresh
+    happens, call on_refresh() so the live bot can adopt the new token (twitchio
+    otherwise keeps re-sending the token captured at startup — see
+    chatbot.Bot.apply_current_token)."""
     logging.info("Starting token management loop.")
     while True:
         try:
-            check_and_refresh_token()
+            if check_and_refresh_token() and on_refresh:
+                try:
+                    on_refresh()
+                except Exception as e:
+                    logging.error(f"Token on_refresh callback failed: {e}")
         except Exception as e:
             logging.error(f"Error managing token lifecycle: {e}")
         time.sleep(300)  # 5 minutes
