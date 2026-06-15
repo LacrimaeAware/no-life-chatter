@@ -1,11 +1,24 @@
+import asyncio
 import logging
-from command_registry import command_handlers, load_command_handlers
+from collections import defaultdict
+
+from command_registry import command_handlers, load_command_handlers  # noqa: F401
 from utils.command_bans import is_banned
 from utils import cooldowns
+
+# Slow LLM generation commands. These are serialized PER CHANNEL so their
+# replies arrive one at a time instead of as a simultaneous batch (which also
+# trips Twitch's anti-spam), and an identical request already in flight is
+# dropped with a brief one-time notice instead of generated twice.
+SERIAL_COMMANDS = {"persona", "hyper", "generate"}
+
 
 class CommandProcessor:
     def __init__(self, bot):
         self.bot = bot
+        self._gen_locks = defaultdict(asyncio.Lock)   # channel -> serialization lock
+        self._inflight = defaultdict(set)             # channel -> signatures running/queued
+        self._warned = defaultdict(set)               # channel -> sigs already warned about
 
     async def process_command(self, message):
         # command-banned users are silently ignored (~banuser/~unbanuser)
@@ -37,10 +50,43 @@ class CommandProcessor:
                 f"@{user} slow down — command cooldown {secs // 60}m {secs % 60}s "
                 "(stacking commands before the bot answers).")
             return
+
+        if command in SERIAL_COMMANDS and message.channel:
+            await self._run_serial(message, command, params, handler, user)
+        else:
+            await self._run(message, command, params, handler, user)
+
+    async def _run(self, message, command, params, handler, user):
         try:
             await handler(self.bot, message, params)
         except Exception as e:
             logging.error(f"Error handling command {command}: {e}")
             await message.channel.send("An error occurred while processing your command.")
         finally:
+            cooldowns.after(user)
+
+    async def _run_serial(self, message, command, params, handler, user):
+        """Generation commands: one at a time per channel, dropping an exact
+        duplicate that is already running/queued so chat can't batch-spam the
+        bot (and risk an auto-timeout)."""
+        channel = message.channel.name
+        sig = command + " " + " ".join(params).strip().lower()
+
+        if sig in self._inflight[channel]:
+            cooldowns.after(user)   # we are NOT running it — release the pending slot
+            if sig not in self._warned[channel]:
+                self._warned[channel].add(sig)
+                await message.channel.send(f"@{user} already on that one ⏳")
+            return
+
+        self._inflight[channel].add(sig)
+        try:
+            async with self._gen_locks[channel]:
+                await handler(self.bot, message, params)
+        except Exception as e:
+            logging.error(f"Error handling command {command}: {e}")
+            await message.channel.send("An error occurred while processing your command.")
+        finally:
+            self._inflight[channel].discard(sig)
+            self._warned[channel].discard(sig)
             cooldowns.after(user)
