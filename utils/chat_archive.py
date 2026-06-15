@@ -1138,6 +1138,24 @@ def search_all(phrase: str, limit: int = 10, offset: int = 0,
     return unique[:limit]
 
 
+_QUOTED_LOG_PREFIX = re.compile(
+    r"^\s*\d{1,2}:\d{2}(?::\d{2})?\s+(?:([^\s:,@]{2,25})\s*[:,]\s+)?")
+
+
+def strip_quoted_log_prefix(text: str):
+    """Strip a leading 'HH:MM Name:' chatlog-quote prefix that chatters paste
+    when quoting an earlier message (e.g. '3:50 SomeUser: @target ...' -> '@target
+    ...'). Returns (cleaned_text, quoted_name_or_None). Leaves text unchanged if
+    the strip would empty it."""
+    m = _QUOTED_LOG_PREFIX.match(text or "")
+    if not m:
+        return text, None
+    cleaned = text[m.end():].strip()
+    if not cleaned:
+        return text, None
+    return cleaned, m.group(1)
+
+
 def random_match(phrase: str, author: str = None, channel: str = None,
                  include_commands: bool = False, min_words: int = 3):
     """A RANDOM archived message matching `phrase` (full-text), optionally by

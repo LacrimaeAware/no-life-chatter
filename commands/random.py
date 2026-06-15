@@ -1,6 +1,11 @@
 import asyncio
 
-from utils.chat_archive import random_match, normalize_author, normalize_channel
+from utils.chat_archive import (
+    normalize_author,
+    normalize_channel,
+    random_match,
+    strip_quoted_log_prefix,
+)
 
 description = (
     "A random real quote from the archive containing a word/phrase. Anyone by "
@@ -40,4 +45,9 @@ async def handle_random(bot, message, params):
         await message.channel.send(f"No archived quote with \"{_clip(phrase, 60)}\"{scope}.")
         return
     sent_at, ch, author, content = row
-    await message.channel.send(f"🎲 {author}#{ch} {sent_at[:10]}: \"{_clip(content)}\"")
+    # drop a pasted 'HH:MM Name:' chatlog-quote prefix; keep the date in the header
+    content, quoted_name = strip_quoted_log_prefix(content)
+    if not author and quoted_name:
+        author = normalize_author(quoted_name)
+    who = f"{author}#{ch}" if author else f"#{ch}"
+    await message.channel.send(f"🎲 {who} {sent_at[:10]}: \"{_clip(content)}\"")
