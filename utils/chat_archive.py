@@ -1141,6 +1141,14 @@ def search_all(phrase: str, limit: int = 10, offset: int = 0,
 _QUOTED_LOG_PREFIX = re.compile(
     r"^\s*\d{1,2}:\d{2}(?::\d{2})?\s+(?:([^\s:,@]{2,25})\s*[:,]\s+)?")
 
+# A pasted multi-line chatlog has repeated 'HH:MM Name:' segments. Two or more
+# is a dead giveaway it's a log dump, not a single utterance.
+_LOG_DUMP_SEGMENT = re.compile(r"\d{1,2}:\d{2}(?::\d{2})?\s+[^\s:]{1,30}\s*:")
+
+
+def looks_like_log_dump(text: str) -> bool:
+    return len(_LOG_DUMP_SEGMENT.findall(text or "")) >= 2
+
 
 def strip_quoted_log_prefix(text: str):
     """Strip a leading 'HH:MM Name:' chatlog-quote prefix that chatters paste
@@ -1185,18 +1193,20 @@ def random_match(phrase: str, author: str = None, channel: str = None,
     ).fetchall()
     if not rows:
         return None
-    # skip OTHER bots' command invocations ($gpt, !x, <groq, #cmd); the bot's own
-    # ~ prefix is already filtered in SQL.
+    # skip OTHER bots' command invocations ($gpt, !x, <groq, #cmd) and pasted
+    # multi-line chatlog dumps; the bot's own ~ prefix is already filtered in SQL.
     def _ok(content):
-        return content.lstrip()[:1] not in ("$", "!", "<", "#")
+        if content.lstrip()[:1] in ("$", "!", "<", "#"):
+            return False
+        return not looks_like_log_dump(content)
     for sent_at, ch, auth, content in rows:
         if _ok(content) and len(content.split()) >= min_words:
             return (sent_at, ch, normalize_author(auth), content)
     for sent_at, ch, auth, content in rows:
         if _ok(content):
             return (sent_at, ch, normalize_author(auth), content)
-    sent_at, ch, auth, content = rows[0]
-    return (sent_at, ch, normalize_author(auth), content)
+    # no clean single utterance matched — better to say "none" than serve junk.
+    return None
 
 
 def author_name_search(pattern: str, channel: str = None, limit: int = 12,
