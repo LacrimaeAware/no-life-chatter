@@ -145,13 +145,16 @@ def main() -> int:
 
     values = measure()
     rows, drift = evaluate(values)
+    # real computation crashes (corrupt pickle, NaN, bad shapes) — distinct from
+    # an embedder being down, which is a legitimate SKIP. These must NOT pass silently.
+    errors = {k: v for k, v in values.items() if k in ("_person_error", "_axes_error")}
 
     if args.json:
         print(json.dumps({"values": values,
                           "results": [{"status": s, "metric": m, "expected": e, "got": g}
                                       for s, m, e, g, _ in rows],
-                          "drift": drift}, indent=2))
-        return 1 if drift else 0
+                          "drift": drift, "errors": errors}, indent=2))
+        return 1 if (drift or errors) else 0
 
     for status, metric, exp, got, how in rows:
         line = f"[{status:7}] {metric:24} expected={exp}  got={got}"
@@ -161,9 +164,11 @@ def main() -> int:
     if values.get("_axes_skipped"):
         print(f"\nnote: axis metrics skipped ({values['_axes_skipped']}) — "
               "rerun with LM Studio up to check them.")
+    for where, msg in errors.items():
+        print(f"\n[ERROR] {where[1:]} crashed (NOT embedder-down — a real failure): {msg}")
     print("\nDRIFT means a recorded number no longer matches live state. If the change "
           "was intentional,\nupdate EXPECTED in this script AND docs/GROUND_TRUTH.md in the same commit.")
-    return 1 if drift else 0
+    return 1 if (drift or errors) else 0
 
 
 if __name__ == "__main__":

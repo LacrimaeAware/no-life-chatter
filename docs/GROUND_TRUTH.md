@@ -67,7 +67,7 @@ Geometry numbers (`*` needs LM Studio up for the axis rows):
 | `ABTT_K` | **2** | All-but-top-2 isotropy correction in `persona_embeddings._centered()`. Chosen empirically (the effect is non-monotonic; k=1 is worse). |
 | person vectors | **34** | Roster size in `data/unsynced/persona_embeddings.pkl` (grows on rebuild; informational). |
 | person anisotropy | **0.149** | Mean \|off-diagonal cosine\| of the production centered+ABTT person matrix. Raw was 0.983; **centering already fixes most of it** — ABTT is a refinement, not a rescue. |
-| axis-score entanglement | **0.249** | Mean \|off-diagonal\| correlation of per-person trait z-scores (`traits_for`). Was **0.483** with the raw steering-vector axes; Löwdin + ABTT cut it ~48%. This is the real "axes feel the same" number. |
+| axis-score entanglement | **0.249** | Mean \|off-diagonal\| correlation of per-person trait z-scores on the TEXT-ONLY path (`traits_for`). Was **0.483** with the raw steering-vector axes; Löwdin + ABTT cut it ~48%. Caveat: the live commands (`~traits`/`~top`) serve `axis_scores`, which adds a 0.25 emote blend, so the *served* entanglement differs slightly and is not the number tracked here. The Löwdin/ABTT *direction* is shared across all paths; the per-person *score* is not (text-only vs emote-blended vs burst-percentile). |
 | menace~doomer axis cosine `*` | **0.64** | Cosine of the two most-collinear raw trait axes. **NOT 0.91** — that was a stale comment. The genuine collinearity is moderate. |
 | doomer Löwdin alignment `*` | **0.917** | How aligned the Löwdin-orthogonalized doomer axis stays with its raw direction (Gram-Schmidt collapsed it to 0.73). Confirms axis labels remain valid after decorrelation. |
 

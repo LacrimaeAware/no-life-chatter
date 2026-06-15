@@ -11,7 +11,7 @@ CATEGORIES = [
         "tloutput", "chan_autotl", "global_autotl",
     ]),
     ("archive", [
-        "said", "saidnext", "regex", "userregex", "quote", "firstseen",
+        "said", "saidnext", "regex", "userregex", "quote", "random", "firstseen",
         "chatstats", "regulars", "askchat",
     ]),
     ("personas", [
@@ -19,8 +19,8 @@ CATEGORIES = [
         "botpersona", "botmode", "botcontext", "botchance",
     ]),
     ("analysis", [
-        "whosaid", "markers", "like", "vibes", "twin", "traits", "top",
-        "distinct", "why", "axis", "emote", "iq", "irony",
+        "whosaid", "markers", "like", "vibes", "twin", "traits", "style",
+        "top", "bottom", "distinct", "why", "axis", "emote", "iq", "irony",
     ]),
     ("moderation", [
         "banuser", "unbanuser", "warnings",

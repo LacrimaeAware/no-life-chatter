@@ -246,17 +246,24 @@ def _rrf_author_hits(author: str, query: str, *, channel: str | None = None,
     if not dense_pairs:
         return bm25[:limit]
 
-    # dense lane, quality-gated with the same filters as bm25
+    # dense lane, quality-gated with the same filters as bm25; deduped by key so
+    # two near-identical stored vectors can't double-count one logical line.
     focus = _focus_terms(query, author)
     dense_ranked = []
+    seen_keys = set()
     for _score, text in dense_pairs:
         if not _usable_hit(text) or not _matches_focus(text, focus):
             continue
         key = chat_archive.line_match_key(text)
-        if key:
+        if key and key not in seen_keys:
+            seen_keys.add(key)
             dense_ranked.append((key, text))
 
-    # recover metadata for dense lines bm25 didn't surface
+    # recover metadata (sent_at/channel) for dense lines bm25 didn't surface.
+    # NOTE: exact-content recovery works for single-message utterances; a MERGED
+    # multi-message utterance has no single matching row, so it drops here. Fixing
+    # that fully needs the message index to store row ids (a rebuild) — until then
+    # the dense lane adds single-message paraphrase recall, not merged-utterance.
     bm25_by_key = {chat_archive.line_match_key(h["text"]): h for h in bm25}
     bm25_by_key.pop(None, None)
     missing = [t for k, t in dense_ranked if k not in bm25_by_key]

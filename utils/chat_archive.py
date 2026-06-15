@@ -1144,8 +1144,10 @@ def random_match(phrase: str, author: str = None, channel: str = None,
     `author` and/or in `channel`. Returns (sent_at, channel, author, content) or
     None. Skips bot commands and prefers messages with >= min_words real words.
 
-    Random order on the FTS-matched set (bounded by the phrase's frequency), so
-    it stays cheap for normal words; very common words pull a larger pool."""
+    ORDER BY RANDOM() sorts the whole FTS-matched set, so cost scales with the
+    phrase's frequency: a normal word is ~instant, a very common one ("the") is a
+    few hundred ms. Per-user command cooldowns guard against spam; if that proves
+    insufficient, bound the candidate pool with a capped subquery first."""
     q = _fts_phrase(phrase)
     if not q:
         return None

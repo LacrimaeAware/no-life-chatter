@@ -18,7 +18,11 @@ import re
 from utils import chat_archive, emote_meaning, persona_msg_index as pmi
 
 _EMOTES = None
-_CAMEL = re.compile(r"[a-z][A-Z]")   # a lowercase immediately followed by an uppercase
+# "trailing-caps" emote shape: a lowercase base then 1-3 trailing capitals and at
+# most one more lowercase — monkaS, forsenE, forsenCD, monkaW. Deliberately does
+# NOT match concatenated words like imGonna / iPhone / isThis / youTube (a capital
+# starting a multi-letter word), which are NOT emotes.
+_EMOTE_SHAPE = re.compile(r"[a-z]{2,}[A-Z]{1,3}[a-z]?$")
 
 
 def _emote_set():
@@ -51,13 +55,13 @@ def _is_emote(tok):
     be improved with per-channel active-emote sets and token position. Treat the
     rate as a good approximation / lower bound, not exact."""
     t = tok.strip(",.!?:;\"'")
-    if len(t) < 2:
+    if t.startswith("@") or len(t) < 2:   # @mentions are not emotes (don't double-count)
         return False
     has_upper = any(c.isupper() for c in t)
     has_lower = any(c.islower() for c in t)
-    if not (has_upper and has_lower):
+    if not (has_upper and has_lower):     # exclude lowercase words AND all-caps shouting
         return False
-    return bool(_CAMEL.search(t)) or t in _emote_set()
+    return t in _emote_set() or bool(_EMOTE_SHAPE.fullmatch(t))
 
 LAUGH = re.compile(r"\b(l+u+l+w?|ke+kw?|lma+o+|lo+l|xd+|kekw|omegalul|icant|pepelaugh)\b", re.I)
 PROFAN = re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|cunt\w*|nigg\w*|retard\w*|ass\w*|dick\w*|pussy\w*)\b", re.I)
@@ -111,8 +115,8 @@ def features(texts):
         emote_n += sum(1 for tk in toks if _is_emote(tk))
         excl += t.count("!")
         ment += t.count("@")
-        if t.strip().endswith("?") or re.match(r"\s*(what|why|how|who|when|where|is|are|do|does|did|can|should)\b", t, re.I):
-            ques += 1
+        if t.rstrip().endswith("?"):   # a trailing ? is the reliable signal; the
+            ques += 1                  # leading-keyword heuristic flagged statements ("what a day")
         if LAUGH.search(t):
             laugh += 1
         if PROFAN.search(t):
