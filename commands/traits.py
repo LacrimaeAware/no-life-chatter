@@ -8,9 +8,7 @@ description = (
     "emote-name semantics) projected onto the five core trait axes "
     "(wholesome↔menace, sincere↔ironic, chill↔unhinged, brainrot↔professor, "
     "optimist↔doomer). σ = standard deviations vs the average chatter here. "
-    "⚡ marks an axis where they live at BOTH poles, so that lean is an "
-    "unreliable read — could be ironic performance OR just genuine range/moods "
-    "(the data can't tell which). A fun mirror, not a diagnosis.\n"
+    "⚡ marks an axis where their messages span BOTH poles, not one side.\n"
     "  ~traits <user>"
 )
 
@@ -63,5 +61,5 @@ async def handle_traits(bot, message, params):
         parts.append(f"{label} {abs(z):.1f}σ{tag}")
     msg = f"🧪 {user}: " + " · ".join(parts)
     if flagged:
-        msg += "  (⚡ both poles — unreliable read, could be irony or just range)"
+        msg += "  (⚡ = spans both poles of that axis)"
     await message.channel.send(msg)
