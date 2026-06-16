@@ -16,18 +16,26 @@ The defining metric (re-checkable, three ideas stacked):
    a little does. The "effective number of laughers" N_eff = (Σ√spark)² / Σspark
    is ~1–2 for a clique and ≈ breadth for broad appeal — used to gate cliques out.
 
-3. CONFIDENCE. influence(A) = Σ√spark / setups (clique-robust spark rate). It is
-   turned into an IQ-style index (100 + 15·z over the roster) with shrinkage that
-   pulls thin samples toward 100, so a 60-line lurker can't outrank a high-volume
-   chatter on a few lucky windows.
+3. REGULARS ONLY. influence(A) = Σ√spark / setups (clique-robust spark rate) →
+   an IQ-style index (100 + 15·z over the roster) with shrinkage toward 100. Only
+   real regulars are ranked (MIN_REGULAR combined setups): in a chat with ~1M
+   lines, someone with a few dozen is a visitor, not a regular, and their rate is
+   noise. This is a PER-LINE rate ("when you talk, do people laugh?"), so the
+   highest-volume chatters who mostly say mundane things rank low, not high — that
+   is the point (reach/total-reactions just measures who talks most).
 
 Baked-in constraints (all requested): self-laughs never count; a setup needs
 another user actually present to react; a message that is itself just a laugh is
-not a setup; bots / command lines are excluded as setups and reactions. Each chat
-has its own baseline; a user's overall score is the setup-weighted combine across
-the configured conversational chats (config.COMEDY_CHANNELS).
+not a setup; bots / command lines are excluded as setups and reactions. Utility
+bots are dropped two ways — the manual block list (config.EXCLUDE_USERS) AND a
+heuristic: an account whose lines are mostly templated bot output (_BOT_OUTPUT)
+is skipped automatically. Each chat has its own baseline; a user's overall score
+is the setup-weighted combine across the configured conversational chats
+(config.COMEDY_CHANNELS).
 
-A fun mirror over the archive, not a measure of who is objectively funny.
+A fun mirror over the archive, not a measure of who is objectively funny —
+"funny" is subjective and this only captures one slice: who reliably gets a laugh
+out of OTHER people when they talk.
 """
 
 import re
@@ -43,15 +51,28 @@ DEFAULT_CHANNELS = tuple(config.COMEDY_CHANNELS) or tuple(config.CHANNELS)
 WINDOW_SECS = 30        # look this many seconds before / after a setup
 FWD_MSG_CAP = 80        # safety bound on the forward scan inside a burst
 AFTER_CAP = 8           # max distinct laughers collected per window (cost bound)
-MIN_SETUPS = 200        # real volume floor: a few-dozen-line lurker isn't rankable
+MIN_SETUPS = 200        # per-chat floor to enter a chat's baseline pool
+MIN_REGULAR = 1000      # combined setups to be RANKED — a real regular, not a visitor
 MIN_EFF_LAUGHERS = 3.0  # effective (clique-robust) distinct laughers to be ranked
 SHRINK_K = 250          # confidence shrinkage: pull thin samples toward 100
+BOT_OUTPUT_RATIO = 0.55 # exclude an account if >= this share of its lines are bot output
+BOT_MIN_MSGS = 40       # ... and it has at least this many lines (skip tiny samples)
 
 # Laughter / amusement reactions. Extends utils.reaction_tracker._LAUGH_RE with
 # plain 'lol', rofl, hehe and the 💀 ("I'm dead") skull.
 _LAUGH_RE = re.compile(
     r"(kekw?|kekl|lulw?|omegalul|megalul|lmf?ao+|\blo+l+\b|icant|"
     r"xd+|hahah+|ahah+|hehe+|pff+|rofl|\U0001F602|\U0001F923|\U0001F480)",
+    re.IGNORECASE,
+)
+
+# Templated bot OUTPUT (ban/timeout logs, pong/uptime, deactivated lookups,
+# now-live/now-playing). An account whose lines are mostly this is a utility bot,
+# not a chatter — excluded automatically so the bot list isn't pure whack-a-mole.
+_BOT_OUTPUT = re.compile(
+    r"has been (banned|timed|unbanned)|\bpong!|latency:|uptime:|\(deactivated\)|"
+    r"tos_indefinite|no logs are collected|not-whitelisted|is playing .+? (since|for)|"
+    r"⛔|is now live|\bfollowage\b|\baccount age\b",
     re.IGNORECASE,
 )
 
@@ -109,6 +130,8 @@ def compute_channel(channel):
     laugh = [False] * n
     _norm = {}
     _noise = {}
+    bot_hits = defaultdict(int)
+    msg_count = defaultdict(int)
     for i, (sent_at, a, content) in enumerate(rows):
         an = _norm.get(a)
         if an is None:
@@ -116,6 +139,14 @@ def compute_channel(channel):
         times[i] = _secs(sent_at)
         auth[i] = an
         laugh[i] = _is_laugh(content)
+        msg_count[an] += 1
+        if _BOT_OUTPUT.search(content or ""):
+            bot_hits[an] += 1
+
+    # accounts whose output is mostly templated bot text are utility bots, not
+    # chatters — drop them up front (a heuristic on top of the manual block list).
+    botlike = {a for a, c in msg_count.items()
+               if c >= BOT_MIN_MSGS and bot_hits[a] / c >= BOT_OUTPUT_RATIO}
 
     spark = defaultdict(lambda: defaultdict(int))  # A -> {B: # setups B sparked}
     setups = defaultdict(int)
@@ -134,7 +165,7 @@ def compute_channel(channel):
         is_noise = _noise.get(ai)
         if is_noise is None:
             is_noise = _noise[ai] = chat_archive._is_noise_author(ai)
-        if not laugh[i] and not _is_command(content_i) and not is_noise:
+        if not laugh[i] and not _is_command(content_i) and not is_noise and ai not in botlike:
             after = set()
             others_present = False
             cnt = 0
@@ -229,26 +260,26 @@ def _combine(canon, channels):
     }
 
 
+def _rankable(agg):
+    """A real regular with broad enough appeal to be scored."""
+    return bool(agg) and agg["setups"] >= MIN_REGULAR and agg["neff"] >= MIN_EFF_LAUGHERS
+
+
 def user_score(user, channels=DEFAULT_CHANNELS):
-    """A user's comedy index across `channels`, or None if they lack the setups
-    or effective (clique-robust) breadth to be scored reliably."""
+    """A user's comedy index across `channels`, or None unless they're a real
+    regular (MIN_REGULAR combined setups) with clique-robust breadth."""
     agg = _combine(chat_archive.normalize_author(user), channels)
-    if not agg or agg["neff"] < MIN_EFF_LAUGHERS:
-        return None
-    return agg
+    return agg if _rankable(agg) else None
 
 
 def leaderboard(channels=DEFAULT_CHANNELS, n=5, bottom=False):
-    """Ranked comedic influence across `channels`. Authors need MIN_SETUPS in at
-    least one chat and MIN_EFF_LAUGHERS effective distinct laughers overall."""
+    """Ranked comedic influence across `channels`, restricted to real regulars
+    (MIN_REGULAR combined setups, MIN_EFF_LAUGHERS effective distinct laughers)."""
     authors = set()
     for ch in channels:
         res = compute_channel(ch)
         authors.update(a for a, s in res["authors"].items() if s["setups"] >= MIN_SETUPS)
-    out = []
-    for a in authors:
-        agg = _combine(a, channels)
-        if agg and agg["neff"] >= MIN_EFF_LAUGHERS:
-            out.append((a, agg))
+    out = [(a, agg) for a in authors
+           for agg in [_combine(a, channels)] if _rankable(agg)]
     out.sort(key=lambda kv: kv[1]["index"], reverse=not bottom)
     return out[:n]
