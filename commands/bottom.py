@@ -5,9 +5,8 @@ from utils.persona_axes import top
 from utils.persona_traits import pole_map
 
 description = (
-    "Reverse leaderboard -- who leans LEAST toward a trait (most toward its "
-    "opposite). Same axes as ~top.\n"
-    "  ~bottom <trait> [n] [burst]"
+    "~bottom <trait> [n] [burst] — who leans LEAST toward a trait (most toward "
+    "its opposite). Same axes as ~top."
 )
 
 

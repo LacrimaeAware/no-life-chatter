@@ -1,6 +1,5 @@
 description = (
-    "Inspect a trait/custom axis and show nearby axes.\n"
-    "  ~axis <trait> [n]"
+    "~axis <trait> [n] — what an axis is closest to (its nearest neighbour axes)."
 )
 
 

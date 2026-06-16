@@ -4,13 +4,9 @@ from utils import chat_archive
 from utils import comedic_influence as ci
 
 description = (
-    "Comedy ranking: how much MORE other people laugh in the ~30s AFTER you talk "
-    "than the ~30s before — so a whole chat reacting to the stream cancels out and "
-    "only laughter you actually spark counts (laughing at your own joke never "
-    "counts). Index is roster-relative: 100 = average chatter, higher = you make "
-    "people laugh; 'breadth' = how many DIFFERENT people you've cracked up. Runs on "
-    "the conversational chats set in config by default; override with chat=.\n"
-    "  ~funny <user>  ·  ~funny top [n]  ·  ~funny bottom [n]  ·  ~funny <user> chat=<channel>"
+    "~funny <user> | ~funny top|bottom [n] — comedy ranking: how much more "
+    "others laugh after you talk than before (so stream reactions cancel out). "
+    "100 = average, higher = you make people laugh. chat= overrides the chats."
 )
 
 

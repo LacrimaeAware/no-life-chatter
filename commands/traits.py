@@ -4,12 +4,9 @@ from utils.persona_traits import AXES
 from utils import chat_archive
 
 description = (
-    "A chatter's personality readout — their semantic vector (prose + "
-    "emote-name semantics) projected onto the five core trait axes "
-    "(wholesome↔menace, sincere↔ironic, chill↔unhinged, brainrot↔professor, "
-    "optimist↔doomer). σ = standard deviations vs the average chatter here. "
-    "⚡ marks an axis where their messages span BOTH poles, not one side.\n"
-    "  ~traits <user>"
+    "~traits <user> — their lean on the 5 core axes (wholesome↔menace, "
+    "sincere↔ironic, chill↔unhinged, brainrot↔professor, optimist↔doomer), in σ "
+    "vs the room. ⚡ = spans both poles."
 )
 
 # Flag an axis as performative only when the person BOTH occupies both poles

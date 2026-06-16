@@ -3,10 +3,8 @@ import asyncio
 from utils.persona_axes import most_distinct
 
 description = (
-    "Who has the most distinct personality: chatters who deviate furthest from "
-    "the room average across all five trait axes, with the traits that define "
-    "them.\n"
-    "  ~distinct [top|bottom] [n]"
+    "~distinct [top|bottom] [n] — chatters whose personality is furthest from "
+    "(or closest to) the room average, with the traits that define them."
 )
 
 

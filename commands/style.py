@@ -3,11 +3,9 @@ import asyncio
 from utils import behavior_profile, chat_archive
 
 description = (
-    "How a chatter TYPES — their standout behaviors vs the room (emote rate, "
-    "verbosity, caps, @mentions, profanity, vocabulary, …). This is the "
-    "data-driven 'structural' personality read; unlike ~traits it doesn't touch "
-    "the topic embedder. σ = standard deviations from the average chatter.\n"
-    "  ~style <user>"
+    "~style <user> — how a chatter TYPES (emote rate, caps, verbosity, @s, "
+    "profanity, vocab) vs the room. The structural read; unlike ~traits it "
+    "ignores topic."
 )
 
 

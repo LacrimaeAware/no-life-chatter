@@ -4,12 +4,9 @@ import os
 from utils import chat_archive
 
 description = (
-    "Interpretability: WHICH of a chatter's real messages most drive their "
-    "score on an axis — the receipts behind ~top/~traits. Add 'words' to see "
-    "which WORDS in their top message carry the correlation (occlusion: "
-    "re-embed with each word removed). σ is vs the roster average; a near-zero "
-    "σ means the lean is weak and the example messages are noise.\n"
-    "  ~why <user> <trait> [words]"
+    "~why <user> <trait> [words] — the actual messages driving a user's trait "
+    "score (the receipts behind ~top/~traits). 'words' = which words carry it. "
+    "Near-zero σ means the lean is weak and the examples are noise."
 )
 
 

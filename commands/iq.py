@@ -4,10 +4,8 @@ from utils.persona_iq import leaderboard, score
 from utils import chat_archive
 
 description = (
-    "Text-IQ: a roster-relative estimate of peak expressed cognition in chat. "
-    "Uses top-decile utterances, lexical/syntax signals, embedding reasoning "
-    "axes, topic breadth, niche depth, and confidence from split stability.\n"
-    "  ~iq <user>   |   ~iq top [n]   |   ~iq bottom [n]"
+    "~iq <user> | ~iq top|bottom [n] — roster-relative \"text-IQ\": peak "
+    "expressed cognition in chat (a toy, not real IQ)."
 )
 
 

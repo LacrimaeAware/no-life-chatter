@@ -3,10 +3,8 @@ import asyncio
 from utils import irony
 
 description = (
-    "Read whether a message leans ironic or sincere by projecting it onto the "
-    "sarcasm and content-extremity axes. Emotes are resolved to their meaning "
-    "first; add context= to fold in surrounding lines.\n"
-    "  ~irony <message>   |   ~irony context=women DansGame asldkasd"
+    "~irony <message> [context=...] — does a message read ironic or sincere "
+    "(sarcasm + content-extremity axes). Emotes resolved first."
 )
 
 

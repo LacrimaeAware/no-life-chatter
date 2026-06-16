@@ -371,3 +371,25 @@ def top(term, n=5, burst=False, bottom=False):
     s = -sign if bottom else sign
     ranked = sorted(scores.items(), key=lambda kv: -s * kv[1])[:n]
     return [(a, s * z) for a, z in ranked], note
+
+
+def rank(term, user):
+    """Where one `user` stands on the `term` axis: their rank, σ, and the people
+    just above/below them. Returns a dict, or None if the axis can't be built or
+    the user isn't in the roster."""
+    resolved = resolve_axis(term)
+    if not resolved:
+        return None
+    axis, sign, note = resolved
+    scores = axis_scores(axis)
+    canon = chat_archive.normalize_author(user)
+    if canon not in scores:
+        return None
+    signed = sorted(((a, sign * z) for a, z in scores.items()), key=lambda kv: -kv[1])
+    idx = next(i for i, (a, _z) in enumerate(signed) if a == canon)
+    return {
+        "user": canon, "axis": axis, "note": note,
+        "rank": idx + 1, "total": len(signed), "z": signed[idx][1],
+        "above": signed[idx - 1] if idx > 0 else None,
+        "below": signed[idx + 1] if idx + 1 < len(signed) else None,
+    }

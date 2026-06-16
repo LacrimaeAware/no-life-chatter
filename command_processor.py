@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import urllib.error
 from collections import defaultdict
 
 from command_registry import command_handlers, load_command_handlers  # noqa: F401
@@ -11,6 +12,17 @@ from utils import cooldowns
 # trips Twitch's anti-spam), and an identical request already in flight is
 # dropped with a brief one-time notice instead of generated twice.
 SERIAL_COMMANDS = {"persona", "hyper", "generate"}
+
+_OFFLINE_SIGNS = ("10061", "actively refused", "connection refused", "max retries",
+                  "connection aborted", "failed to establish", "[errno 111]")
+
+
+def _backend_offline(exc):
+    """True if exc looks like the local model server (LM Studio) being down —
+    so embedding/LLM commands can say so instead of a generic error."""
+    if isinstance(exc, (urllib.error.URLError, ConnectionError)):
+        return True
+    return any(sign in str(exc).lower() for sign in _OFFLINE_SIGNS)
 
 
 class CommandProcessor:
@@ -56,12 +68,19 @@ class CommandProcessor:
         else:
             await self._run(message, command, params, handler, user)
 
+    async def _report_error(self, message, command, exc):
+        if _backend_offline(exc):
+            await message.channel.send(
+                "🔌 local model server is offline — this command needs it (start LM Studio).")
+        else:
+            logging.error(f"Error handling command {command}: {exc}")
+            await message.channel.send("An error occurred while processing your command.")
+
     async def _run(self, message, command, params, handler, user):
         try:
             await handler(self.bot, message, params)
         except Exception as e:
-            logging.error(f"Error handling command {command}: {e}")
-            await message.channel.send("An error occurred while processing your command.")
+            await self._report_error(message, command, e)
         finally:
             cooldowns.after(user)
 
@@ -84,8 +103,7 @@ class CommandProcessor:
             async with self._gen_locks[channel]:
                 await handler(self.bot, message, params)
         except Exception as e:
-            logging.error(f"Error handling command {command}: {e}")
-            await message.channel.send("An error occurred while processing your command.")
+            await self._report_error(message, command, e)
         finally:
             self._inflight[channel].discard(sig)
             self._warned[channel].discard(sig)
