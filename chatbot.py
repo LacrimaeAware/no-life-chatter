@@ -1,7 +1,10 @@
+import asyncio
 import json
 import logging
+import os
 import sqlite3
 import threading
+import time
 
 from twitchio.ext import commands
 
@@ -65,6 +68,8 @@ class Bot(commands.Bot):
         self.client_id = config.TWITCH_CLIENT_ID
         self.prefix = config.PREFIX
         self._auth_failures = 0
+        self._last_raw = time.time()      # last time we heard from Twitch
+        self._watchdog_started = False
 
         super().__init__(
             token=self.token,
@@ -122,6 +127,10 @@ class Bot(commands.Bot):
 
     async def event_ready(self):
         self._auth_failures = 0
+        self._last_raw = time.time()
+        if not self._watchdog_started:
+            self._watchdog_started = True
+            asyncio.create_task(self._connection_watchdog())
         logging.info(f"Ready | Logged in as {self.nick} (id {self.user_id})")
         logging.info(f"Joined channels: {[c.name for c in self.connected_channels]}")
         self.handler.message_service.start_resident_idle_loop()
@@ -156,6 +165,7 @@ class Bot(commands.Bot):
         # (process alive, never reconnects). So guard the type and never raise.
         if not isinstance(data, str):
             return
+        self._last_raw = time.time()   # heartbeat: real IRC traffic, incl. server PINGs
         try:
             for line in data.split("\r\n"):
                 if " NOTICE " in line and "tmi.twitch.tv" in line:
@@ -167,6 +177,25 @@ class Bot(commands.Bot):
 
     async def event_error(self, error, data=None):
         logging.error(f"twitchio event error: {error!r} | data={data!r}")
+
+    async def _connection_watchdog(self):
+        """Backstop for the 'zombie' state: if twitchio's own reconnect ever
+        fails after a network fault, the process stays alive but stops receiving
+        ANY data from Twitch (even server PINGs, which arrive ~every 5 min). If
+        nothing has come in for STALE_SECONDS, the socket is dead — exit so the
+        keep-alive loop respawns a fresh, connected worker (the OS releases the
+        single-instance lock on exit)."""
+        STALE_SECONDS = 15 * 60
+        while True:
+            await asyncio.sleep(60)
+            idle = time.time() - self._last_raw
+            if idle > STALE_SECONDS:
+                logging.critical(
+                    "No data from Twitch for %.0f min — connection looks dead. "
+                    "Exiting so the keep-alive loop restarts a fresh worker.",
+                    idle / 60,
+                )
+                os._exit(1)
 
 
 def acquire_single_instance_lock():
