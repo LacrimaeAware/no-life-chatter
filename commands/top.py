@@ -5,9 +5,9 @@ from utils.persona_axes import top, rank
 from utils.persona_traits import pole_map
 
 description = (
-    "~top <trait> [n] [burst] — who leans most toward a trait. Add @user to see "
-    "that user's rank + neighbors instead. burst = peak moments. Built-ins answer "
-    "instantly; any other word builds an axis on the fly."
+    "~top <trait> [n] [burst] — who leans most toward a trait. Add a username "
+    "(~top <trait> <user>) to see that user's rank + neighbours instead. "
+    "burst = peak moments."
 )
 
 
@@ -33,9 +33,13 @@ async def handle_top(bot, message, params):
     trait = rest[0].lower() if rest else ""
     if not trait:
         await message.channel.send(
-            f"Usage: ~top <trait> [n] [@user] — built-ins: {', '.join(sorted(pole_map()))}"
+            f"Usage: ~top <trait> [n] [user] — built-ins: {', '.join(sorted(pole_map()))}"
         )
         return
+    # bare "~top <trait> <user>": a 2nd non-numeric word is a username, so you
+    # don't need the @ or user= (traits are single words, so it's unambiguous).
+    if not user and len(rest) > 1 and not rest[1].isdigit():
+        user = rest[1].lstrip("@")
 
     if user:
         info = await asyncio.to_thread(rank, trait, user)
