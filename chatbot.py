@@ -149,11 +149,21 @@ class Bot(commands.Bot):
         # *why* a message was dropped (e.g. msg-id=msg_requires_verified_phone_number,
         # msg_banned, msg_channel_suspended, msg_duplicate, msg_rejected). Without
         # this they're invisible and the bot just looks silently broken.
-        for line in data.split("\r\n"):
-            if " NOTICE " in line and "tmi.twitch.tv" in line:
-                logging.warning(f"Twitch NOTICE: {line.strip()}")
-                if "Login authentication failed" in line:
-                    self._handle_auth_failure()
+        #
+        # twitchio can hand us a NON-string here during a network fault (e.g. a
+        # ServerTimeoutError object when the connection drops). If we let that
+        # raise, it can break the websocket receive loop and the bot goes zombie
+        # (process alive, never reconnects). So guard the type and never raise.
+        if not isinstance(data, str):
+            return
+        try:
+            for line in data.split("\r\n"):
+                if " NOTICE " in line and "tmi.twitch.tv" in line:
+                    logging.warning(f"Twitch NOTICE: {line.strip()}")
+                    if "Login authentication failed" in line:
+                        self._handle_auth_failure()
+        except Exception as e:
+            logging.error(f"event_raw_data failed (non-fatal): {e!r}")
 
     async def event_error(self, error, data=None):
         logging.error(f"twitchio event error: {error!r} | data={data!r}")
