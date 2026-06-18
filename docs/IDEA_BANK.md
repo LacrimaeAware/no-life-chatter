@@ -218,3 +218,14 @@ state lives in [ROADMAP.md](ROADMAP.md), with the data layer in
   archive; zero new infrastructure.
 - **Log rotation for `data/bot.log`** — not fun, but the file currently grows
   unbounded; a dated-file handler is ~10 lines. Do during any Phase-0 work.
+
+## Tested & shelved (don't re-propose without new evidence)
+
+- **"Did-it-land" persona value model** (emulate the lines that got reactions, à la
+  a win-rate model imitating winning moves) — **FALSIFIED** by
+  `scripts/landing_probe.py` (2026-06-18). Whether a message sparks laughter is
+  *not* predictable from its content: held-out AUC 0.53 (axis) / 0.49 (logreg) vs
+  0.55 for the best dumb baseline. Landing is context/timing, not the words, so a
+  content reranker for persona quality won't work. See RESEARCH_TO_APPLIED.md §8.
+- **Asymmetric BGE query prefix** for `~askchat` retrieval — no help on bge-m3
+  (wash-to-worse). The real retrieval win was the dense-lane cosine gate (shipped).

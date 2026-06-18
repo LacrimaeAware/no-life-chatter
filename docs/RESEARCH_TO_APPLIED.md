@@ -292,6 +292,48 @@ this: whole-message doubling ("X X") varies 0–31% by person and inflated every
 per-message count until de-doubled. This behavioral space, not more embedding
 geometry, is the foundation for the "better axes" the owner asked for.
 
+## 8. Cross-repo pass (2026-06-18): the question-encoding fix and a falsified value model
+
+A second sweep, pulling ideas from two *other* repos — the win-rate model in
+`kaggle-fun/pokemon-tcg-ai-battle` and the concept-geometry instrument in
+`structured-transform-discovery`. Both repos converge on the same two lessons:
+*(i) the quality of any value model is capped by how you encode the state/question,
+and (ii) benchmark against a dumb prior / close the loop, because clever geometry
+lies in-sample.* Applied here, three results:
+
+- **Asymmetric query encoding — FALSIFIED for our model.** The question-answering
+  path (`~askchat`/`archive_qa`) is far cruder than the trait geometry: bag-of-words
+  FTS plus a single *symmetric* mean-pool of the raw question. The obvious "quick
+  win" was a BGE-instruction query prefix (asymmetric retrieval). Measured on
+  bge-m3: it just lowers every cosine and reshuffles noisily — wash-to-worse. Not
+  shipped. (bge-m3 does not use the bge-v1.5 instruction convention.)
+
+- **The lexical gate was the real bug — FIXED and validated.** The dense lane
+  exists to find *paraphrases* (no shared keyword), but `_matches_focus` hard-dropped
+  any hit lacking a literal query-term overlap — measured: **~75% of the top dense
+  hits discarded, including the literal best answers** ("he plays apex" for "what
+  video games", killed because "playing" ≠ "play"). Replaced with the two-tier
+  cosine floor the config already defined but the code never wired in (anchored
+  ≥0.50, unanchored paraphrase ≥0.62). Held-out: **dense recall ~doubled (7→13 of
+  32)**, recovering the best paraphrase answers.
+
+- **The "did-it-land value model" — FALSIFIED before building it.** The exciting
+  idea (owner's framing: "winning players = the real person's messages; emulate
+  the moves that landed") is win-rate prediction applied to persona quality. The
+  dial: [`scripts/landing_probe.py`](../scripts/landing_probe.py) labels real
+  messages by whether they sparked a fresh laugh (9.5% do), then asks whether that
+  is predictable from message *content*. Held-out AUC: embedding contrast-axis
+  **0.533**, full-embedding logistic regression **0.489**, best dumb baseline
+  (has-emote) **0.545** — i.e. **content does not predict landing; no model beats
+  the dumb prior.** Whether a line lands is *context and timing*, not the words.
+  This is exactly where the Pokémon analogy breaks: a good *move* transfers to
+  similar game-states, but a line that *landed* did so for its moment and does not
+  transfer to a new context. So a content-based persona value model is not worth
+  building. What survives: keep retrieving the person's real lines + LLM (already
+  done), and treat the structured-transform geometry as *diagnostic rigor*
+  (contrast-pair SVD axes, shrinkage whitening, bootstrap stability) — the place
+  both source repos agree these methods actually pay off.
+
 ## Showcase note
 
 This is one of the better portfolio stories in the project because it is the full
