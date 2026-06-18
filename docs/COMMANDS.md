@@ -26,9 +26,9 @@ For compact chat help, use `~help` or `~help <command>`.
 
 | Command | Access | What it does |
 | --- | --- | --- |
-| `~said <user> [chat=<channel>] <phrase>` | anyone | Search whether a user said a phrase. Exact match first, then normalized close match. |
-| `~said anyone [chat=<channel>] <phrase>` | anyone | Search the whole archive for a phrase. |
-| `~saidnext` | anyone | Continue your last `~said` search for about a minute. |
+| `~said <user> [chat=<channel>] [sort=] <phrase>` | anyone | Search whether a user said a phrase. Exact match first, then normalized close match. Results shuffled by default; `sort=chrono\|newest\|name` to order them. |
+| `~said anyone [chat=<channel>] [sort=] <phrase>` | anyone | Search the whole archive for a phrase. Same `sort=` flag; default is a seeded shuffle. |
+| `~saidnext` | anyone | Continue your last `~said` search for about a minute, keeping the same order (the shuffle seed is remembered). |
 | `~regex <user|anyone> <pattern>` | anyone | Case-insensitive regex search over archived messages. |
 | `~userregex <pattern> [chat=<channel>]` | anyone | Regex-search archived usernames. |
 | `~quote <user>` | anyone | Post a random real quote from a user. |

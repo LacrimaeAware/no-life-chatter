@@ -8,6 +8,7 @@ Chatterino log-format spec this parser implements.
 
 import logging
 import os
+import random
 import re
 import sqlite3
 import threading
@@ -134,6 +135,37 @@ _MATCH_TRANSLATION = str.maketrans({
     "\u00a0": " ",
 })
 _EXACT_DEDUPE_SCAN_LIMIT = 5000
+
+# Result ordering for ~said/~saidnext. 'random' is a SEEDED shuffle: the same
+# seed always yields the same order, so ~saidnext can page through the shuffled
+# results consistently. 'chrono'/'newest'/'name' are deterministic too.
+VALID_ORDERS = ("random", "chrono", "newest", "name")
+
+
+def _apply_order(rows, order, seed, name_index=None):
+    """Reorder a fully-fetched, deduped result list in Python (the <=5000 case)."""
+    if order == "newest":
+        return list(reversed(rows))
+    if order == "name" and name_index is not None:
+        return sorted(rows, key=lambda r: ((r[name_index] or "").lower(), r[0]))
+    if order == "random":
+        out = list(rows)
+        random.Random(seed).shuffle(out)
+        return out
+    return list(rows)  # chrono — rows already arrive sorted by sent_at
+
+
+def _order_sql(order, seed, alias="m"):
+    """ORDER BY clause for the >5000 page-at-a-time path. 'random' is a
+    seed-dependent permutation of the row id (deterministic for a given seed)."""
+    if order == "newest":
+        return f"ORDER BY {alias}.sent_at DESC"
+    if order == "name":
+        return f"ORDER BY {alias}.author, {alias}.sent_at"
+    if order == "random":
+        s = abs(int(seed)) or 1
+        return f"ORDER BY ({alias}.id * {(s % 1000003) * 2 + 1} + {s % 2147483647}) % 2147483647"
+    return f"ORDER BY {alias}.sent_at"  # chrono
 
 
 def line_match_key(text: str) -> str:
@@ -729,8 +761,11 @@ def _channel_filter(channel: str = None, alias: str = "m") -> tuple[str, list[st
 
 
 def said(author: str, phrase: str, limit: int = 3, offset: int = 0,
-         channel: str = None, include_commands: bool = False):
-    """All matches of phrase by author: (total_count, [(sent_at, channel, content)...])."""
+         channel: str = None, include_commands: bool = False,
+         order: str = "chrono", seed: int = 0):
+    """All matches of phrase by author: (total_count, [(sent_at, channel, content)...]).
+    order: 'chrono' (default) | 'newest' | 'name' | 'random' (seeded shuffle, so
+    ~saidnext can page the same order with the same seed)."""
     conn = connect()
     keys = author_keys(author)
     author_placeholders, author_params = _in_clause(keys)
@@ -753,15 +788,14 @@ def said(author: str, phrase: str, limit: int = 3, offset: int = 0,
                 r"AND m.content LIKE ? ESCAPE '\' ORDER BY m.sent_at",
                 [*author_params, *chan_params, *cmd_params, like],
             ).fetchall()
-            unique = _dedupe_search_rows(
-                all_rows, author_index=None, channel_index=1, content_index=2
-            )
+            unique = _apply_order(_dedupe_search_rows(
+                all_rows, author_index=None, channel_index=1, content_index=2), order, seed)
             return len(unique), unique[offset:offset + limit]
         rows = conn.execute(
             f"SELECT m.sent_at, m.channel, m.content FROM messages m "
             f"WHERE m.author IN ({author_placeholders}) "
             f"{chan_sql}{cmd_sql}"
-            r"AND m.content LIKE ? ESCAPE '\' ORDER BY m.sent_at LIMIT ? OFFSET ?",
+            r"AND m.content LIKE ? ESCAPE '\' " + _order_sql(order, seed) + " LIMIT ? OFFSET ?",
             [*author_params, *chan_params, *cmd_params, like, limit * 5, offset],
         ).fetchall()
         rows = _dedupe_search_rows(rows, author_index=None, channel_index=1, content_index=2)
@@ -782,16 +816,15 @@ def said(author: str, phrase: str, limit: int = 3, offset: int = 0,
             "ORDER BY m.sent_at",
             [q, *author_params, *chan_params, *cmd_params],
         ).fetchall()
-        unique = _dedupe_search_rows(
-            all_rows, author_index=None, channel_index=1, content_index=2
-        )
+        unique = _apply_order(_dedupe_search_rows(
+            all_rows, author_index=None, channel_index=1, content_index=2), order, seed)
         return len(unique), unique[offset:offset + limit]
     rows = conn.execute(
         "SELECT m.sent_at, m.channel, m.content FROM messages_fts f "
         "CROSS JOIN messages m ON m.id = f.rowid "
         f"WHERE f.messages_fts MATCH ? AND m.author IN ({author_placeholders}) "
         f"{chan_sql}{cmd_sql}"
-        "ORDER BY m.sent_at LIMIT ? OFFSET ?",
+        f"{_order_sql(order, seed)} LIMIT ? OFFSET ?",
         [q, *author_params, *chan_params, *cmd_params, limit * 5, offset],
     ).fetchall()
     rows = _dedupe_search_rows(rows, author_index=None, channel_index=1, content_index=2)
@@ -1107,8 +1140,10 @@ def search_all_count(phrase: str, channel: str = None,
 
 
 def search_all(phrase: str, limit: int = 10, offset: int = 0,
-               channel: str = None, include_commands: bool = False):
-    """Full-text search across all authors: [(sent_at, channel, author, content)...]."""
+               channel: str = None, include_commands: bool = False,
+               order: str = "chrono", seed: int = 0):
+    """Full-text search across all authors: [(sent_at, channel, author, content)...].
+    order: 'chrono' (default) | 'newest' | 'name' | 'random' (seeded shuffle)."""
     conn = connect()
     chan_sql, chan_params = _channel_filter(channel)
     cmd_sql, cmd_params = _command_filter(include_commands)
@@ -1125,13 +1160,14 @@ def search_all(phrase: str, limit: int = 10, offset: int = 0,
             "ORDER BY m.sent_at",
             [_fts_phrase(phrase), *chan_params, *cmd_params],
         ).fetchall()
-        unique = _dedupe_search_rows(rows, author_index=2, channel_index=1, content_index=3)
+        unique = _apply_order(_dedupe_search_rows(
+            rows, author_index=2, channel_index=1, content_index=3), order, seed, name_index=2)
         return unique[offset:offset + limit]
     rows = conn.execute(
         "SELECT m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
         "CROSS JOIN messages m ON m.id = f.rowid "
         f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}"
-        "ORDER BY m.sent_at LIMIT ? OFFSET ?",
+        f"{_order_sql(order, seed)} LIMIT ? OFFSET ?",
         [_fts_phrase(phrase), *chan_params, *cmd_params, limit * 5, offset],
     ).fetchall()
     unique = _dedupe_search_rows(rows, author_index=2, channel_index=1, content_index=3)

@@ -1,3 +1,4 @@
+import random
 import time
 
 from utils.chat_archive import (
@@ -10,31 +11,39 @@ from utils.chat_archive import (
 )
 
 description = (
-    "Search the chat archive: did a user ever say something? Exact first, "
-    "then a normalized close-match fallback. Use 'anyone' to search everyone. "
-    "Supports chat=<channel>; use ~saidnext for more matches.\n"
-    "  ~said <user> [chat=<channel>] <phrase>   |   ~said anyone [chat=<channel>] <phrase>"
+    "~said <user|anyone> [chat=] [sort=] <phrase> — did someone say it? Results "
+    "are shuffled by default (more fun); sort=chrono|newest|name to order them. "
+    "~saidnext keeps the same order."
 )
 
 PAGE_SIZE = 3
 SESSION_TTL = 60
 _SESSIONS = {}
 
+_ORDER_ALIASES = {
+    "random": "random", "shuffle": "random", "rand": "random",
+    "chrono": "chrono", "oldest": "chrono", "old": "chrono", "time": "chrono",
+    "newest": "newest", "new": "newest", "recent": "newest",
+    "name": "name", "alpha": "name", "user": "name",
+}
+
 
 def _clip(text, n=180):
     return text if len(text) <= n else text[: n - 1] + "..."
 
 
-def _parse_chat_scope(params):
-    rest, channel = [], None
+def _parse_flags(params):
+    rest, channel, order = [], None, None
     for p in params:
         low = p.lower()
         if low.startswith("chat="):
             value = low.split("=", 1)[1].strip().lstrip("#")
             channel = None if value in ("", "*", "all") else value
+        elif low.startswith("sort=") or low.startswith("order="):
+            order = _ORDER_ALIASES.get(low.split("=", 1)[1].strip())
         else:
             rest.append(p)
-    return rest, channel
+    return rest, channel, order or "random"
 
 
 def _scope_label(channel):
@@ -66,16 +75,17 @@ def _format_rows(rows, everyone: bool):
 
 
 async def handle_said(bot, message, params):
-    params, channel = _parse_chat_scope(params)
+    params, channel, order = _parse_flags(params)
     if len(params) < 2:
-        await message.channel.send("Usage: ~said <user|anyone> [chat=<channel>] <phrase>")
+        await message.channel.send("Usage: ~said <user|anyone> [chat=] [sort=chrono|newest|name] <phrase>")
         return
     user, phrase = params[0], " ".join(params[1:])
     display_user = normalize_author(user)
+    seed = random.randint(1, 2_147_483_646)
 
     if user.lower() in ("anyone", "*", "everyone"):
         total = search_all_count(phrase, channel=channel)
-        rows = search_all(phrase, limit=PAGE_SIZE, channel=channel)
+        rows = search_all(phrase, limit=PAGE_SIZE, channel=channel, order=order, seed=seed)
         if not rows:
             await message.channel.send(
                 f"Nobody on record saying \"{_clip(phrase, 80)}\"{_scope_label(channel)}."
@@ -88,6 +98,8 @@ async def handle_said(bot, message, params):
                 "channel": channel,
                 "offset": len(rows),
                 "total": total,
+                "order": order,
+                "seed": seed,
             })
         suffix = f" ({len(rows)}/{total}; ~saidnext)" if total > len(rows) else f" ({total})"
         await message.channel.send(
@@ -96,7 +108,7 @@ async def handle_said(bot, message, params):
         )
         return
 
-    total, rows = said(user, phrase, limit=PAGE_SIZE, channel=channel)
+    total, rows = said(user, phrase, limit=PAGE_SIZE, channel=channel, order=order, seed=seed)
     if total == 0:
         near = nearest_author_lines(user, phrase, limit=1, channel=channel)
         if near:
@@ -120,6 +132,8 @@ async def handle_said(bot, message, params):
             "channel": channel,
             "offset": len(rows),
             "total": total,
+            "order": order,
+            "seed": seed,
         })
     next_hint = " Use ~saidnext for more." if total > len(rows) else ""
     await message.channel.send(
@@ -139,12 +153,16 @@ async def saidnext(bot, message):
     channel = sess.get("channel")
     offset = sess.get("offset", 0)
     total = sess.get("total", 0)
+    order = sess.get("order", "chrono")
+    seed = sess.get("seed", 0)
     if sess["kind"] == "anyone":
-        rows = search_all(sess["phrase"], limit=PAGE_SIZE, offset=offset, channel=channel)
+        rows = search_all(sess["phrase"], limit=PAGE_SIZE, offset=offset,
+                          channel=channel, order=order, seed=seed)
         everyone = True
     else:
         _total, rows = said(
-            sess["user"], sess["phrase"], limit=PAGE_SIZE, offset=offset, channel=channel
+            sess["user"], sess["phrase"], limit=PAGE_SIZE, offset=offset,
+            channel=channel, order=order, seed=seed,
         )
         everyone = False
     if not rows:
