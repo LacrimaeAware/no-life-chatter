@@ -17,7 +17,7 @@ description = (
 )
 
 PAGE_SIZE = 3
-SESSION_TTL = 60
+SESSION_TTL = 600   # 10 min — plenty of time to keep paging ~saidnext
 _SESSIONS = {}
 
 _ORDER_ALIASES = {

@@ -10,7 +10,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import config
 from utils import chat_archive, emote_meaning, fact_bank, message_quality
+
+# Cosine floors for the dense (semantic) retrieval lane. The dense lane exists to
+# find PARAPHRASES (no shared keyword), so it is gated by similarity, not by
+# lexical overlap: an "anchored" hit (shares a query term) passes at the lower
+# floor; an "unanchored" paraphrase must clear a higher confidence bar.
+_SEM_FLOOR = float(getattr(config, "LLM_SEMANTIC_MIN_SCORE", 0.50))
+_SEM_FLOOR_UNANCHORED = float(getattr(config, "LLM_SEMANTIC_UNANCHORED_MIN_SCORE", 0.62))
 
 CHAT_FACT_MIN_SUPPORT = 2
 QUERY_INTENT_TERMS = {
@@ -251,8 +259,15 @@ def _rrf_author_hits(author: str, query: str, *, channel: str | None = None,
     focus = _focus_terms(query, author)
     dense_ranked = []
     seen_keys = set()
-    for _score, text in dense_pairs:
-        if not _usable_hit(text) or not _matches_focus(text, focus):
+    for score, text in dense_pairs:
+        if not _usable_hit(text):
+            continue
+        # Gate by cosine, NOT by lexical overlap: the old `_matches_focus` hard
+        # drop discarded ~75% of the top dense hits (incl. the literal best
+        # paraphrase answers, e.g. "he plays apex" for "what video games").
+        # Anchored hits pass at the low floor; pure paraphrases need more cosine.
+        anchored = _matches_focus(text, focus)
+        if score < (_SEM_FLOOR if anchored else _SEM_FLOOR_UNANCHORED):
             continue
         key = chat_archive.line_match_key(text)
         if key and key not in seen_keys:
