@@ -17,6 +17,7 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~tloutput local|whisper|channel <name>` | admin | Choose where translations are sent. |
 | `~chan_autotl <channel> on|off` | super admin | Enable or disable auto-translation for one channel. |
 | `~global_autotl on|off` | super admin | Global auto-translation switch. |
+| `~notranslate <user> [undo]` | super admin | Stop auto-translating a specific user (they write slang the detector misreads); `undo` re-enables; no arg lists opted-out users. |
 | `~practice on <learn_langs_csv> [native]` | anyone | Practice mode: translate your native language into study languages and your study-language attempts back to native. |
 | `~practice off` / `~practice show` | anyone | Stop or inspect practice mode. |
 | `~romanize on|off|show` | anyone | Toggle romanized readings for supported non-Latin scripts. |

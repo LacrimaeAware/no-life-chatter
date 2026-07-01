@@ -15,7 +15,7 @@ ADMIN_CATEGORIES = [
     ("super admin", [
         "botpersona", "botmode", "botcontext", "botchance",
         "banuser", "unbanuser", "warnings",
-        "chan_autotl", "global_autotl",
+        "chan_autotl", "global_autotl", "notranslate",
     ]),
     ("admin", [
         "autotl", "setlang", "tloutput",

@@ -151,6 +151,7 @@ The table below is a project overview, not the audited source of truth.
 | `~tloutput local\|whisper\|channel <name>` | admin | Where your translations are sent. |
 | `~chan_autotl <channel> on\|off` | super admin | Per-channel auto-translate. |
 | `~global_autotl on\|off` | super admin | Global auto-translate switch. |
+| `~notranslate <user> [undo]` | super admin | Stop auto-translating a specific user (slang the detector misreads as foreign); `undo` re-enables; no arg lists opted-out. |
 
 Admins and super-admins are configured in `config.toml` — no hard-coded users.
 

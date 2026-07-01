@@ -16,10 +16,36 @@ from utils.speaker_profile import known_languages, record_language
 import re
 import sqlite3
 import html
+import unicodedata
+from difflib import SequenceMatcher
 
 import config
+from utils import translate_optout
 
 # ----------------- helpers -----------------
+
+
+def _fold_for_compare(s: str) -> str:
+    """Case/punctuation/accent-insensitive form for near-copy checks."""
+    s = unicodedata.normalize("NFKD", s or "")
+    s = "".join(c for c in s if not unicodedata.combining(c))  # drop accents
+    s = s.casefold().replace("'", "")
+    s = re.sub(r"[^\w\s]+", " ", s, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _near_identical(original: str, translation: str, thresh: float = 0.90) -> bool:
+    """True when a 'translation' adds nothing over the original — same text once
+    case, punctuation and accents are ignored (typo fixes like rednekc->redneck,
+    diacritics like Kysucke->Kysucké, apostrophe/capitalization). Restores the old
+    'don't post a near-identical translation' heuristic that regressed to a plain
+    exact-string check."""
+    a, b = _fold_for_compare(original), _fold_for_compare(translation)
+    if not a or not b:
+        return True
+    if a == b:
+        return True
+    return SequenceMatcher(None, a, b).ratio() >= thresh
 
 _RESIDENT_TOPIC_WEAK_TERMS = {
     "about", "actually", "again", "anyone", "before", "being", "better",
@@ -782,9 +808,10 @@ class MessageService:
             if user_settings.get('translation_enabled'):
                 target = user_settings.get('translation_language', 'EN')
                 t = self.gtranslate(msg, target)
-                # Only output a real, changed translation — never echo the
-                # original or post an error string into chat.
-                if t and t != msg:
+                # Only output a real, *meaningfully different* translation — never
+                # echo the original, a near-identical typo/diacritic fix, or an
+                # error string.
+                if t and not _near_identical(msg, t):
                     mode = user_settings.get('output_mode', 'default')
                     await self.output_message(message, t, mode, user_settings)
             else:
@@ -812,6 +839,10 @@ class MessageService:
 
     async def handle_translation_if_needed(self, message, text, target_language):
         if not self.can_translate or not text:
+            return
+        # super-admin opt-out: never auto-translate these users (they write
+        # English slang the detector misreads as foreign). ~notranslate.
+        if message.author and translate_optout.is_opted_out(message.author.name):
             return
 
         target = target_language.upper()
@@ -886,12 +917,14 @@ class MessageService:
                 return
 
         txt = self.gtranslate(text, target_language)
-        if txt and txt != text:
+        if txt and not _near_identical(text, txt):
             logging.info(f"Auto-translate -> #{message.channel.name}: {txt!r}")
             try:
                 await message.channel.send(txt)
             except Exception as e:
                 logging.error(f"send to #{message.channel.name} FAILED: {e!r}")
+        elif txt:
+            logging.info(f"Auto-translate suppressed (near-identical): {txt!r}")
 
     async def send_whisper(self, token, user_id, message):
         url = "https://api.twitch.tv/helix/whispers"
