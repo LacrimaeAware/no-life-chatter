@@ -34,6 +34,44 @@ def _fold_for_compare(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+# Distinctively-English words: common in English sentences, rare in ES/DE/FR/PT/
+# etc. Two of these => the message is an English sentence and should NOT be
+# auto-translated just because it contains one foreign-looking word. Shared
+# little words (a, no, in, me, mi, si, el, la, es) are deliberately excluded.
+_EN_WORDS = {
+    "the", "is", "are", "was", "were", "be", "been", "being", "and", "but",
+    "you", "your", "youre", "yours", "he", "hes", "she", "shes", "it", "its",
+    "they", "them", "their", "there", "theyre", "we", "our", "this", "that",
+    "these", "those", "thats", "what", "why", "how", "who", "when", "where",
+    "which", "with", "from", "have", "has", "had", "will", "would", "could",
+    "should", "dont", "doesnt", "didnt", "cant", "wont", "isnt", "arent",
+    "wasnt", "im", "ive", "ill", "id", "to", "for", "not", "about", "just",
+    "like", "know", "knew", "think", "thought", "because", "really", "people",
+    "gonna", "wanna", "gotta", "yeah", "much", "very", "some", "only", "than",
+    "then", "other", "does", "did", "get", "got", "make", "made", "want",
+    "need", "thing", "things", "into", "over", "after", "before", "right",
+    "still", "even", "also", "back", "good", "more", "most", "said", "says",
+    "always", "never", "something", "everything", "nothing", "someone",
+    "anyone", "actually", "though", "shit", "fuck", "guys", "bro",
+}
+_VOWELS = "aeiouyàáâäãåèéêëìíîïòóôöõùúûü"
+
+
+def _looks_english(text: str) -> bool:
+    toks = re.findall(r"[a-z]+", (text or "").lower())
+    return sum(1 for t in toks if t in _EN_WORDS) >= 2
+
+
+def _no_real_word(text: str) -> bool:
+    """True when nothing in the message is a translatable word — every token is a
+    short/vowelless abbreviation or gibberish (kk, zg, hmh, 'oh in hs bg')."""
+    for tok in (text or "").split():
+        w = re.sub(r"[^a-zA-Zà-ÿ]", "", tok)
+        if len(w) >= 3 and any(c.lower() in _VOWELS for c in w):
+            return False
+    return True
+
+
 def _near_identical(original: str, translation: str, thresh: float = 0.90) -> bool:
     """True when a 'translation' adds nothing over the original — same text once
     case, punctuation and accents are ignored (typo fixes like rednekc->redneck,
@@ -845,6 +883,12 @@ class MessageService:
         if message.author and translate_optout.is_opted_out(message.author.name):
             return
 
+        # Content guards BEFORE trusting the detector: an English sentence with one
+        # foreign-looking word, or a message with no real word (abbreviations /
+        # gibberish like "kk", "oh in hs bg"), should never be auto-translated.
+        if _looks_english(text) or _no_real_word(text):
+            return
+
         target = target_language.upper()
         user_id = message.author.id
 
@@ -912,8 +956,12 @@ class MessageService:
             # still die here — the old blanket bypass translated emote
             # leftovers. This is what makes the stored ~speak flags DO
             # something again.
+            # a single word is too little signal even from a known speaker
+            # ("lmaoq", "kk"): only give the relaxed bar to 2+ word messages.
             relaxed = max(0.0, config.MIN_SHORT_CONFIDENCE - 0.15)
-            if not (best_lang in known_languages(user_id) and best_conf >= relaxed):
+            if not (len(text.split()) >= 2
+                    and best_lang in known_languages(user_id)
+                    and best_conf >= relaxed):
                 return
 
         txt = self.gtranslate(text, target_language)
