@@ -65,10 +65,29 @@ def known_speaker(profile: dict, lang: str, min_count: int | None = None) -> boo
 
 def known_languages(user_id) -> set:
     """Languages this user is an established speaker of (flagged via ~speak, or
-    written confidently >= SPEAKER_MIN_COUNT times). Used by the translate
-    gate's short-message concession."""
+    written confidently >= SPEAKER_MIN_COUNT LONG sentences). Used by the
+    translate gate's short-message concession."""
     profile = get_profile(user_id)
     return {lang for lang in profile if known_speaker(profile, lang)}
+
+
+def is_massive_speaker(user_id, lang: str) -> bool:
+    """A heavy, established speaker (>= SPEAKER_MASSIVE_COUNT long foreign
+    sentences) — the only tier that unlocks SINGLE-WORD auto-translation."""
+    entry = get_profile(user_id).get((lang or "").upper())
+    if not entry:
+        return False
+    return entry["flagged"] or entry["count"] >= config.SPEAKER_MASSIVE_COUNT
+
+
+def reset_counts() -> int:
+    """Wipe auto-accumulated speaker counts (keep manual ~speak flags). Run when
+    the flagging criteria change so polluted counts don't grandfather people in.
+    Returns rows removed."""
+    with sqlite3.connect(config.DB_PATH) as conn:
+        cur = conn.execute("DELETE FROM user_languages WHERE flagged = 0")
+        conn.commit()
+        return cur.rowcount
 
 
 def flag_speaker(user_id, lang: str, on: bool = True) -> None:

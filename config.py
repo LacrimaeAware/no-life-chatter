@@ -119,9 +119,15 @@ COMEDY_CHANNELS: list[str] = [c.lower() for c in _co.get("channels", [])]
 # The bot learns which languages each user writes in, to translate them more
 # reliably (and to avoid translating users who only ever write English).
 _sp = _cfg.get("speaker", {})
-# Confident messages in a language before a user is a "known speaker" of it.
-# A simple count threshold — once it's reached, the language flips on for them.
-SPEAKER_MIN_COUNT: int = int(_sp.get("min_count", 3))
+# A user becomes a "known speaker" of a language only after this many LONG
+# (>= long_words) confidently-foreign sentences in it — a deliberately HIGH bar
+# so garbage/short misdetections can't flag someone (they used to at count=3).
+SPEAKER_MIN_COUNT: int = int(_sp.get("min_count", 20))
+# A "massive" speaker (many long sentences) — the only tier that unlocks
+# single-word auto-translation.
+SPEAKER_MASSIVE_COUNT: int = int(_sp.get("massive_count", 50))
+# Only sentences with at least this many words count toward speaker flagging.
+SPEAKER_LONG_WORDS: int = int(_sp.get("long_words", 10))
 SUPPORTED_LANGS: set[str] = {
     lang.upper()
     for lang in _tr.get(

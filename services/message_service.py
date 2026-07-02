@@ -12,7 +12,7 @@ from utils.romanize import romanize, is_supported, thai_segment
 from utils.language_detect import detect_language, detect_confidences
 from services.translators import deepl_translate
 from services.emotes import ensure_channel_emotes, strip_emotes
-from utils.speaker_profile import known_languages, record_language
+from utils.speaker_profile import known_languages, record_language, is_massive_speaker
 import re
 import sqlite3
 import html
@@ -931,9 +931,11 @@ class MessageService:
             and foreign_share >= config.MIN_FOREIGN_SHARE
         )
 
-        # Build the speaker profile from confident foreign detections (kept for
-        # the ~speak command and future use; it no longer affects this gate).
-        if confidently_foreign:
+        # Build the speaker profile — but ONLY from LONG confidently-foreign
+        # sentences (>= SPEAKER_LONG_WORDS words). Short/garbage misdetections
+        # must never accumulate toward speaker status (that is what wrongly
+        # flagged everyone as a Hungarian/Latin/German speaker).
+        if confidently_foreign and len(text.split()) >= config.SPEAKER_LONG_WORDS:
             record_language(user_id, best_lang)
 
         if not confidently_foreign:
@@ -949,22 +951,21 @@ class MessageService:
         # known-speaker status no longer forces short messages through, which was
         # translating fragments and emote leftovers from established chatters.
         has_non_latin = bool(re.search(r'[^\x00-\x7FÀ-ɏ]', text))
-        if (not has_non_latin
-                and len(text.split()) < config.MIN_WORDS
-                and best_conf < config.MIN_SHORT_CONFIDENCE):
-            # ~speak concession: an established speaker of THIS detected
-            # language gets a relaxed bar (their short foreign lines are
-            # usually real); fragments detecting as some random language
-            # still die here — the old blanket bypass translated emote
-            # leftovers. This is what makes the stored ~speak flags DO
-            # something again.
-            # a single word is too little signal even from a known speaker
-            # ("lmaoq", "kk"): only give the relaxed bar to 2+ word messages.
-            relaxed = max(0.0, config.MIN_SHORT_CONFIDENCE - 0.15)
-            if not (len(text.split()) >= 2
-                    and best_lang in known_languages(user_id)
-                    and best_conf >= relaxed):
+        words = len(text.split())
+        if not has_non_latin:
+            massive = is_massive_speaker(user_id, best_lang)
+            # SINGLE-WORD messages never auto-translate unless the author is a
+            # MASSIVE (SPEAKER_MASSIVE_COUNT+ long-sentence) speaker of the
+            # detected language. This is what finally kills "kekeke"/"lmaoq"/"kk":
+            # they detect as confidently foreign, but one word is never enough.
+            if words < 2 and not massive:
                 return
+            # SHORT (2-3 word) messages need either a strong absolute detection
+            # or an established (SPEAKER_MIN_COUNT+ long-sentence) speaker.
+            if words < config.MIN_WORDS and best_conf < config.MIN_SHORT_CONFIDENCE and not massive:
+                relaxed = max(0.0, config.MIN_SHORT_CONFIDENCE - 0.15)
+                if not (best_lang in known_languages(user_id) and best_conf >= relaxed):
+                    return
 
         txt = self.gtranslate(text, target_language)
         if txt and not _near_identical(text, txt):
