@@ -63,11 +63,13 @@ def _looks_english(text: str) -> bool:
 
 
 def _no_real_word(text: str) -> bool:
-    """True when nothing in the message is a translatable word — every token is a
-    short/vowelless abbreviation or gibberish (kk, zg, hmh, 'oh in hs bg')."""
+    """True when nothing in the message is a translatable word. A 'real word'
+    needs >=3 letters, a vowel, AND >=3 distinct letters — so short/vowelless
+    abbreviations (kk, zg, hmh, 'oh in hs bg') AND low-diversity repetition spam
+    (Kekekeke, hahaha, lolol, aaaa) all count as nothing-to-translate."""
     for tok in (text or "").split():
-        w = re.sub(r"[^a-zA-Zà-ÿ]", "", tok)
-        if len(w) >= 3 and any(c.lower() in _VOWELS for c in w):
+        w = re.sub(r"[^a-zA-Zà-ÿ]", "", tok).lower()
+        if len(w) >= 3 and len(set(w)) >= 3 and any(c in _VOWELS for c in w):
             return False
     return True
 
