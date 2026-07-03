@@ -968,7 +968,12 @@ class MessageService:
                     return
 
         txt = self.gtranslate(text, target_language)
-        if txt and not _near_identical(text, txt):
+        # Auto-translate uses a STRICTER near-identical bar (0.70 vs the 0.90
+        # default) so barely-changed translations of mostly-cognate / proper-noun
+        # lines are dropped ("portugal = crioulo" -> "Portugal = Creole", ratio
+        # 0.84). Real translations change most words (measured <=0.55), so they
+        # clear it comfortably.
+        if txt and not _near_identical(text, txt, 0.70):
             logging.info(f"Auto-translate -> #{message.channel.name}: {txt!r}")
             try:
                 await message.channel.send(txt)
