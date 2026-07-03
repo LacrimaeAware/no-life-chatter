@@ -30,6 +30,7 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~said <user> [chat=<channel>] [sort=] <phrase>` | anyone | Search whether a user said a phrase. Exact match first, then normalized close match. Results shuffled by default; `sort=chrono\|newest\|name` to order them. |
 | `~said anyone [chat=<channel>] [sort=] <phrase>` | anyone | Search the whole archive for a phrase. Same `sort=` flag; default is a seeded shuffle. |
 | `~saidnext` | anyone | Continue your last `~said` search for about a minute, keeping the same order (the shuffle seed is remembered). |
+| `~saidmost <phrase> [chat=<channel>] [n]` | anyone | Who has said a phrase the most — ranks chatters by how many of their messages contain it (aliases merged, bots skipped). |
 | `~regex <user|anyone> <pattern>` | anyone | Case-insensitive regex search over archived messages. |
 | `~userregex <pattern> [chat=<channel>]` | anyone | Regex-search archived usernames. |
 | `~quote <user>` | anyone | Post a random real quote from a user. |

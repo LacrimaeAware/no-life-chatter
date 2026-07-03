@@ -122,6 +122,7 @@ The table below is a project overview, not the audited source of truth.
 | `~speak <lang>` / `~speak show` | anyone | Flag your language so even your short messages translate. |
 | `~said <user|anyone> [chat=ch] [sort=] <phrase>` | anyone | Search the chat archive: exact matches first, then closest normalized match. `anyone` searches every author; command lines are ignored. Results are shuffled by default (`sort=chrono\|newest\|name` to order them). |
 | `~saidnext` | anyone | Show the next page of your last `~said` search for about a minute (same order/shuffle). |
+| `~saidmost <phrase> [chat=ch] [n]` | anyone | Who has said a phrase the most — ranks chatters by how many of their messages contain it. |
 | `~regex <user|anyone> <pattern>` | anyone | Case-insensitive regex search over the archive. |
 | `~userregex <pattern> [chat=ch]` | anyone | Find archived usernames matching a regex. |
 | `~quote <user>` | anyone | Random real quote from the chat archive. |

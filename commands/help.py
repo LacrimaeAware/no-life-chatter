@@ -29,8 +29,8 @@ CATEGORIES = [
         "practice", "romanize", "speak",
     ]),
     ("archive", [
-        "said", "saidnext", "regex", "userregex", "quote", "random", "firstseen",
-        "chatstats", "regulars", "askchat",
+        "said", "saidnext", "saidmost", "regex", "userregex", "quote", "random",
+        "firstseen", "chatstats", "regulars", "askchat",
     ]),
     ("personas", [
         "persona", "hyper", "generate",

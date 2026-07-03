@@ -1174,6 +1174,33 @@ def search_all(phrase: str, limit: int = 10, offset: int = 0,
     return unique[:limit]
 
 
+def said_most(phrase: str, channel: str = None, limit: int = 10,
+              include_commands: bool = False):
+    """Who said `phrase` the most: [(author, count), ...] ranked desc — counts
+    MESSAGES containing the phrase per author, merging aliases and skipping bots.
+    Count is raw (not deduped) so repeated posting is reflected."""
+    q = _fts_phrase(phrase)
+    if not q:
+        return []
+    conn = connect()
+    chan_sql, chan_params = _channel_filter(channel)
+    cmd_sql, cmd_params = _command_filter(include_commands)
+    rows = conn.execute(
+        "SELECT m.author, COUNT(*) FROM messages_fts f "
+        "CROSS JOIN messages m ON m.id = f.rowid "
+        f"WHERE f.messages_fts MATCH ? {chan_sql}{cmd_sql}"
+        "GROUP BY m.author",
+        [q, *chan_params, *cmd_params],
+    ).fetchall()
+    merged = Counter()
+    for author, count in rows:
+        canon = normalize_author(author)
+        if _is_noise_author(canon):
+            continue
+        merged[canon] += count
+    return merged.most_common(limit)
+
+
 _QUOTED_LOG_PREFIX = re.compile(
     r"^\s*\d{1,2}:\d{2}(?::\d{2})?\s+(?:([^\s:,@]{2,25})\s*[:,]\s+)?")
 
