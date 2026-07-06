@@ -103,10 +103,9 @@ class CommandProcessor:
             return
 
         self._inflight[channel].add(sig)
-        # immediate feedback that the heavy command was accepted and is running
-        # (Duardo: "you don't get any feedback that anything has started").
-        label = f"~{command} {' '.join(params)}".strip()
-        await message.channel.send(f"⏳ @{user} — processing {label[:150]}…")
+        # immediate, minimal feedback that the heavy command started
+        # (Duardo: "no feedback anything started"; keep it short, don't echo args).
+        await message.channel.send(f"@{user} Processing...")
         try:
             async with self._gen_locks[channel]:
                 await handler(self.bot, message, params)
