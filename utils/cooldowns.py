@@ -1,16 +1,15 @@
-"""Anti-spam command cooldowns — punishes stacking, not heavy use.
+"""Anti-spam command cooldowns — punishes sustained stacking, warns first.
 
-Design (user-specified):
+Design:
 - The malicious pattern is sending MORE commands while your previous one is
-  still processing. Using commands a lot but waiting for each reply is fine
-  and never punished. Someone else prompting right after you is fine —
-  everything here is strictly per-user.
-- Trigger: 3+ commands stacked while one is still pending → automatic
-  cooldown, 5 minutes, DOUBLING on every subsequent offense (5, 10, 20...).
-  One in-chat notice; further commands during cooldown are silently dropped.
-- Every offense is recorded to the settings DB (command_warnings) for later
-  review (~warnings, super admin). Strike counts persist; they decay after a
-  clean 24h.
+  still processing. Using commands a lot but waiting for each reply is fine.
+- First time you stack past the limit you get a WARNING, not a ban — so a
+  mistaken double-call or a syntax check never costs you a cooldown. Only if you
+  keep stacking (another breach within WARN_GRACE) does a cooldown apply.
+- Cooldowns are gentle and CAPPED: BASE doubles per repeat offense but never
+  exceeds MAX_COOLDOWN. Strikes are forgiven after a clean DECAY_SECONDS.
+- Every real cooldown is recorded to the settings DB (command_warnings) for
+  review (~warnings, super admin).
 """
 
 import logging
@@ -19,14 +18,17 @@ import time
 
 import config
 
-BASE_COOLDOWN = 5 * 60
-STACK_LIMIT = 3          # pending + this many more = offense
-DECAY_SECONDS = 24 * 3600
+BASE_COOLDOWN = 3 * 60          # first real cooldown: 3 minutes
+MAX_COOLDOWN = 15 * 60          # escalation is capped here (was unbounded doubling)
+STACK_LIMIT = 3                 # this many commands stacked while one is pending = a breach
+DECAY_SECONDS = 2 * 3600        # strikes forgiven after a clean 2h (was 24h)
+WARN_GRACE = 15 * 60            # breach again within this of a warning -> cooldown
 
 _pending = {}            # user -> count of in-flight commands
 _stacked = {}            # user -> commands sent while pending
 _cooldown_until = {}     # user -> epoch
 _notified = set()        # users already told about their current cooldown
+_warned_at = {}          # user -> time we last said "slow down" (no ban)
 
 
 def _conn():
@@ -47,19 +49,19 @@ def _strikes(user):
         return 0
     strikes, last_at = row
     if time.time() - (last_at or 0) > DECAY_SECONDS:
-        return 0   # clean day -> forgiven
+        return 0   # clean stretch -> forgiven
     return strikes
 
 
 def _offense(user):
     strikes = _strikes(user) + 1
-    cooldown = BASE_COOLDOWN * (2 ** (strikes - 1))
+    cooldown = min(MAX_COOLDOWN, BASE_COOLDOWN * (2 ** (strikes - 1)))
     with _conn() as conn:
         conn.execute("INSERT OR REPLACE INTO command_strikes VALUES (?,?,?)",
                      (user, strikes, time.time()))
         conn.execute("INSERT INTO command_warnings (user_name, at, reason, cooldown_minutes)"
                      " VALUES (?, datetime('now'), ?, ?)",
-                     (user, f"stacked {STACK_LIMIT}+ commands while one was pending",
+                     (user, "kept stacking commands after a warning",
                       round(cooldown / 60, 1)))
     _cooldown_until[user] = time.time() + cooldown
     _notified.discard(user)
@@ -71,7 +73,8 @@ def before(user: str):
     """Call before dispatching. Returns:
     ('ok', None)        — run the command (pending count incremented)
     ('drop', None)      — silently ignore (already notified about cooldown)
-    ('cooldown', secs)  — NEW cooldown triggered or first drop: notify once
+    ('warn', None)      — first breach: tell them to slow down, but NO cooldown
+    ('cooldown', secs)  — cooldown active/just triggered: notify once
     """
     user = (user or "").lower()
     now = time.time()
@@ -85,10 +88,15 @@ def before(user: str):
         _stacked[user] = _stacked.get(user, 0) + 1
         if _stacked[user] >= STACK_LIMIT:
             _stacked[user] = 0
+            # First breach (or one long after the last warning) is a WARNING
+            # only. A repeat breach within the grace window is a real cooldown.
+            if now - _warned_at.get(user, 0) >= WARN_GRACE:
+                _warned_at[user] = now
+                return ("warn", None)
             secs = int(_offense(user))
-            _notified.add(user)   # the offense notice IS the one notification
+            _notified.add(user)
             return ("cooldown", secs)
-        # a single impatient re-send is tolerated — it still runs
+        # a couple of impatient re-sends are tolerated — they still run
     _pending[user] = _pending.get(user, 0) + 1
     return ("ok", None)
 

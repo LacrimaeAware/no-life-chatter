@@ -57,10 +57,15 @@ class CommandProcessor:
         verdict, secs = cooldowns.before(user)
         if verdict == "drop":
             return
+        if verdict == "warn":
+            await message.channel.send(
+                f"@{user} slow down — wait for the bot to reply before re-sending "
+                "(keep stacking and it's a short cooldown).")
+            return
         if verdict == "cooldown":
             await message.channel.send(
-                f"@{user} slow down — command cooldown {secs // 60}m {secs % 60}s "
-                "(stacking commands before the bot answers).")
+                f"@{user} command cooldown {secs // 60}m {secs % 60}s — you kept "
+                "stacking commands after the warning.")
             return
 
         if command in SERIAL_COMMANDS and message.channel:
@@ -99,6 +104,11 @@ class CommandProcessor:
             return
 
         self._inflight[channel].add(sig)
+        # feedback that a slow command was accepted: if another generation is
+        # already running in this channel, tell them it's queued (this is the
+        # "you don't get any feedback that anything started" fix).
+        if self._gen_locks[channel].locked():
+            await message.channel.send(f"@{user} ⏳ queued — coming up")
         try:
             async with self._gen_locks[channel]:
                 await handler(self.bot, message, params)
