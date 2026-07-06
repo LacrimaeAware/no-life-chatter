@@ -7,10 +7,11 @@ from command_registry import command_handlers, load_command_handlers  # noqa: F4
 from utils.command_bans import is_banned
 from utils import cooldowns
 
-# Slow LLM generation commands. These are serialized PER CHANNEL so their
-# replies arrive one at a time instead of as a simultaneous batch (which also
-# trips Twitch's anti-spam), and an identical request already in flight is
-# dropped with a brief one-time notice instead of generated twice.
+# GPU-heavy LLM generation commands. ONLY these (and only with args) are
+# cooldown-tracked — spamming them hammers the GPU. They are also serialized per
+# channel so their replies don't arrive as a batch. Every fast command
+# (~help, ~why, ~said, a bare ~persona usage error, ...) runs freely and can
+# NEVER cost a cooldown — that was the over-eager behavior chat complained about.
 SERIAL_COMMANDS = {"persona", "hyper", "generate"}
 
 _OFFLINE_SIGNS = ("10061", "actively refused", "connection refused", "max retries",
@@ -49,29 +50,28 @@ class CommandProcessor:
             await message.channel.send(f"Command not recognized. Try {self.bot.prefix}help for command list.")
             return
 
-        # Anti-spam: stacking commands while your previous one is still
-        # processing is the troll pattern; heavy-but-patient use never
-        # triggers (utils/cooldowns.py — escalating, per-user, reviewable
-        # via ~warnings).
         user = message.author.name if message.author else ""
-        verdict, secs = cooldowns.before(user)
-        if verdict == "drop":
-            return
-        if verdict == "warn":
-            await message.channel.send(
-                f"@{user} slow down — wait for the bot to reply before re-sending "
-                "(keep stacking and it's a short cooldown).")
-            return
-        if verdict == "cooldown":
-            await message.channel.send(
-                f"@{user} command cooldown {secs // 60}m {secs % 60}s — you kept "
-                "stacking commands after the warning.")
-            return
 
-        if command in SERIAL_COMMANDS and message.channel:
+        # Only GPU-heavy generation commands WITH args go through the cooldown +
+        # serialization path. Everything else (incl. a bare '~persona' that just
+        # prints usage) runs freely — no cooldown, no lock.
+        if command in SERIAL_COMMANDS and params and message.channel:
+            verdict, secs = cooldowns.before(user)
+            if verdict == "drop":
+                return
+            if verdict == "warn":
+                await message.channel.send(
+                    f"@{user} slow down — wait for the bot to reply before re-sending "
+                    "(keep stacking heavy commands and it's a short cooldown).")
+                return
+            if verdict == "cooldown":
+                await message.channel.send(
+                    f"@{user} command cooldown {secs // 60}m {secs % 60}s — you kept "
+                    "stacking heavy commands after the warning.")
+                return
             await self._run_serial(message, command, params, handler, user)
         else:
-            await self._run(message, command, params, handler, user)
+            await self._run(message, command, params, handler)
 
     async def _report_error(self, message, command, exc):
         if _backend_offline(exc):
@@ -81,18 +81,17 @@ class CommandProcessor:
             logging.error(f"Error handling command {command}: {exc}")
             await message.channel.send("An error occurred while processing your command.")
 
-    async def _run(self, message, command, params, handler, user):
+    async def _run(self, message, command, params, handler):
+        """Fast commands: run immediately, no cooldown tracking."""
         try:
             await handler(self.bot, message, params)
         except Exception as e:
             await self._report_error(message, command, e)
-        finally:
-            cooldowns.after(user)
 
     async def _run_serial(self, message, command, params, handler, user):
-        """Generation commands: one at a time per channel, dropping an exact
-        duplicate that is already running/queued so chat can't batch-spam the
-        bot (and risk an auto-timeout)."""
+        """GPU-heavy generation commands: one at a time per channel, with an
+        immediate 'processing' ack (so you know it started), and exact duplicates
+        already in flight dropped with a brief notice."""
         channel = message.channel.name
         sig = command + " " + " ".join(params).strip().lower()
 
@@ -104,11 +103,10 @@ class CommandProcessor:
             return
 
         self._inflight[channel].add(sig)
-        # feedback that a slow command was accepted: if another generation is
-        # already running in this channel, tell them it's queued (this is the
-        # "you don't get any feedback that anything started" fix).
-        if self._gen_locks[channel].locked():
-            await message.channel.send(f"@{user} ⏳ queued — coming up")
+        # immediate feedback that the heavy command was accepted and is running
+        # (Duardo: "you don't get any feedback that anything has started").
+        label = f"~{command} {' '.join(params)}".strip()
+        await message.channel.send(f"⏳ @{user} — processing {label[:150]}…")
         try:
             async with self._gen_locks[channel]:
                 await handler(self.bot, message, params)
