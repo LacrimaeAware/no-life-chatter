@@ -80,6 +80,27 @@ def vector(token):
     return next((c[k] for k in c if k.lower() == token.lower()), None)
 
 
+def semantic_key(token):
+    """Exact stored usage-vector key for an emote token, case-insensitive."""
+    sem = semantics()
+    if token in sem:
+        return token
+    low = (token or "").lower()
+    return next((k for k in sem if k.lower() == low), None)
+
+
+def usage_count(token):
+    """How many cleaned context snippets built this emote's usage vector."""
+    key = semantic_key(token)
+    if not key:
+        return 0
+    data = semantics().get(key) or {}
+    try:
+        return int(data.get("n") or 0)
+    except Exception:
+        return 0
+
+
 def lookup(token):
     """Registry facts for an emote token (case-insensitive), or None."""
     reg = registry()

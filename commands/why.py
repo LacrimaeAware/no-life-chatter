@@ -2,11 +2,11 @@ import asyncio
 import os
 
 from utils import chat_archive
+from utils import emote_explain
 
 description = (
-    "~why <user> <trait> [words] — the actual messages driving a user's trait "
-    "score (the receipts behind ~top/~traits). 'words' = which words carry it. "
-    "Near-zero σ means the lean is weak and the examples are noise."
+    "~why <user> <trait> [words] - actual messages driving a user's trait score. "
+    "~why emote <emote> [raw] explains learned emote meaning from vector evidence."
 )
 
 
@@ -61,8 +61,7 @@ def _explain(user, trait):
 
 
 def _word_attribution(text, axis, sign):
-    """Occlusion: drop each word, re-embed, measure projection loss. The words
-    whose removal hurts most are what the axis is actually reacting to."""
+    """Occlusion: drop each word, re-embed, measure projection loss."""
     import numpy as np
     from utils.persona_axes import _ortho_builtin, _all_axis_vectors
     from utils.persona_traits import _embed
@@ -81,8 +80,16 @@ def _word_attribution(text, axis, sign):
 
 
 async def handle_why(bot, message, params):
+    if params and params[0].lower() in {"emote", "emotes"}:
+        if len(params) < 2:
+            await message.channel.send("Usage: ~why emote <emote> [raw]")
+            return
+        raw = any(p.lower() in {"raw", "scores", "vector"} for p in params[2:])
+        report = await asyncio.to_thread(emote_explain.analyze, params[1].lstrip("@"))
+        await message.channel.send(emote_explain.format_chat(report, detail=True, raw=raw))
+        return
     if len(params) < 2:
-        await message.channel.send("Usage: ~why <user> <trait> [words]")
+        await message.channel.send("Usage: ~why <user> <trait> [words] OR ~why emote <emote> [raw]")
         return
     user, trait = params[0].lstrip("@"), params[1].lower()
     words_mode = len(params) > 2 and params[2].lower() == "words"
@@ -95,13 +102,13 @@ async def handle_why(bot, message, params):
         from utils.persona_axes import resolve_axis
         axis, sign, _n = resolve_axis(trait)
         attr = await asyncio.to_thread(_word_attribution, pos[0][0], axis, sign)
-        parts = " · ".join(f"{w} (+{d:.3f})" for w, d in attr) or "no single word carries it"
+        parts = " | ".join(f"{w} (+{d:.3f})" for w, d in attr) or "no single word carries it"
         await message.channel.send(
-            f"🔬 \"{pos[0][0][:120]}\" reads '{trait}' because of: {parts}")
+            f'"{pos[0][0][:120]}" reads {trait!r} because of: {parts}')
         return
-    msg = (f"🔍 {user} on '{trait}' ({person_z:+.1f}σ overall) — "
+    msg = (f"{user} on '{trait}' ({person_z:+.1f} sigma overall) - "
            f"most ({pos[0][1]:+.1f}): \"{pos[0][0]}\"")
     if len(pos) > 1 and abs(person_z) >= 0.4:
-        msg += f" · also ({pos[1][1]:+.1f}): \"{pos[1][0][:80]}\""
-    msg += f" · least ({neg[0][1]:+.1f}): \"{neg[0][0][:70]}\""
+        msg += f" | also ({pos[1][1]:+.1f}): \"{pos[1][0][:80]}\""
+    msg += f" | least ({neg[0][1]:+.1f}): \"{neg[0][0][:70]}\""
     await message.channel.send(msg[:480])

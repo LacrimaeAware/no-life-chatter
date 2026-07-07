@@ -78,9 +78,10 @@ super-admin-only.
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. Add `@user` (or `user=`) to show that user's rank, σ, and the people just above/below instead of the leaderboard. |
 | `~bottom <trait> [n] [burst]` | anyone | Reverse leaderboard — who leans LEAST toward a trait (most toward its opposite). |
 | `~distinct [top\|bottom] [n]` | anyone | Chatters farthest from or closest to the room average across built-in trait axes. |
-| `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. |
+| `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. `~why emote <emote> [raw]` explains learned emote meaning from vector evidence. |
 | `~axis <trait> [n]` | anyone | Inspect a trait/custom axis by showing nearest neighboring axes. |
-| `~emote <emote>` | anyone | Explain what the bot thinks an emote means from registry facts and usage-context neighbors. |
+| `~emote <emote> [raw]` | anyone | Explain what the bot thinks an emote means from registry facts, usage-context neighbors, and cached vector geometry. |
+| `~explain emote <emote> [raw]` | anyone | Fuller emote-meaning report; `raw` includes numeric neighbor/tag/axis scores. |
 | `~irony <message> [context=...]` | anyone | Experimental irony/sincerity read using sarcasm and content-extremity axes. |
 | `~iq <user>` | anyone | Roster-relative text-IQ style score: peak expressed cognition in chat, not actual IQ. |
 | `~iq top [n]` / `~iq bottom [n]` | anyone | Highest or lowest text-IQ style scores in the current cache. |
@@ -122,6 +123,7 @@ Some commands read live SQLite tables only; others need offline artifacts:
 | `data/unsynced/msg_index/` | `scripts/build_message_index.py` | `~why`, burst `~top`, semantic persona retrieval |
 | `data/unsynced/iq_scores.pkl` | `scripts/build_iq_v2.py` | `~iq` |
 | `data/unsynced/fact_bank.jsonl` | `scripts/build_fact_bank.py` | `~askchat`, offline archive/lore QA |
+| `data/unsynced/emote_semantics.pkl` + `data/unsynced/emote_tag_vecs.pkl` | `scripts/build_emote_semantics.py` + emote tag-vector tooling | `~emote`, `~explain emote`, `~why emote` |
 
 Use `~artifacts` or `python scripts/artifact_status.py` to check whether these
 artifacts are missing, missing build metadata, or built with the current

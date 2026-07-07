@@ -194,7 +194,7 @@ def status_rows() -> list[dict]:
         _persona_embeddings_status(),
         _message_index_status(),
         _iq_status(),
-        _simple_pickle_status(EMOTE_SEMANTICS, "emote usage semantics", "~emote, axes/emote meaning"),
+        _simple_pickle_status(EMOTE_SEMANTICS, "emote usage semantics", "~emote, ~explain emote, ~why emote"),
         _simple_pickle_status(EMOTE_EMBEDDINGS, "emote fallback vectors", "~distinct, ~traits, ~top"),
         _simple_pickle_status(CUSTOM_AXES, "custom axes", "~top custom terms"),
     ]

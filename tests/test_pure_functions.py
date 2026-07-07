@@ -25,7 +25,7 @@ def install_fake_config():
 
 install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
-from utils import archive_qa, chat_archive, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona  # noqa: E402
+from utils import archive_qa, chat_archive, emote_explain, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona  # noqa: E402
 from commands import markers  # noqa: E402
 
 
@@ -414,6 +414,52 @@ class ArchiveQaPureTests(unittest.TestCase):
         }
         out = archive_qa.format_answer_chat(report, "They directly said it.")
         self.assertIn("[A1]", out)
+
+
+class EmoteExplainPureTests(unittest.TestCase):
+    def test_format_chat_keeps_vector_report_compact(self):
+        report = {
+            "name": "BatChest",
+            "registry": {},
+            "registry_tags": [],
+            "has_vector": True,
+            "usage_n": 30,
+            "confidence": "strong",
+            "neighbor_tags": [
+                {"tag": "hype", "score": 1.2},
+                {"tag": "meme", "score": 0.8},
+            ],
+            "neighbors": [
+                {"name": "PogU", "score": 0.72, "tags": ["hype"]},
+                {"name": "WOW", "score": 0.66, "tags": []},
+            ],
+            "axes": [
+                {"name": "ironic", "score": 0.31, "label": "ironic"},
+            ],
+            "axis_note": None,
+        }
+        out = emote_explain.format_chat(report, detail=True, max_chars=220)
+        self.assertIn("BatChest", out)
+        self.assertIn("guess", out)
+        self.assertIn("PogU", out)
+        self.assertLessEqual(len(out), 220)
+
+    def test_format_chat_raw_includes_scores(self):
+        report = {
+            "name": "BatChest",
+            "registry": {},
+            "has_vector": True,
+            "usage_n": 30,
+            "confidence": "strong",
+            "neighbor_tags": [{"tag": "hype", "score": 1.2}],
+            "neighbors": [{"name": "PogU", "score": 0.72}],
+            "axes": [{"name": "ironic", "score": 0.31, "label": "ironic"}],
+            "axis_note": None,
+        }
+        out = emote_explain.format_chat(report, raw=True, max_chars=180)
+        self.assertIn("vector report", out)
+        self.assertIn("+0.72", out)
+        self.assertLessEqual(len(out), 180)
 
 
 class PersonaIqPureTests(unittest.TestCase):

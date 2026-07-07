@@ -141,6 +141,7 @@ The table below is a project overview, not the audited source of truth.
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard for any word — built-in axes answer instantly, novel words build a saved axis on the fly. `burst` ranks peak moments. Add `@user` to see that user's rank + neighbours instead. |
 | `~bottom <trait> [n] [burst]` | anyone | Reverse of `~top` — who leans least toward a trait. |
 | `~axis <trait> [n]` | anyone | Inspect what a trait/custom axis is semantically closest to. |
+| `~emote <emote> [raw]` / `~explain emote <emote> [raw]` | anyone | Explain learned emote meaning from registry facts, usage neighbors, tag consensus, and cached vector geometry. |
 | `~generate <tags...>` | anyone | Example message from a bag of tags: chatter names (several = fusion), trait poles, `chat=`, `year=`, topic, `engine=markov\|llm`. Save per-user recipes. |
 | `~botpersona` / `~botmode` / `~botcontext` / `~botchance` | super admin | Channel-scoped resident persona controls for timed autonomous chat, topic-weighted reactions, and idle chat. |
 | `~markov <user>` / `~mimic <user>` | anyone | Quick Markov-chain line in a chatter's style (no model needed). |
