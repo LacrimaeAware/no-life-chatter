@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import pickle
 import re
@@ -10,64 +11,17 @@ from collections import Counter
 from typing import Any
 
 import config
-from utils import emote_meaning
+from utils import chat_archive, emote_meaning, message_quality
 
 AXIS_CACHE = os.path.join("data", "unsynced", "eval", "axis_vecs_cache.json")
 CUSTOM_AXES = os.path.join("data", "unsynced", "custom_axes.pkl")
-
-COMMON_EMOTE_PRIORS = {
-    "batchest": {
-        "meaning": "over-the-top nerdy or performative excitement",
-        "context": "often used mockingly for consoomer hype, soy enthusiasm, or being way too impressed",
-    },
-    "kekw": {
-        "meaning": "laughter",
-        "context": "usually a strong laugh reaction, sometimes at someone getting owned or saying something absurd",
-    },
-    "omegalul": {
-        "meaning": "big laughter",
-        "context": "often stronger or more mocking than plain lol",
-    },
-    "lul": {
-        "meaning": "laughter",
-        "context": "a basic laugh reaction",
-    },
-    "kappa": {
-        "meaning": "sarcasm or not being fully serious",
-        "context": "used to mark a joke, troll, or ironic statement",
-    },
-    "pogchamp": {
-        "meaning": "hype or impressed excitement",
-        "context": "used for surprising, exciting, or impressive moments",
-    },
-    "pogu": {
-        "meaning": "hype or impressed excitement",
-        "context": "used for surprising, exciting, or impressive moments",
-    },
-    "sadge": {
-        "meaning": "sadness or resigned disappointment",
-        "context": "often a soft sad reaction rather than serious grief",
-    },
-    "feelsbadman": {
-        "meaning": "sadness, pity, or feeling bad",
-        "context": "used when something unfortunate happens",
-    },
-    "feelsgoodman": {
-        "meaning": "contentment or feeling good",
-        "context": "used for pleasant, satisfying, or wholesome moments",
-    },
-    "monkas": {
-        "meaning": "anxiety or nervous fear",
-        "context": "used when something tense, scary, or risky is happening",
-    },
-    "clueless": {
-        "meaning": "naive optimism or not realizing something obvious",
-        "context": "often used sarcastically when someone is unaware of what is coming",
-    },
-    "aware": {
-        "meaning": "painful realization or uncomfortable awareness",
-        "context": "used when a joke or situation becomes bleakly self-aware",
-    },
+CO_EMOTE_STOP = {
+    "A", "AN", "AND", "ARE", "AS", "AT", "BE", "BUT", "BY", "CHAT",
+    "DO", "FOR", "FROM", "GET", "GOT", "HAD", "HAS", "HAVE", "HE",
+    "HER", "HIM", "HIS", "I", "IN", "IS", "IT", "ITS", "JUST", "LIVE",
+    "MADE", "MAKE", "ME", "MY", "NOT", "OF", "ON", "OR", "SO", "THAT",
+    "THE", "THEIR", "THEM", "THEY", "THIS", "TO", "WAS", "WATCH", "WE",
+    "WHAT", "WHEN", "WITH", "YOU", "YOUR",
 }
 
 
@@ -198,26 +152,166 @@ def _neighbor_tag_scores(neighbors: list[dict[str, Any]], limit: int = 6) -> lis
     ]
 
 
+def _strip_target(text: str, token: str) -> str:
+    return re.sub(rf"(?<!\w){re.escape(token)}(?!\w)", " ", text or "", flags=re.IGNORECASE)
+
+
+def _clean_context_text(text: str, token: str) -> str:
+    stripped = _strip_target(text, token)
+    return message_quality.clean_text(stripped, strip_emotes=True, strip_urls=True)
+
+
+def _co_emotes(text: str, token: str, registry: dict[str, Any]) -> list[str]:
+    out = []
+    target = token.lower()
+    for raw in (text or "").split():
+        cleaned = raw.strip(".,!?;:\"'()[]{}<>")
+        if not cleaned or cleaned.lower() == target:
+            continue
+        if cleaned.upper() in CO_EMOTE_STOP:
+            continue
+        if cleaned.isupper() and len(cleaned) <= 3:
+            continue
+        if cleaned in registry:
+            out.append(cleaned)
+    return out
+
+
+def _archive_rows(token: str, *, limit: int = 90) -> tuple[int, list[dict[str, Any]]]:
+    """Stable, mixed recent/random-ish archive rows containing the emote."""
+    if not token:
+        return 0, []
+    conn = chat_archive.connect()
+    cmd_sql, cmd_params = chat_archive._command_filter(False, alias="m")
+    q = chat_archive._fts_phrase(token)
+    try:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM messages_fts f CROSS JOIN messages m ON m.id = f.rowid "
+            f"WHERE f.messages_fts MATCH ? {cmd_sql}",
+            [q, *cmd_params],
+        ).fetchone()[0]
+        recent = conn.execute(
+            "SELECT m.id, m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
+            "CROSS JOIN messages m ON m.id = f.rowid "
+            f"WHERE f.messages_fts MATCH ? {cmd_sql}"
+            "ORDER BY m.sent_at DESC LIMIT ?",
+            [q, *cmd_params, max(20, limit // 3)],
+        ).fetchall()
+        salt = int(hashlib.sha1(token.lower().encode("utf-8")).hexdigest()[:8], 16) % 1000003 or 17
+        spread = conn.execute(
+            "SELECT m.id, m.sent_at, m.channel, m.author, m.content FROM messages_fts f "
+            "CROSS JOIN messages m ON m.id = f.rowid "
+            f"WHERE f.messages_fts MATCH ? {cmd_sql}"
+            f"ORDER BY ((m.id * {(salt * 2) + 1}) % 2147483647) LIMIT ?",
+            [q, *cmd_params, limit * 2],
+        ).fetchall()
+    except Exception:
+        like = "%" + token.replace("\\", r"\\").replace("%", r"\%").replace("_", r"\_") + "%"
+        total = conn.execute(
+            "SELECT COUNT(*) FROM messages m WHERE m.content LIKE ? ESCAPE '\\' "
+            f"{cmd_sql}",
+            [like, *cmd_params],
+        ).fetchone()[0]
+        recent = conn.execute(
+            "SELECT m.id, m.sent_at, m.channel, m.author, m.content FROM messages m "
+            "WHERE m.content LIKE ? ESCAPE '\\' "
+            f"{cmd_sql}ORDER BY m.sent_at DESC LIMIT ?",
+            [like, *cmd_params, max(20, limit // 3)],
+        ).fetchall()
+        spread = conn.execute(
+            "SELECT m.id, m.sent_at, m.channel, m.author, m.content FROM messages m "
+            "WHERE m.content LIKE ? ESCAPE '\\' "
+            f"{cmd_sql}ORDER BY m.id LIMIT ?",
+            [like, *cmd_params, limit * 2],
+        ).fetchall()
+
+    seen = set()
+    out = []
+    token_re = re.compile(rf"(?<!\w){re.escape(token)}(?!\w)", re.IGNORECASE)
+    for row_id, sent_at, channel, author, content in list(recent) + list(spread):
+        if not token_re.search(content or ""):
+            continue
+        key = (
+            chat_archive.normalize_author(author),
+            chat_archive.normalize_channel(channel),
+            chat_archive.line_match_key(content),
+            (sent_at or "")[:16],
+        )
+        if not key[2] or key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "id": row_id,
+            "sent_at": sent_at,
+            "channel": channel,
+            "author": chat_archive.normalize_author(author),
+            "text": content,
+        })
+        if len(out) >= limit:
+            break
+    return int(total or 0), out
+
+
+def _context_snippet(row: dict[str, Any], token: str, *, max_chars: int = 260) -> str:
+    try:
+        window = chat_archive.context_window(row["id"], row["channel"], before=2, after=1)
+    except Exception:
+        window = []
+    if not window:
+        return _clip(f"{row['author']}: {row['text']}", max_chars)
+    pieces = []
+    for msg_id, author, content in window:
+        marker = ">" if msg_id == row["id"] else "-"
+        pieces.append(f"{marker}{chat_archive.normalize_author(author)}: {_clip(content, 90)}")
+    return _clip(" / ".join(pieces), max_chars)
+
+
+def _archive_evidence(token: str, *, limit: int = 90, examples: int = 10) -> dict[str, Any]:
+    registry = emote_meaning.registry()
+    try:
+        total, rows = _archive_rows(token, limit=limit)
+    except Exception:
+        return {"hits": 0, "sampled": 0, "terms": [], "co_emotes": [], "examples": []}
+    term_counts: Counter[str] = Counter()
+    emote_counts: Counter[str] = Counter()
+    snippets = []
+    for row in rows:
+        clean = _clean_context_text(row["text"], token)
+        if clean:
+            for term in chat_archive.query_terms(clean, max_terms=10, exclude_terms={token.lower()}):
+                term_counts[term] += 1
+        for emote in _co_emotes(row["text"], token, registry):
+            emote_counts[emote] += 1
+        if len(snippets) < examples:
+            snippets.append(_context_snippet(row, token))
+    return {
+        "hits": total,
+        "sampled": len(rows),
+        "terms": [{"term": term, "count": count} for term, count in term_counts.most_common(12)],
+        "co_emotes": [{"emote": emote, "count": count} for emote, count in emote_counts.most_common(12)],
+        "examples": snippets,
+    }
+
+
 def analyze(token: str, *, neighbors: int = 8, axes: int = 4,
             include_custom_axes: bool = False) -> dict[str, Any]:
     query = (token or "").strip().lstrip("@")
     name, info = emote_meaning.lookup(query)
     sem_key = emote_meaning.semantic_key(query)
     canonical = name or sem_key or query
-    prior = (
-        COMMON_EMOTE_PRIORS.get(query.lower())
-        or COMMON_EMOTE_PRIORS.get((canonical or "").lower())
-    )
     vec = emote_meaning.vector(query)
     near = emote_meaning.nearest_emotes(query, n=max(neighbors, 1)) if vec is not None else []
     neighbor_rows = _neighbor_rows(near)
     axis_rows, axis_note = _axis_neighbors(vec, n=axes, include_custom=include_custom_axes)
+    archive = _archive_evidence(canonical)
 
     signals = []
     if info:
         signals.append("registry")
     if vec is not None:
         signals.append("usage-vector")
+    if archive.get("sampled"):
+        signals.append("archive-context")
     if neighbor_rows:
         signals.append("neighbors")
     if axis_rows:
@@ -236,10 +330,10 @@ def analyze(token: str, *, neighbors: int = 8, axes: int = 4,
         "registry_name": name,
         "semantic_key": sem_key,
         "registry": info or {},
-        "common_prior": prior or {},
         "registry_tags": _registry_tags(info),
         "has_vector": vec is not None,
         "usage_n": usage_n,
+        "archive": archive,
         "neighbors": neighbor_rows,
         "neighbor_tags": _neighbor_tag_scores(neighbor_rows),
         "axes": axis_rows,
@@ -331,8 +425,7 @@ def _similar_clause(report: dict[str, Any], n: int = 4) -> str:
 def format_sentence(report: dict[str, Any], *, max_chars: int = 470) -> str:
     """Deterministic natural-language fallback, with emote tokens left bare."""
     name = report.get("name") or report.get("query") or "emote"
-    prior = report.get("common_prior") or {}
-    if not report.get("registry") and not report.get("has_vector") and not prior:
+    if not report.get("registry") and not report.get("has_vector") and not report.get("archive", {}).get("sampled"):
         return _clip(
             f"{name} is not in the emote registry and has no learned usage vector yet.",
             max_chars,
@@ -340,13 +433,7 @@ def format_sentence(report: dict[str, Any], *, max_chars: int = 470) -> str:
 
     words = _meaning_words(report)
     similar = _similar_clause(report)
-    if prior.get("meaning"):
-        sentence = f"{name} is used to mean {prior['meaning']}"
-        if prior.get("context"):
-            sentence += f", {prior['context']}"
-        if similar:
-            sentence += f". {similar}"
-    elif words:
+    if words:
         sentence = f"{name} is used to mean " + " / ".join(words)
         if similar:
             sentence += f". {similar}"
@@ -364,6 +451,11 @@ def format_sentence(report: dict[str, Any], *, max_chars: int = 470) -> str:
 def raw_report(report: dict[str, Any], *, max_chars: int = 470) -> str:
     name = report.get("name") or report.get("query") or "emote"
     segments = []
+    archive = report.get("archive") or {}
+    if archive.get("hits"):
+        segments.append(f"archive_hits {archive['hits']}")
+    if archive.get("sampled"):
+        segments.append(f"archive_sample {archive['sampled']}")
     if report.get("usage_n"):
         segments.append(f"vector_sample_contexts {int(report['usage_n'])}")
     if report.get("registry"):
@@ -375,10 +467,10 @@ def raw_report(report: dict[str, Any], *, max_chars: int = 470) -> str:
         if channel:
             reg += f" channel {channel}"
         segments.append(reg)
-    if (report.get("common_prior") or {}).get("meaning"):
-        segments.append(f"common_meaning {report['common_prior']['meaning']}")
     segments.extend([
         _segment("tags", report.get("neighbor_tags", []), "tag", n=5, scores=True),
+        _segment("context_terms", archive.get("terms", []), "term", n=5, scores=False),
+        _segment("co_emotes", archive.get("co_emotes", []), "emote", n=5, scores=False),
         _segment("neighbors", report.get("neighbors", []), "name", n=5, scores=True),
         _segment("axes", report.get("axes", []), "name", n=4, scores=True),
     ])
@@ -391,14 +483,19 @@ def synthesis_messages(report: dict[str, Any]) -> list[dict[str, str]]:
     neighbor_names = [row["name"] for row in report.get("neighbors", [])[:6]]
     neighbor_tags = [row["tag"] for row in report.get("neighbor_tags", [])[:6]]
     registry = report.get("registry") or {}
+    archive = report.get("archive") or {}
     evidence = {
         "emote": name,
-        "common_twitch_prior": report.get("common_prior") or {},
         "registry_origin": registry.get("origin"),
         "registry_channel": registry.get("channel"),
         "registry_tags": report.get("registry_tags", [])[:6],
         "neighbor_tag_consensus": neighbor_tags,
         "similar_emotes_by_usage": neighbor_names,
+        "archive_total_hits": archive.get("hits") or 0,
+        "archive_sampled_hits": archive.get("sampled") or 0,
+        "weak_archive_context_terms": archive.get("terms", [])[:10],
+        "weak_archive_co_emotes": archive.get("co_emotes", [])[:10],
+        "representative_archive_contexts": archive.get("examples", [])[:8],
         "usage_vector_sampled_context_lines": report.get("usage_n") or 0,
     }
     system = (
@@ -410,8 +507,14 @@ def synthesis_messages(report: dict[str, Any]) -> list[dict[str, str]]:
         "basis, confidence, n, or sampled contexts. Do not repeat the same "
         "similar emotes twice. Similar emotes are evidence, not the answer. "
         "If you include similar emotes, only use emotes from "
-        "similar_emotes_by_usage. Prefer the actual Twitch/common usage "
-        "meaning when you know it. Use 'seems' if the evidence is weak."
+        "similar_emotes_by_usage. Treat vector neighbors and registry tags as "
+        "the primary meaning signal. Use representative archive contexts to "
+        "understand the situations where it appears, but do not define the "
+        "emote from topical nouns like movie, game, streamer names, or links "
+        "unless that theme is strongly repeated. Context terms and co-emotes "
+        "are weak aggregate hints and may contain noise. Do not use outside "
+        "Twitch knowledge as a shortcut. If the evidence is weak or mixed, say "
+        "what it seems to be used with/around instead of pretending certainty."
     )
     user = (
         "Evidence JSON:\n"
@@ -424,9 +527,10 @@ def synthesis_messages(report: dict[str, Any]) -> list[dict[str, str]]:
 def clean_synthesis(report: dict[str, Any], answer: str | None,
                     *, max_chars: int = 470) -> str:
     name = report.get("name") or report.get("query") or "emote"
-    text = re.sub(r"\s+", " ", answer or "").strip().strip(" '\"")
+    text = re.sub(r"\s+", " ", answer or "").strip().strip(" '`*\"")
     if not text:
         return ""
+    text = text.replace("`", "").replace("*", "")
     for token in emote_tokens(report):
         text = re.sub(
             rf"<\s*{re.escape(token)}\s*>",
@@ -436,18 +540,27 @@ def clean_synthesis(report: dict[str, Any], answer: str | None,
         )
     text = text.replace("<", "").replace(">", "")
     text = re.sub(rf"^{re.escape(name)}\s*[:;,.-]\s*", f"{name} ", text)
-    if not text.lower().startswith(name.lower() + " "):
+    starts = re.match(r"^([^\s]+)", text)
+    first_key = (starts.group(1).strip("`*'\".,:;!?()[]{}<>").casefold()
+                 if starts else "")
+    if first_key != name.casefold():
         text = f"{name} {text}"
     for _ in range(3):
-        new = re.sub(
-            rf"^{re.escape(name)}\s+{re.escape(name)}(?=\s|$)",
-            name,
-            text,
-            flags=re.IGNORECASE,
-        )
+        words = text.split()
+        keys = [w.strip("`*'\".,:;!?()[]{}<>").casefold() for w in words[:2]]
+        if len(keys) >= 2 and keys[0] == keys[1] == name.casefold():
+            new = " ".join([name] + words[2:])
+        else:
+            new = re.sub(
+                rf"^{re.escape(name)}\s+{re.escape(name)}(?=\s|$)",
+                name,
+                text,
+                flags=re.IGNORECASE,
+            )
         if new == text:
             break
         text = new
+    text = re.sub(r"\bSimilar emotes\s*:\s*", "Similar emotes ", text, flags=re.IGNORECASE)
     for token in emote_tokens(report):
         text = re.sub(
             rf"(?<!\S)['\"]({re.escape(token)})['\"](?=\s|$)",

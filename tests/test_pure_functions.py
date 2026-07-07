@@ -484,6 +484,11 @@ class EmoteExplainPureTests(unittest.TestCase):
         self.assertNotIn("KEKW KEKW", out)
         self.assertNotIn("ICANT.", out)
 
+    def test_clean_synthesis_does_not_prepend_before_quoted_emote(self):
+        report = {"name": "tickpooJAWLINE", "query": "tickpooJAWLINE", "neighbors": []}
+        out = emote_explain.clean_synthesis(report, "'tickpooJAWLINE' is used to mean x")
+        self.assertEqual(out, "tickpooJAWLINE is used to mean x")
+
 
 class PersonaIqPureTests(unittest.TestCase):
     def test_roster_canonicalizes_aliases_and_drops_noise(self):

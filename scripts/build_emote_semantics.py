@@ -11,10 +11,12 @@ Per emote: sample up to --contexts messages containing it (FTS), strip the
 emote, require >=3 remaining words, embed, mean-pool. Emotes with too few
 usable contexts are skipped (callers fall back to name embeddings).
 
-    python scripts/build_emote_semantics.py [--top 2000] [--contexts 30]
+    python scripts/build_emote_semantics.py [--top 2000] [--contexts 160]
+    python scripts/build_emote_semantics.py --emotes BatChest,KEKW --contexts 200 --refresh
 """
 
 import argparse
+import hashlib
 import os
 import pickle
 import sys
@@ -32,7 +34,11 @@ OUT = os.path.join("data", "unsynced", "emote_semantics.pkl")
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--top", type=int, default=2000)
-    ap.add_argument("--contexts", type=int, default=30)
+    ap.add_argument("--contexts", type=int, default=160)
+    ap.add_argument("--emotes", default="",
+                    help="comma-separated emotes to build instead of the frequency top-N")
+    ap.add_argument("--refresh", action="store_true",
+                    help="rebuild existing vectors; with --emotes only those keys are replaced")
     args = ap.parse_args()
 
     # Source: the ground-truth registry UNION the most frequent emote-shaped
@@ -46,13 +52,16 @@ def main():
     if os.path.exists(reg_path):
         reg = json.load(open(reg_path, encoding="utf-8"))
     conn = chat_archive.connect()
-    freq = Counter()
-    for (m,) in conn.execute("SELECT content FROM messages ORDER BY RANDOM() LIMIT 400000"):
-        for tok in (m or "").split():
-            t = tok.strip(".,!?;:")
-            if t in reg or pc._is_emote_token(t):
-                freq[t] += 1
-    emotes = [e for e, n in freq.most_common(args.top) if n >= 5]
+    if args.emotes.strip():
+        emotes = [e.strip() for e in args.emotes.split(",") if e.strip()]
+    else:
+        freq = Counter()
+        for (m,) in conn.execute("SELECT content FROM messages ORDER BY RANDOM() LIMIT 400000"):
+            for tok in (m or "").split():
+                t = tok.strip(".,!?;:")
+                if t in reg or pc._is_emote_token(t):
+                    freq[t] += 1
+        emotes = [e for e, n in freq.most_common(args.top) if n >= 5]
     print(f"building context vectors for {len(emotes)} emotes "
           f"(registry {len(reg)} + archive-frequent)...")
 
@@ -62,18 +71,29 @@ def main():
     if os.path.exists(OUT):
         with open(OUT, "rb") as fh:
             out = pickle.load(fh)
+    if args.refresh:
+        if args.emotes.strip():
+            lows = {e.lower() for e in emotes}
+            for key in list(out):
+                if key.lower() in lows:
+                    out.pop(key, None)
+        else:
+            out = {}
     for i, emote in enumerate(emotes, 1):
         if emote in out:
             continue
+        limit = max(args.contexts * 8, 400)
+        salt = int(hashlib.sha1(emote.lower().encode("utf-8")).hexdigest()[:8], 16)
         try:
             rows = conn.execute(
                 "SELECT m.content FROM messages_fts f JOIN messages m ON m.id = f.rowid "
-                "WHERE f.messages_fts MATCH ? LIMIT 200",
-                (f'"{emote}"',)).fetchall()
+                "WHERE f.messages_fts MATCH ? "
+                "ORDER BY ((m.id * ?) % 2147483647) LIMIT ?",
+                (f'"{emote}"', (salt % 1000003) * 2 + 1, limit)).fetchall()
         except Exception:
             rows = conn.execute(
-                "SELECT content FROM messages WHERE content LIKE ? LIMIT 200",
-                (f"%{emote}%",)).fetchall()
+                "SELECT content FROM messages WHERE content LIKE ? LIMIT ?",
+                (f"%{emote}%", limit)).fetchall()
         ctxs = []
         for (m,) in rows:
             stripped = " ".join(t for t in m.split() if t.strip(".,!?") != emote)
