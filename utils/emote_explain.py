@@ -1,9 +1,4 @@
-"""Structured emote-meaning explanations for chat commands.
-
-The core path is artifact-only: registry metadata, blended usage/tag vectors,
-nearest emotes, neighbor tag consensus, and cached built-in axis vectors. It
-does not call the local LLM/embedding server during a live chat command.
-"""
+"""Structured emote-meaning explanations for chat commands."""
 
 from __future__ import annotations
 
@@ -19,6 +14,61 @@ from utils import emote_meaning
 
 AXIS_CACHE = os.path.join("data", "unsynced", "eval", "axis_vecs_cache.json")
 CUSTOM_AXES = os.path.join("data", "unsynced", "custom_axes.pkl")
+
+COMMON_EMOTE_PRIORS = {
+    "batchest": {
+        "meaning": "over-the-top nerdy or performative excitement",
+        "context": "often used mockingly for consoomer hype, soy enthusiasm, or being way too impressed",
+    },
+    "kekw": {
+        "meaning": "laughter",
+        "context": "usually a strong laugh reaction, sometimes at someone getting owned or saying something absurd",
+    },
+    "omegalul": {
+        "meaning": "big laughter",
+        "context": "often stronger or more mocking than plain lol",
+    },
+    "lul": {
+        "meaning": "laughter",
+        "context": "a basic laugh reaction",
+    },
+    "kappa": {
+        "meaning": "sarcasm or not being fully serious",
+        "context": "used to mark a joke, troll, or ironic statement",
+    },
+    "pogchamp": {
+        "meaning": "hype or impressed excitement",
+        "context": "used for surprising, exciting, or impressive moments",
+    },
+    "pogu": {
+        "meaning": "hype or impressed excitement",
+        "context": "used for surprising, exciting, or impressive moments",
+    },
+    "sadge": {
+        "meaning": "sadness or resigned disappointment",
+        "context": "often a soft sad reaction rather than serious grief",
+    },
+    "feelsbadman": {
+        "meaning": "sadness, pity, or feeling bad",
+        "context": "used when something unfortunate happens",
+    },
+    "feelsgoodman": {
+        "meaning": "contentment or feeling good",
+        "context": "used for pleasant, satisfying, or wholesome moments",
+    },
+    "monkas": {
+        "meaning": "anxiety or nervous fear",
+        "context": "used when something tense, scary, or risky is happening",
+    },
+    "clueless": {
+        "meaning": "naive optimism or not realizing something obvious",
+        "context": "often used sarcastically when someone is unaware of what is coming",
+    },
+    "aware": {
+        "meaning": "painful realization or uncomfortable awareness",
+        "context": "used when a joke or situation becomes bleakly self-aware",
+    },
+}
 
 
 def _clip(text: str, n: int) -> str:
@@ -154,6 +204,10 @@ def analyze(token: str, *, neighbors: int = 8, axes: int = 4,
     name, info = emote_meaning.lookup(query)
     sem_key = emote_meaning.semantic_key(query)
     canonical = name or sem_key or query
+    prior = (
+        COMMON_EMOTE_PRIORS.get(query.lower())
+        or COMMON_EMOTE_PRIORS.get((canonical or "").lower())
+    )
     vec = emote_meaning.vector(query)
     near = emote_meaning.nearest_emotes(query, n=max(neighbors, 1)) if vec is not None else []
     neighbor_rows = _neighbor_rows(near)
@@ -182,6 +236,7 @@ def analyze(token: str, *, neighbors: int = 8, axes: int = 4,
         "registry_name": name,
         "semantic_key": sem_key,
         "registry": info or {},
+        "common_prior": prior or {},
         "registry_tags": _registry_tags(info),
         "has_vector": vec is not None,
         "usage_n": usage_n,
@@ -234,7 +289,13 @@ def _join_scored(rows: list[dict[str, Any]], key: str, *, n: int, scores: bool) 
         if scores:
             label += f" {float(row.get('score') or 0.0):+.2f}"
         parts.append(label)
-    return ", ".join(parts)
+    return " ".join(parts)
+
+
+def emote_tokens(report: dict[str, Any], *, n: int = 8) -> list[str]:
+    tokens = [report.get("name") or report.get("query") or ""]
+    tokens.extend(str(row.get("name") or "") for row in report.get("neighbors", [])[:n])
+    return [token for token in tokens if token]
 
 
 def _fit(prefix: str, segments: list[str], max_chars: int) -> str:
@@ -242,7 +303,7 @@ def _fit(prefix: str, segments: list[str], max_chars: int) -> str:
     for segment in segments:
         if not segment:
             continue
-        sep = " " if msg.endswith(":") else " | "
+        sep = " "
         candidate = msg + (sep if msg else "") + segment
         if len(candidate) <= max_chars:
             msg = candidate
@@ -255,36 +316,186 @@ def _segment(label: str, rows: list[dict[str, Any]], key: str, *,
     return f"{label} {joined}" if joined else ""
 
 
-def format_chat(report: dict[str, Any], *, detail: bool = False,
-                raw: bool = False, max_chars: int = 470) -> str:
+def _meaning_words(report: dict[str, Any]) -> list[str]:
+    words = [row["tag"] for row in report.get("neighbor_tags", [])[:3]]
+    if not words:
+        words = report.get("registry_tags", [])[:3]
+    return [word.replace("_", " ") for word in words if word]
+
+
+def _similar_clause(report: dict[str, Any], n: int = 4) -> str:
+    neighbors = [row["name"] for row in report.get("neighbors", [])[:n]]
+    return "Similar emotes " + " ".join(neighbors) if neighbors else ""
+
+
+def format_sentence(report: dict[str, Any], *, max_chars: int = 470) -> str:
+    """Deterministic natural-language fallback, with emote tokens left bare."""
     name = report.get("name") or report.get("query") or "emote"
-    if not report.get("registry") and not report.get("has_vector"):
+    prior = report.get("common_prior") or {}
+    if not report.get("registry") and not report.get("has_vector") and not prior:
         return _clip(
-            f"{name}: no registry entry or usage vector yet; probably rare, dead, "
-            "or not recognized as an emote.",
+            f"{name} is not in the emote registry and has no learned usage vector yet.",
             max_chars,
         )
 
-    if raw:
-        segments = [
-            f"basis {report.get('confidence')} ({_basis(report)})",
-            _segment("tags", report.get("neighbor_tags", []), "tag", n=5, scores=True),
-            _segment("neighbors", report.get("neighbors", []), "name", n=5, scores=True),
-            _segment("axes", report.get("axes", []), "name", n=4, scores=True),
-        ]
-        return _fit(f"{name} vector report", segments, max_chars)
+    words = _meaning_words(report)
+    similar = _similar_clause(report)
+    if prior.get("meaning"):
+        sentence = f"{name} is used to mean {prior['meaning']}"
+        if prior.get("context"):
+            sentence += f", {prior['context']}"
+        if similar:
+            sentence += f". {similar}"
+    elif words:
+        sentence = f"{name} is used to mean " + " / ".join(words)
+        if similar:
+            sentence += f". {similar}"
+    elif report.get("neighbors"):
+        neighbor_text = " ".join(row["name"] for row in report["neighbors"][:3])
+        sentence = (
+            f"{name} seems to be used in the same chat-reaction cluster as "
+            f"{neighbor_text}"
+        )
+    else:
+        sentence = f"{name} is known from the registry, but this bot has little learned usage for it yet."
+    return _clip(sentence, max_chars)
 
-    segments = [
-        f"guess: {_meaning_phrase(report)}",
-        f"basis: {report.get('confidence')} ({_basis(report)})",
-    ]
-    if report.get("registry_tags"):
-        segments.append("own tags: " + ", ".join(report["registry_tags"][:4]))
-    if report.get("neighbors"):
-        segments.append("used like: " + _join_scored(report["neighbors"], "name", n=5, scores=detail))
-    if detail and report.get("axes"):
-        axis_bits = []
-        for row in report["axes"][:3]:
-            axis_bits.append(f"{row['name']} {row['score']:+.2f} ({row['label']})")
-        segments.append("axes: " + ", ".join(axis_bits))
-    return _fit(f"{name}:", segments, max_chars)
+
+def raw_report(report: dict[str, Any], *, max_chars: int = 470) -> str:
+    name = report.get("name") or report.get("query") or "emote"
+    segments = []
+    if report.get("usage_n"):
+        segments.append(f"vector_sample_contexts {int(report['usage_n'])}")
+    if report.get("registry"):
+        origin = report["registry"].get("origin")
+        channel = report["registry"].get("channel")
+        reg = "registry"
+        if origin:
+            reg += f" {origin}"
+        if channel:
+            reg += f" channel {channel}"
+        segments.append(reg)
+    if (report.get("common_prior") or {}).get("meaning"):
+        segments.append(f"common_meaning {report['common_prior']['meaning']}")
+    segments.extend([
+        _segment("tags", report.get("neighbor_tags", []), "tag", n=5, scores=True),
+        _segment("neighbors", report.get("neighbors", []), "name", n=5, scores=True),
+        _segment("axes", report.get("axes", []), "name", n=4, scores=True),
+    ])
+    return _fit(f"{name} vector report", segments, max_chars)
+
+
+def synthesis_messages(report: dict[str, Any]) -> list[dict[str, str]]:
+    """Prompt for local LLM synthesis from the structured evidence."""
+    name = report.get("name") or report.get("query") or "emote"
+    neighbor_names = [row["name"] for row in report.get("neighbors", [])[:6]]
+    neighbor_tags = [row["tag"] for row in report.get("neighbor_tags", [])[:6]]
+    registry = report.get("registry") or {}
+    evidence = {
+        "emote": name,
+        "common_twitch_prior": report.get("common_prior") or {},
+        "registry_origin": registry.get("origin"),
+        "registry_channel": registry.get("channel"),
+        "registry_tags": report.get("registry_tags", [])[:6],
+        "neighbor_tag_consensus": neighbor_tags,
+        "similar_emotes_by_usage": neighbor_names,
+        "usage_vector_sampled_context_lines": report.get("usage_n") or 0,
+    }
+    system = (
+        "You explain Twitch emote meaning from evidence. Write one compact chat "
+        "message under 330 characters. Format: '<EMOTE> is used to mean ...' "
+        "then optionally 'Similar emotes <space-separated emotes>'. Keep emote "
+        "tokens case-sensitive and standalone: no colon, comma, quote, period, "
+        "or parenthesis attached to an emote token. Do not mention vectors, "
+        "basis, confidence, n, or sampled contexts. Do not repeat the same "
+        "similar emotes twice. Similar emotes are evidence, not the answer. "
+        "If you include similar emotes, only use emotes from "
+        "similar_emotes_by_usage. Prefer the actual Twitch/common usage "
+        "meaning when you know it. Use 'seems' if the evidence is weak."
+    )
+    user = (
+        "Evidence JSON:\n"
+        f"{json.dumps(evidence, ensure_ascii=False)}\n\n"
+        f"Explain what {name} is used to mean."
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def clean_synthesis(report: dict[str, Any], answer: str | None,
+                    *, max_chars: int = 470) -> str:
+    name = report.get("name") or report.get("query") or "emote"
+    text = re.sub(r"\s+", " ", answer or "").strip().strip(" '\"")
+    if not text:
+        return ""
+    for token in emote_tokens(report):
+        text = re.sub(
+            rf"<\s*{re.escape(token)}\s*>",
+            token,
+            text,
+            flags=re.IGNORECASE,
+        )
+    text = text.replace("<", "").replace(">", "")
+    text = re.sub(rf"^{re.escape(name)}\s*[:;,.-]\s*", f"{name} ", text)
+    if not text.lower().startswith(name.lower() + " "):
+        text = f"{name} {text}"
+    for _ in range(3):
+        new = re.sub(
+            rf"^{re.escape(name)}\s+{re.escape(name)}(?=\s|$)",
+            name,
+            text,
+            flags=re.IGNORECASE,
+        )
+        if new == text:
+            break
+        text = new
+    for token in emote_tokens(report):
+        text = re.sub(
+            rf"(?<!\S)['\"]({re.escape(token)})['\"](?=\s|$)",
+            token,
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            rf"(?<!\S)({re.escape(token)})([:;,.'\"!?]+)(?=\s|$)",
+            r"\1",
+            text,
+            flags=re.IGNORECASE,
+        )
+        text = re.sub(
+            rf"([('])({re.escape(token)})(?=\s|$)",
+            r"\2",
+            text,
+            flags=re.IGNORECASE,
+        )
+    text = text.strip(" '\"")
+    return _clip(text, max_chars)
+
+
+async def chat_response(report: dict[str, Any], *, detail: bool = False,
+                        raw: bool = False, max_chars: int = 470) -> str:
+    if raw:
+        return raw_report(report, max_chars=max_chars)
+    try:
+        from services import llm
+        from utils.output_filter import is_clean
+
+        if await llm.available():
+            answer = await llm.chat(
+                synthesis_messages(report),
+                max_tokens=100,
+                temperature=0.25,
+            )
+            text = clean_synthesis(report, answer, max_chars=max_chars)
+            if text and is_clean(text):
+                return text
+    except Exception:
+        pass
+    return format_chat(report, detail=detail, raw=False, max_chars=max_chars)
+
+
+def format_chat(report: dict[str, Any], *, detail: bool = False,
+                raw: bool = False, max_chars: int = 470) -> str:
+    if raw:
+        return raw_report(report, max_chars=max_chars)
+    sentence = format_sentence(report, max_chars=max_chars)
+    return sentence

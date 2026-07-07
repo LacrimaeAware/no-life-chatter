@@ -78,10 +78,10 @@ super-admin-only.
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. Add `@user` (or `user=`) to show that user's rank, σ, and the people just above/below instead of the leaderboard. |
 | `~bottom <trait> [n] [burst]` | anyone | Reverse leaderboard — who leans LEAST toward a trait (most toward its opposite). |
 | `~distinct [top\|bottom] [n]` | anyone | Chatters farthest from or closest to the room average across built-in trait axes. |
-| `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. `~why emote <emote> [raw]` explains learned emote meaning from vector evidence. |
+| `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. `~why emote <emote> [raw]` explains learned emote meaning; `raw` shows vector receipts. |
 | `~axis <trait> [n]` | anyone | Inspect a trait/custom axis by showing nearest neighboring axes. |
-| `~emote <emote> [raw]` | anyone | Explain what the bot thinks an emote means from registry facts, usage-context neighbors, and cached vector geometry. |
-| `~explain emote <emote> [raw]` | anyone | Fuller emote-meaning report; `raw` includes numeric neighbor/tag/axis scores. |
+| `~emote <emote> [raw]` | anyone | Explain what the bot thinks an emote means in one readable sentence; `raw` shows registry, sampled usage-vector contexts, neighbors, and cached axis scores. |
+| `~explain emote <emote> [raw]` | anyone | Same emote meaning explainer, routed through the general `~explain` command. |
 | `~irony <message> [context=...]` | anyone | Experimental irony/sincerity read using sarcasm and content-extremity axes. |
 | `~iq <user>` | anyone | Roster-relative text-IQ style score: peak expressed cognition in chat, not actual IQ. |
 | `~iq top [n]` / `~iq bottom [n]` | anyone | Highest or lowest text-IQ style scores in the current cache. |

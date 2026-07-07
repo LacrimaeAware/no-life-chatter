@@ -16,4 +16,4 @@ async def handle_emote(bot, message, params):
     token = params[0].lstrip("@")
     raw = any(p.lower() in {"raw", "scores", "vector"} for p in params[1:])
     report = await asyncio.to_thread(emote_explain.analyze, token)
-    await message.channel.send(emote_explain.format_chat(report, detail=False, raw=raw))
+    await message.channel.send(await emote_explain.chat_response(report, detail=False, raw=raw))

@@ -417,7 +417,7 @@ class ArchiveQaPureTests(unittest.TestCase):
 
 
 class EmoteExplainPureTests(unittest.TestCase):
-    def test_format_chat_keeps_vector_report_compact(self):
+    def test_format_chat_keeps_emote_token_bare(self):
         report = {
             "name": "BatChest",
             "registry": {},
@@ -439,12 +439,14 @@ class EmoteExplainPureTests(unittest.TestCase):
             "axis_note": None,
         }
         out = emote_explain.format_chat(report, detail=True, max_chars=220)
-        self.assertIn("BatChest", out)
-        self.assertIn("guess", out)
+        self.assertTrue(out.startswith("BatChest "))
+        self.assertNotIn("BatChest:", out)
+        self.assertNotIn("basis", out)
+        self.assertNotIn("confidence", out)
         self.assertIn("PogU", out)
         self.assertLessEqual(len(out), 220)
 
-    def test_format_chat_raw_includes_scores(self):
+    def test_format_chat_raw_labels_sample_contexts(self):
         report = {
             "name": "BatChest",
             "registry": {},
@@ -458,8 +460,29 @@ class EmoteExplainPureTests(unittest.TestCase):
         }
         out = emote_explain.format_chat(report, raw=True, max_chars=180)
         self.assertIn("vector report", out)
+        self.assertIn("vector_sample_contexts 30", out)
         self.assertIn("+0.72", out)
+        self.assertNotIn("n=", out)
         self.assertLessEqual(len(out), 180)
+
+    def test_clean_synthesis_keeps_emote_tokens_standalone(self):
+        report = {
+            "name": "KEKW",
+            "query": "KEKW",
+            "neighbors": [
+                {"name": "docFaint"},
+                {"name": "PEPW"},
+                {"name": "ICANT"},
+            ],
+        }
+        out = emote_explain.clean_synthesis(
+            report,
+            "KEKW <KEKW> is used to mean laughter. Similar emotes <docFaint PEPW ICANT>.",
+        )
+        self.assertTrue(out.startswith("KEKW is"))
+        self.assertNotIn("<", out)
+        self.assertNotIn("KEKW KEKW", out)
+        self.assertNotIn("ICANT.", out)
 
 
 class PersonaIqPureTests(unittest.TestCase):
