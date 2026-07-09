@@ -1,5 +1,6 @@
 import asyncio
 
+from utils.chat_archive import display_name
 from utils.persona_axes import most_distinct
 
 description = (
@@ -25,7 +26,7 @@ async def handle_distinct(bot, message, params):
         await message.channel.send("No semantic vectors built yet.")
         return
     parts = [
-        f"{i}. {a} ({total:.1f}σ: {'/'.join(labels[:2])})"
+        f"{i}. {display_name(a)} ({total:.1f}σ: {'/'.join(labels[:2])})"
         for i, (a, total, labels) in enumerate(rows, 1)
     ]
     label = "least" if reverse else "most"

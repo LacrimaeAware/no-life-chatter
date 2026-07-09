@@ -20,14 +20,15 @@ async def handle_like(bot, message, params):
     sims = most_like(user, n=4, channel=channel, year=year)
     if not sims:
         await message.channel.send(
-            f"Not enough archived messages for {user} in {_scope_label(channel, year)}.")
+            f"Not enough archived messages for {chat_archive.display_name(user)} "
+            f"in {_scope_label(channel, year)}.")
         return
     top_author, top_score, shared = sims[0]
-    msg = (f"👯 {user} ({_scope_label(channel, year)}) sounds most like "
-           f"{top_author} ({top_score:.2f})")
+    msg = (f"👯 {chat_archive.display_name(user)} ({_scope_label(channel, year)}) sounds most like "
+           f"{chat_archive.display_name(top_author)} ({top_score:.2f})")
     if shared:
         msg += f" — both overuse: {', '.join(shared[:4])}"
-    rest = " · ".join(f"{a} ({s:.2f})" for a, s, _ in sims[1:])
+    rest = " · ".join(f"{chat_archive.display_name(a)} ({s:.2f})" for a, s, _ in sims[1:])
     if rest:
         msg += f" · then {rest}"
     await message.channel.send(msg)

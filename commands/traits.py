@@ -40,8 +40,9 @@ async def handle_traits(bot, message, params):
     user = chat_archive.normalize_author(params[0].lstrip("@"))
     # first call may embed axis poles/emote names — keep it off the event loop
     traits = await asyncio.to_thread(_readout, user)
+    display = chat_archive.display_name(user)
     if not traits:
-        await message.channel.send(f"No semantic vector for {user} (not in the roster yet).")
+        await message.channel.send(f"No semantic vector for {display} (not in the roster yet).")
         return
     # all five axes, strongest deviation first; the label names the pole they
     # lean toward, σ = standard deviations from the roster average. ⚡ flags an
@@ -53,4 +54,4 @@ async def handle_traits(bot, message, params):
         tag = "⚡" if (contra is not None and contra > CONTRA_FLAG_Z
                        and abs(z) >= MIN_LEAN_FOR_FLAG) else ""
         parts.append(f"{label} {abs(z):.1f}σ{tag}")
-    await message.channel.send(f"🧪 {user}: " + " · ".join(parts))
+    await message.channel.send(f"🧪 {display}: " + " · ".join(parts))

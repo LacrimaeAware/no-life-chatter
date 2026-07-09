@@ -12,6 +12,7 @@ import random
 import re
 import sqlite3
 import threading
+import time
 import unicodedata
 from collections import Counter
 from difflib import SequenceMatcher
@@ -119,6 +120,66 @@ def author_keys(author: str) -> list[str]:
 def _in_clause(values: list[str]) -> tuple[str, list[str]]:
     placeholders = ",".join("?" for _ in values)
     return placeholders, values
+
+
+# ----------------------------- display names -----------------------------
+
+_display_cache: dict = {}
+_DISPLAY_TTL = 600.0
+
+
+def _pick_display(canonical: str, keys, checked: dict, sent: dict) -> str:
+    """Argmax-by-recency over an alias group.
+
+    `checked` = author_ids.checked_at per raw name (live truth), `sent` =
+    MAX(messages.sent_at) per stored name. The canonical key's message recency
+    is only trusted when author_ids has no row for it: live capture stores
+    rows under the canonical name (_record_one), so its MAX(sent_at) is
+    always "now" regardless of which account actually typed.
+    """
+    best_key, best_ts = canonical, ""
+    for key in keys:
+        ts = checked.get(key) or ""
+        if key != canonical or key not in checked:
+            ts = max(ts, sent.get(key) or "")
+        if ts > best_ts:
+            best_key, best_ts = key, ts
+    return best_key
+
+
+def display_name(author: str) -> str:
+    """The name this person most recently chatted under — for chat OUTPUT.
+
+    Storage, artifacts, and lookups key a person by their canonical alias
+    ([archive.user_aliases]), which is often a retired account name; output
+    should call people what they go by now. Timestamps mix UTC (author_ids)
+    and local (messages), which is fine at the day granularity this decides.
+    Never raises; falls back to the canonical name.
+    """
+    canonical = normalize_author(author)
+    keys = author_keys(canonical)
+    if len(keys) <= 1:
+        return canonical
+    now = time.time()
+    hit = _display_cache.get(canonical)
+    if hit and hit[1] > now:
+        return hit[0]
+    try:
+        conn = connect()
+        placeholders, params = _in_clause(keys)
+        checked = dict(conn.execute(
+            f"SELECT author, checked_at FROM author_ids "
+            f"WHERE author IN ({placeholders})", params).fetchall())
+        sent = dict(conn.execute(
+            f"SELECT author, MAX(sent_at) FROM messages "
+            f"WHERE author IN ({placeholders}) GROUP BY author",
+            params).fetchall())
+    except Exception as e:
+        logging.debug(f"display_name({author!r}) failed: {e}")
+        return canonical
+    best = _pick_display(canonical, keys, checked, sent)
+    _display_cache[canonical] = (best, now + _DISPLAY_TTL)
+    return best
 
 
 _MATCH_TRANSLATION = str.maketrans({
@@ -354,11 +415,13 @@ _seen_ids = set()
 
 def record_author_id(author: str, twitch_id) -> None:
     """Names change, ids don't — keep an author->twitch_id table current from
-    live chat (message.author.id), once per author per process. Future
-    identity merging is id-dominant for anyone the bot has ever seen."""
+    live chat (message.author.id), once per author per day (checked_at doubles
+    as a last-seen-live stamp for display_name, so it must stay fresh across
+    long-lived workers). Future identity merging is id-dominant for anyone
+    the bot has ever seen."""
     if not author or not twitch_id:
         return
-    key = (author.lower(), str(twitch_id))
+    key = (author.lower(), str(twitch_id), time.strftime("%Y-%m-%d"))
     if key in _seen_ids:
         return
     try:

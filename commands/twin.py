@@ -26,7 +26,8 @@ async def handle_twin(bot, message, params):
     lex = {a: s for a, s, _ in most_like(user, n=200)}
     sem = persona_embeddings.similarities(user)
     if not lex and not sem:
-        await message.channel.send(f"Not enough archived data for {user}.")
+        await message.channel.send(
+            f"Not enough archived data for {chat_archive.display_name(user)}.")
         return
     # z-score each channel so neither scale dominates, blend over the overlap
     lz, sz = _zscores(lex), _zscores(sem)
@@ -35,8 +36,9 @@ async def handle_twin(bot, message, params):
     ranked = sorted(blend.items(), key=lambda kv: -kv[1])[:3]
     top, _ = ranked[0]
     detail = f"voice {lex.get(top, 0):.2f} · meaning {sem.get(top, 0):.2f}"
-    rest = " · ".join(a for a, _ in ranked[1:])
-    msg = f"🪞 {user}'s twin: {top} ({detail})"
+    rest = " · ".join(chat_archive.display_name(a) for a, _ in ranked[1:])
+    msg = (f"🪞 {chat_archive.display_name(user)}'s twin: "
+           f"{chat_archive.display_name(top)} ({detail})")
     if rest:
         msg += f" · then {rest}"
     await message.channel.send(msg)

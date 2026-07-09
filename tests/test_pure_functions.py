@@ -75,6 +75,32 @@ class ArchiveNormalizationTests(unittest.TestCase):
         aliases = {"a": "b", "b": "a"}
         self.assertIn(chat_archive._resolve_alias("a", aliases), {"a", "b"})
 
+    def test_pick_display_prefers_most_recently_seen_raw_name(self):
+        keys = ["altone", "mainuser", "oldalt"]
+        # The canonical's message recency is poisoned (live rows are stored
+        # under it), so only its checked_at counts; the alt seen live later
+        # wins even though the canonical has newer message rows.
+        checked = {"mainuser": "2026-06-12 17:09:21", "altone": "2026-07-09 19:30:15"}
+        sent = {"mainuser": "2026-07-09 19:45:00", "oldalt": "2025-05-12 02:04:10"}
+        self.assertEqual(
+            chat_archive._pick_display("mainuser", keys, checked, sent), "altone")
+
+    def test_pick_display_keeps_canonical_when_it_is_the_active_account(self):
+        keys = ["altone", "mainuser", "oldalt"]
+        checked = {"mainuser": "2026-07-09 19:42:35", "altone": "2026-07-01 09:09:45"}
+        sent = {"oldalt": "2020-01-24 22:53:40"}
+        self.assertEqual(
+            chat_archive._pick_display("mainuser", keys, checked, sent), "mainuser")
+
+    def test_pick_display_falls_back_to_messages_when_never_seen_live(self):
+        keys = ["altone", "mainuser", "oldalt"]
+        sent = {"oldalt": "2024-01-01 00:00:00", "mainuser": "2023-01-01 00:00:00"}
+        self.assertEqual(
+            chat_archive._pick_display("mainuser", keys, {}, sent), "oldalt")
+
+    def test_display_name_short_circuits_for_unaliased_user(self):
+        self.assertEqual(chat_archive.display_name("solochatter"), "solochatter")
+
     def test_query_terms_drop_basic_scaffolding_words(self):
         terms = chat_archive.query_terms("thats such an answer and the wrong one about wow")
         self.assertNotIn("thats", terms)
@@ -663,20 +689,20 @@ class EmoteExplainPureTests(unittest.TestCase):
             "name": "CLARKSON",
             "query": "CLARKSON",
             "neighbors": [
-                {"name": "QUIDES5"},
-                {"name": "QUIDES5"},
+                {"name": "QUIRKY5"},
+                {"name": "QUIRKY5"},
                 {"name": "SometimesMyGeniusIsAlmostFrightening"},
             ],
         }
         cleaned = emote_explain.clean_synthesis(
             report,
-            "CLARKSON is used around Jeremy Clarkson bits. Similar emotes QUIDES5, QUIDES5, SometimesMyGeniusIsAlmostFrightening.",
+            "CLARKSON is used around Jeremy Clarkson bits. Similar emotes QUIRKY5, QUIRKY5, SometimesMyGeniusIsAlmostFrightening.",
         )
         self.assertEqual(cleaned, "CLARKSON is used around Jeremy Clarkson bits")
         out = emote_explain._append_similar_clause(report, cleaned, max_chars=200)
-        self.assertIn("Similar emotes QUIDES5 SometimesMyGeniusIsAlmostFrightening", out)
-        self.assertNotIn("QUIDES5,", out)
-        self.assertNotIn("QUIDES5 QUIDES5", out)
+        self.assertIn("Similar emotes QUIRKY5 SometimesMyGeniusIsAlmostFrightening", out)
+        self.assertNotIn("QUIRKY5,", out)
+        self.assertNotIn("QUIRKY5 QUIRKY5", out)
 
     def test_archive_only_emote_uses_cautious_fallback(self):
         report = {
@@ -720,7 +746,7 @@ class ResidentPersonaPureTests(unittest.TestCase):
 
     def test_normalize_state_clamps_probability_fields(self):
         state = resident_persona._normalize_state(
-            "ThickPoo",
+            "TickPoo",
             {
                 "persona": "NormanBiz",
                 "chance": 2,
@@ -733,7 +759,7 @@ class ResidentPersonaPureTests(unittest.TestCase):
                 "reply_to_trigger": "off",
             },
         )
-        self.assertEqual(state["channel"], "thickpoo")
+        self.assertEqual(state["channel"], "tickpoo")
         self.assertEqual(state["persona"], "normanbiz")
         self.assertEqual(state["chance"], 1.0)
         self.assertEqual(state["topic_chance"], 1.0)

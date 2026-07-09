@@ -1,6 +1,6 @@
 import asyncio
 
-from utils.chat_archive import said_most, normalize_channel
+from utils.chat_archive import said_most, normalize_channel, display_name
 
 description = (
     "~saidmost <phrase> [chat=<channel>] [n] — who has said a phrase the most "
@@ -39,7 +39,8 @@ async def handle_saidmost(bot, message, params):
         await message.channel.send(f"Nobody on record saying \"{_clip(phrase)}\"{scope}.")
         return
     scope = f" in #{normalize_channel(channel)}" if channel else ""
-    parts = [f"{i}. {author} ({count})" for i, (author, count) in enumerate(rows, 1)]
+    parts = [f"{i}. {display_name(author)} ({count})"
+             for i, (author, count) in enumerate(rows, 1)]
     await message.channel.send(
         f"Most \"{_clip(phrase, 40)}\"{scope}: " + " · ".join(parts)
     )

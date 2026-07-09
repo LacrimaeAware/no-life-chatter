@@ -1,4 +1,4 @@
-from utils.chat_archive import channel_members
+from utils.chat_archive import channel_members, display_name
 from utils.persona_classifier import classify
 
 description = (
@@ -34,5 +34,5 @@ async def handle_whosaid(bot, message, params):
             "or that line had nothing to go on."
         )
         return
-    parts = [f"{author} ({prob:.0%})" for author, prob in ranked]
+    parts = [f"{display_name(author)} ({prob:.0%})" for author, prob in ranked]
     await message.channel.send(f"Sounds most like ({scope}) " + " | ".join(parts))

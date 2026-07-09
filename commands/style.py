@@ -28,8 +28,9 @@ async def handle_style(bot, message, params):
         return
     user = chat_archive.normalize_author(params[0].lstrip("@"))
     rows = await asyncio.to_thread(_readout, user)
+    display = chat_archive.display_name(user)
     if not rows:
-        await message.channel.send(f"No behavioral profile for {user} (not in the roster, or nothing stands out).")
+        await message.channel.send(f"No behavioral profile for {display} (not in the roster, or nothing stands out).")
         return
     parts = [f"{label} {abs(z):.1f}σ" for label, z in rows]
-    await message.channel.send(f"⌨️ {user} types like: " + " · ".join(parts))
+    await message.channel.send(f"⌨️ {display} types like: " + " · ".join(parts))

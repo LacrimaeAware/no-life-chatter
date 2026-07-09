@@ -1,4 +1,4 @@
-from utils.chat_archive import channel_regulars
+from utils.chat_archive import channel_regulars, display_name
 
 description = (
     "Top regulars in a channel, ignoring obvious bots by default.\n"
@@ -32,7 +32,7 @@ async def handle_regulars(bot, message, params):
         await message.channel.send(f"No regulars found for #{channel} above {_fmt_n(min_messages)} messages.")
         return
 
-    parts = [f"{author} {_fmt_n(count)}" for author, count in rows]
+    parts = [f"{display_name(author)} {_fmt_n(count)}" for author, count in rows]
     await message.channel.send(
         f"#{channel} regulars >= {_fmt_n(min_messages)} msgs: " + " | ".join(parts)
     )

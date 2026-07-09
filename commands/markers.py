@@ -39,15 +39,16 @@ async def handle_markers(bot, message, params):
         return
     user = chat_archive.normalize_author(params[0].lstrip("@"))
     prof = profile_for(user, channel=channel, year=year)
+    display = chat_archive.display_name(user)
     if not prof:
         await message.channel.send(
-            f"Not enough archived messages for {user} in {_scope_label(channel, year)}.")
+            f"Not enough archived messages for {display} in {_scope_label(channel, year)}.")
         return
     # profiles are insertion-ordered most-distinctive-first
     words = list(prof.get("words", {}))[:8]
     emotes = list(prof.get("emotes", {}))[:5]
     pairs = list(prof.get("phrases", {}))[:4]
-    msg = f"🔖 {user}'s voice ({_scope_label(channel, year)}) — words: {', '.join(words)}"
+    msg = f"🔖 {display}'s voice ({_scope_label(channel, year)}) — words: {', '.join(words)}"
     if emotes:
         msg += f" · emotes: {' '.join(emotes)}"
     if pairs:

@@ -45,18 +45,18 @@ async def handle_top(bot, message, params):
         info = await asyncio.to_thread(rank, trait, user)
         if not info:
             await message.channel.send(
-                f"No '{trait}' read for {chat_archive.normalize_author(user)} "
+                f"No '{trait}' read for {chat_archive.display_name(user)} "
                 "(not in the roster, or the axis couldn't be built)."
             )
             return
         bits = []
         if info["above"]:
-            bits.append(f"↑{info['above'][0]} {info['above'][1]:+.1f}σ")
+            bits.append(f"↑{chat_archive.display_name(info['above'][0])} {info['above'][1]:+.1f}σ")
         if info["below"]:
-            bits.append(f"↓{info['below'][0]} {info['below'][1]:+.1f}σ")
+            bits.append(f"↓{chat_archive.display_name(info['below'][0])} {info['below'][1]:+.1f}σ")
         ctx = (" · " + " · ".join(bits)) if bits else ""
         await message.channel.send(
-            f"📊 {info['user']}: #{info['rank']}/{info['total']} most {trait} "
+            f"📊 {chat_archive.display_name(info['user'])}: #{info['rank']}/{info['total']} most {trait} "
             f"({info['z']:+.1f}σ){ctx}"[:480]
         )
         return
@@ -84,7 +84,8 @@ async def handle_top(bot, message, params):
         if len(shown) >= n:
             break
 
-    parts = [f"{i}. {author} ({z:+.1f}σ)" for i, (author, z) in enumerate(shown, 1)]
+    parts = [f"{i}. {chat_archive.display_name(author)} ({z:+.1f}σ)"
+             for i, (author, z) in enumerate(shown, 1)]
     mode = " (peak moments)" if burst else ""
     msg = f"most {trait}{mode}: " + " | ".join(parts)
     if note:

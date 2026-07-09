@@ -40,11 +40,12 @@ async def handle_funny(bot, message, params):
             await message.channel.send("Not enough data to rank comedy yet.")
             return
         label = "least funny" if sub == "bottom" else "funniest"
-        parts = [f"{i}. {a} ({d['index']})" for i, (a, d) in enumerate(rows, 1)]
+        parts = [f"{i}. {chat_archive.display_name(a)} ({d['index']})"
+                 for i, (a, d) in enumerate(rows, 1)]
         await message.channel.send(f"😂 {label} [{'+'.join(chans)}]: " + " · ".join(parts))
         return
 
-    user = chat_archive.normalize_author(sub)
+    user = chat_archive.display_name(sub)
     d = await asyncio.to_thread(ci.user_score, sub, chans)
     if not d:
         await message.channel.send(

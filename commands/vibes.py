@@ -22,7 +22,8 @@ async def handle_vibes(bot, message, params):
         return
     sims = neighbors(user, n=4)
     if not sims:
-        await message.channel.send(f"No semantic vector for {user} (not in the roster yet).")
+        await message.channel.send(
+            f"No semantic vector for {chat_archive.display_name(user)} (not in the roster yet).")
         return
     # Alt-tier flag: midpoint between the measured same-person ceiling
     # (split-half self-similarity) and the 95th-pct stranger score, stored in
@@ -31,6 +32,7 @@ async def handle_vibes(bot, message, params):
     # similarity as alts.)
     d = load()
     flag_at = (d.get("self_sim_ceiling", 0.82) + d.get("cross_p95", 0.52)) / 2
-    parts = [f"{a} ({s:.2f}{' ≈same-person!' if s >= flag_at else ''})"
+    parts = [f"{chat_archive.display_name(a)} ({s:.2f}{' ≈same-person!' if s >= flag_at else ''})"
              for a, s in sims]
-    await message.channel.send(f"🧬 {user}'s closest vibes: " + " · ".join(parts))
+    await message.channel.send(
+        f"🧬 {chat_archive.display_name(user)}'s closest vibes: " + " · ".join(parts))

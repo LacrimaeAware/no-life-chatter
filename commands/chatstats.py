@@ -1,4 +1,4 @@
-from utils.chat_archive import stats
+from utils.chat_archive import stats, display_name
 from commands.markers import _parse_scope
 
 description = (
@@ -16,12 +16,13 @@ async def handle_chatstats(bot, message, params):
         return
     user = params[0].lstrip("@")
     s = stats(user, channel=channel)
+    display = display_name(user)
     where = f" in #{channel}" if channel else ""
     if not s:
-        await message.channel.send(f"Nothing archived for {user}{where} yet.")
+        await message.channel.send(f"Nothing archived for {display}{where} yet.")
         return
     hour = f"{s['busiest_hour']:02d}:00" if s["busiest_hour"] is not None else "?"
     await message.channel.send(
-        f"{user}{where}: {s['messages']:,} messages archived, first seen {s['first'][:10]}, "
+        f"{display}{where}: {s['messages']:,} messages archived, first seen {s['first'][:10]}, "
         f"last {s['last'][:10]}, avg {s['avg_chars']} chars, busiest hour {hour}"
     )

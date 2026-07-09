@@ -29,12 +29,12 @@ async def handle_iq(bot, message, params):
     if sub in ("top", "bottom"):
         rows = await asyncio.to_thread(leaderboard, n, sub == "bottom")
         parts = [
-            f"{i}. {a} ({d['iq']}, {d.get('confidence', '?')})"
+            f"{i}. {chat_archive.display_name(a)} ({d['iq']}, {d.get('confidence', '?')})"
             for i, (a, d) in enumerate(rows, 1)
         ]
         await message.channel.send(f"{sub} text-IQ: " + " | ".join(parts))
         return
-    display_user = chat_archive.normalize_author(sub)
+    display_user = chat_archive.display_name(sub)
     d = await asyncio.to_thread(score, sub)
     if not d:
         await message.channel.send(
