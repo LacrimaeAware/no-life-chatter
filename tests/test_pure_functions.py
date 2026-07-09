@@ -34,7 +34,7 @@ def install_fake_config():
 
 install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
-from utils import archive_qa, chat_archive, emote_explain, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona  # noqa: E402
+from utils import archive_qa, chat_archive, emote_explain, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona, user_profiles  # noqa: E402
 from utils import persona_axes  # noqa: E402
 from services import model_queue  # noqa: E402
 from commands import markers  # noqa: E402
@@ -732,6 +732,91 @@ class PersonaIqPureTests(unittest.TestCase):
     def test_roster_canonicalizes_aliases_and_drops_noise(self):
         roster = persona_iq._canonical_roster(["oldalt", "mainuser", "helperbot"])
         self.assertEqual(roster, ["mainuser"])
+
+    def test_rarity_excludes_emote_names_and_usernames(self):
+        freqs = Counter({"epistemology": 5, "omegalul": 500, "mainuser": 40})
+        rarity = persona_iq._rarity_fn(freqs, 20000,
+                                       exclusions={"omegalul", "mainuser"})
+        self.assertIsNone(rarity("omegalul"))
+        self.assertIsNone(rarity("OMEGALUL"))
+        self.assertIsNone(rarity("mainuser"))
+        self.assertIsNotNone(rarity("epistemology"))
+
+
+class UserProfilesPureTests(unittest.TestCase):
+    def _judged(self, value, sent_at, sincerity="sincere", asserts=True):
+        # distinct phrasing per row: verbatim repeats are deduped by design
+        # (a running gag repeated word-for-word must not corroborate itself)
+        return {"asserts": asserts, "value": value, "sincerity": sincerity,
+                "id": 1, "sent_at": sent_at, "channel": "mainroom",
+                "content": f"i said {value} at {sent_at}"}
+
+    def test_parse_judgment_tolerates_prose_around_json(self):
+        out = user_profiles._parse_judgment(
+            'Sure! Here is the answer:\n{"asserts": true, "value": "Poland", '
+            '"sincerity": "sincere"} hope that helps')
+        self.assertEqual(out, {"asserts": True, "value": "poland",
+                               "sincerity": "sincere"})
+        self.assertIsNone(user_profiles._parse_judgment("no json here"))
+        self.assertIsNone(user_profiles._parse_judgment(None))
+
+    def test_reconcile_confirms_only_with_multi_day_support(self):
+        one_day = [self._judged("poland", "2026-01-01 10:00:00"),
+                   self._judged("poland", "2026-01-01 11:00:00")]
+        self.assertEqual(user_profiles._reconcile("location", one_day)["status"],
+                         "candidate")
+        two_days = one_day + [self._judged("poland", "2026-02-01 10:00:00")]
+        self.assertEqual(user_profiles._reconcile("location", two_days)["status"],
+                         "confirmed")
+
+    def test_placeholder_and_anecdote_values_rejected(self):
+        judged = [self._judged("my country", "2026-01-01 10:00:00"),
+                  self._judged("my country", "2026-01-02 10:00:00")]
+        self.assertIsNone(user_profiles._reconcile("location", judged))
+        self.assertFalse(user_profiles._valid_value("i lift way more than 5 lbs"))
+        self.assertFalse(user_profiles._valid_value("still working on july 2nd at work"))
+        self.assertTrue(user_profiles._valid_value("germany"))
+        self.assertTrue(user_profiles._valid_value("software developer"))
+
+    def test_verbatim_repeats_never_corroborate(self):
+        gag = {"asserts": True, "value": "husband", "sincerity": "sincere",
+               "id": 1, "channel": "mainroom",
+               "content": "i was devastated when i found out my wife was cheating on me"}
+        judged = [dict(gag, sent_at="2022-09-17 10:00:00"),
+                  dict(gag, sent_at="2022-09-27 10:00:00")]
+        out = user_profiles._reconcile("relationship", judged)
+        self.assertEqual(out["status"], "candidate")
+
+    def test_reconcile_marks_conflicting_confirmed_values_disputed(self):
+        judged = [self._judged("poland", "2026-01-01 10:00:00"),
+                  self._judged("poland", "2026-01-02 10:00:00"),
+                  self._judged("brazil", "2026-03-01 10:00:00"),
+                  self._judged("brazil", "2026-03-02 10:00:00")]
+        out = user_profiles._reconcile("location", judged)
+        self.assertEqual(out["status"], "disputed")
+        self.assertTrue(out["alternatives"])
+
+    def test_reconcile_drops_jokes_and_nonassertions(self):
+        judged = [self._judged("a panda", "2026-01-01 10:00:00", sincerity="joke"),
+                  self._judged("a panda", "2026-01-02 10:00:00", asserts=False)]
+        self.assertIsNone(user_profiles._reconcile("pets", judged))
+
+    def test_adjacent_ages_do_not_dispute(self):
+        judged = [self._judged("25", "2025-01-01 10:00:00"),
+                  self._judged("25", "2025-06-01 10:00:00"),
+                  self._judged("26", "2026-01-01 10:00:00"),
+                  self._judged("26", "2026-01-02 10:00:00")]
+        out = user_profiles._reconcile("age", judged)
+        self.assertEqual(out["status"], "confirmed")
+        self.assertNotIn("alternatives", out)
+
+    def test_multi_slot_keeps_independent_values(self):
+        judged = [self._judged("dog", "2026-01-01 10:00:00"),
+                  self._judged("dog", "2026-01-05 10:00:00"),
+                  self._judged("cat", "2026-02-01 10:00:00")]
+        out = user_profiles._reconcile("pets", judged)
+        statuses = {v["value"]: v["status"] for v in out["values"]}
+        self.assertEqual(statuses, {"dog": "confirmed", "cat": "candidate"})
 
 
 class ResidentPersonaPureTests(unittest.TestCase):

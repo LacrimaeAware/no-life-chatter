@@ -316,8 +316,36 @@ def _word_freqs(sample: int = DEFAULT_WORD_FREQ_SAMPLE):
     return counts, total
 
 
-def _rarity_fn(freqs: Counter, total: int):
+def _rarity_exclusions() -> set[str]:
+    """Tokens that must never count as 'rare vocabulary': emote names and
+    chatter usernames. Both are frequent enough to clear the min-count floor
+    yet absent from normal English, so they read as maximally rare and inflate
+    vocab_peak for emote-spammers and people who @ their friends a lot
+    (audit_iq_v2 'Global Improvement Targets' #2)."""
+    out: set[str] = set()
+    try:
+        from utils import emote_meaning
+        out.update(name.casefold() for name in emote_meaning.registry())
+    except Exception:
+        pass
+    try:
+        conn = chat_archive.connect()
+        for (author,) in conn.execute(
+                "SELECT author FROM messages GROUP BY author HAVING COUNT(*) >= 50"):
+            out.add((author or "").casefold())
+        for (author,) in conn.execute("SELECT author FROM author_ids"):
+            out.add((author or "").casefold())
+    except Exception:
+        pass
+    return out
+
+
+def _rarity_fn(freqs: Counter, total: int, exclusions: set[str] | None = None):
+    exclusions = _rarity_exclusions() if exclusions is None else exclusions
+
     def rarity(word: str) -> float | None:
+        if word.casefold() in exclusions:
+            return None
         if freqs.get(word, 0) < 3:
             return None
         return -math.log((freqs.get(word, 0) + 1) / total)

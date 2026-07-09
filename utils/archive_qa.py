@@ -342,12 +342,45 @@ def _near_author(author: str, query: str, *, channel: str | None = None, limit: 
     ]
 
 
+def _profile_hits(author: str | None, query: str, limit: int = 3) -> list[dict]:
+    """Confirmed slot-profile facts (fact bank v2) for the scoped author.
+    These outrank v1 regex claims: each one was LLM-verified in context and
+    corroborated on >= 2 independent days."""
+    if not author:
+        return []
+    try:
+        from utils import user_profiles
+        prof = user_profiles.profile_for(author, min_status="confirmed")
+    except Exception:
+        return []
+    terms = {t.casefold() for t in chat_archive.query_terms(query)}
+    out = []
+    for slot, data in prof.items():
+        entries = data["values"] if "values" in data else [data]
+        for entry in entries:
+            hay = f"{slot} {entry['value']}".casefold()
+            if terms and not any(t in hay for t in terms):
+                continue
+            ev = (entry.get("evidence") or [{}])[-1]
+            out.append({
+                "author": author,
+                "kind": f"profile:{slot}",
+                "claim": entry["value"],
+                "support_count": entry.get("supports", 1),
+                "confidence": 0.9,
+                "sent_at": ev.get("sent_at"),
+                "channel": ev.get("channel"),
+                "evidence": ev.get("text") or "",
+            })
+    return out[:limit]
+
+
 def _fact_hits(author: str | None, query: str, limit: int = 4) -> list[dict]:
     rows = fact_bank.load_jsonl()
+    out = _profile_hits(author, query, limit=max(2, limit - 1))
     if not rows:
-        return []
+        return out
     terms = chat_archive.query_terms(query)
-    out = []
     for row in fact_bank.search(rows, author=author, query=query, limit=limit * 4):
         if terms:
             hay = f"{row.get('kind', '')} {row.get('claim', '')}".casefold()

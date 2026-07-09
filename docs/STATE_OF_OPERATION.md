@@ -83,8 +83,16 @@ They are not live commands yet.
   touch commands or docs.
 - `scripts/freshness_check.py` is the repo-level freshness wrapper for command
   docs, generated artifact status, docs layout, rebuild logs, and git dirtiness.
-- The fact bank exists as candidate evidence rows. It is not a truth database
-  yet.
+- The fact bank exists as candidate evidence rows (v1). It is not a truth
+  database yet.
+- Fact bank v2 (`utils/user_profiles.py`, `scripts/build_user_profiles.py`)
+  builds slot profiles (location/age/occupation/…): anchor-phrase retrieval,
+  archive-grounded copypasta rejection, an in-context LLM sincerity judge,
+  and multi-day corroboration (verbatim repeats never corroborate; conflicting
+  confirmed values become "disputed" and are not served). Confirmed facts feed
+  the persona prompt (`persona_llm`) and `~askchat`
+  (`archive_qa._profile_hits`). Coverage grows by re-running the builder
+  (incremental judged-message cache).
 - The held-out reply eval harness exists. A serious baseline run is still a
   next-step item.
 - The full artifact rebuild should be checked before trusting rankings after

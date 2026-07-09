@@ -97,10 +97,26 @@ trusting rankings.
    remaining: all-channel dense index, contradiction grouping, a rerank step.)
 4. Build a persona output reranker for contextual fit, target voice, copy risk,
    and likely chat reaction.
-5. Build fact-bank v2: review queues, contradiction groups, confidence, and
-   recency/decay.
+5. Fact-bank v2 — the slot-profile core landed (`utils/user_profiles.py`,
+   `scripts/build_user_profiles.py`): fixed profile slots
+   (location/age/gender/occupation/relationship/pets/hobbies/languages/family),
+   anchor-phrase retrieval over the alias group, an in-context
+   sincerity/extraction judge on the local model (rejects jokes, quotes,
+   copypasta), and multi-day corroboration — a value is only "confirmed" on
+   >= 2 independent days; single sightings stay "candidate"; conflicting
+   confirmed values become "disputed", never a silent guess. Judged messages
+   are cached, so re-runs are incremental (dead-hours-batch friendly).
+   Remaining: run the full roster on a schedule, wire `profile_line()` into
+   persona generation as a fourth evidence section, and surface confirmed
+   facts in `~askchat`.
 6. Add IQ receipts: component z-scores, confidence, split deltas, and driver
-   utterances.
+   utterances. (Rarity contamination fixed in code 2026-07-09 — emote names
+   and usernames no longer count as rare vocabulary
+   (`persona_iq._rarity_exclusions`); takes effect on the next
+   `scripts/build_iq_v2.py` rebuild. A new self-supervised dial also exists:
+   `scripts/eval_emote_prediction.py` masks the emote a chatter actually used
+   and scores a model on picking it from a lineup — unlimited free labels for
+   "does it understand emotes".)
 7. Implement resident persona controls from
    [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md): `~botpersona`,
    `~botmode`, `~botcontext`, and `~botchance`.

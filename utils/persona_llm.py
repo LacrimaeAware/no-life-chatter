@@ -650,6 +650,20 @@ async def generate(author: str, channel: str, user_message: str = None,
         return None
 
     exemplar_sections = []
+    # Confirmed profile facts (fact bank v2) — verified, multi-day-corroborated
+    # facts the person has stated about themselves, so the persona can KNOW
+    # things (job, country, hobbies) instead of only sounding right. Confirmed
+    # only: a persona prompt must not launder single-sighting guesses.
+    try:
+        from utils import user_profiles
+        facts_line = user_profiles.profile_line(author)
+    except Exception:
+        facts_line = ""
+    if facts_line:
+        exemplar_sections.append(
+            f"Verified facts {author} has stated about themselves "
+            f"(use naturally when relevant; never recite as a list):\n{facts_line}"
+        )
     if signature:
         exemplar_sections.append(
             f"Random real messages from {author} across their whole history:\n"
