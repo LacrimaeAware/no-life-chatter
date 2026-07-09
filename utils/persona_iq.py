@@ -388,6 +388,22 @@ def _utterance_rows(author: str, author_cap: int) -> list[dict]:
     return rows
 
 
+def _non_english(text: str) -> bool:
+    """Confidently non-English utterances are excluded from the vocab-rarity
+    signal: every Spanish/Portuguese word is corpus-rare, so code-switching
+    chatters scored as erudite (audit 2026-07-09 — a top roster chatter's
+    rarity drivers were Spanish insults and Portuguese meme lines)."""
+    try:
+        from utils.language_detect import detect_language
+    except Exception:
+        return False
+    try:
+        code, conf = detect_language(text)
+    except Exception:
+        return False
+    return bool(code and code != "EN" and conf >= 0.85)
+
+
 def _interpretable_features(rows: list[dict], rarity) -> dict[str, float]:
     if not rows:
         return {name: 0.0 for name in INTERPRETABLE_FEATURES}
@@ -400,12 +416,14 @@ def _interpretable_features(rows: list[dict], rarity) -> dict[str, float]:
         toks = row["tokens"]
         text = row["clean"]
         all_tokens.extend(toks)
-        r = _mean_rarity(toks, rarity)
+        r = None if _non_english(text) else _mean_rarity(toks, rarity)
         if r is not None:
             rarity_scores.append(r)
         n = len(toks)
         clause = len(_CLAUSE_RE.findall(text))
-        marker_count = sum(1 for t in toks if t in _REASONING_MARKERS)
+        # DISTINCT markers: a doubled line ("though he's close though he's
+        # close") must not read as a reasoning chain
+        marker_count = len({t for t in toks if t in _REASONING_MARKERS})
         marker_density = marker_count / math.sqrt(max(1, n))
         syntax_scores.append(math.log1p(n) * (1.0 + clause + marker_density))
         marker_scores.append(marker_density + clause)

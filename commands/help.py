@@ -47,6 +47,11 @@ CATEGORIES = [
 
 GROUPS_PER_PAGE = 2
 
+# Rough/prototype commands get an ε marker in the listing (legend appended
+# when any are shown; full notes via ~experimental). Top-level names only —
+# subroutes like "explain emote" are covered by their parent.
+EXPERIMENTAL_MARK = {"askchat", "emote", "irony", "iq"}
+
 
 def _known_command_pages(command_names):
     grouped = []
@@ -71,12 +76,17 @@ def _format_command_list(prefix: str, page: int, pages) -> str:
     total = max(1, len(pages))
     page = max(1, min(page, total))
     chunks = []
+    marked = False
     for title, names in pages[page - 1]:
-        rendered = " ".join(f"{prefix}{name}" for name in names)
+        rendered = " ".join(
+            f"{prefix}{name}{'ε' if name in EXPERIMENTAL_MARK else ''}"
+            for name in names)
+        marked = marked or any(name in EXPERIMENTAL_MARK for name in names)
         chunks.append(f"{title}: {rendered}")
+    legend = f" | ε=experimental ({prefix}experimental)" if marked else ""
     return (
         f"Commands {page}/{total}: " + " | ".join(chunks) +
-        f" | {prefix}help <command> for details"
+        f" | {prefix}help <command> for details{legend}"
     )
 
 

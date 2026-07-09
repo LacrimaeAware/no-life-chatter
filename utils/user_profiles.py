@@ -277,7 +277,7 @@ def _valid_value(value: str) -> bool:
     thing ("germany", "software developer", "27") — it is never a clause about
     an event ("still working on july 2nd") or a self-reference ("my country")."""
     words = value.split()
-    if not words or len(words) > 5:
+    if not words or len(words) > 4:
         return False
     if value in _GENERIC_VALUES:
         return False

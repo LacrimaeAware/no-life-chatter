@@ -4,22 +4,29 @@ from utils.persona_iq import leaderboard, score
 from utils import chat_archive
 
 description = (
-    "~iq <user> | ~iq top|bottom [n] | ~iq how — roster-relative \"text-IQ\": peak "
-    "expressed cognition in chat (a toy, not real IQ). 'how' explains each dimension."
+    "~iq <user> | ~iq top|bottom [n] | ~iq how [dim] — roster-relative \"text-IQ\": peak "
+    "expressed cognition in chat (a toy, not real IQ). 'how' shows per-dimension derivation tags."
 )
 
-# Honest derivation notes, one per dimension. "reasoning" is embedding
-# similarity to reasoning-SOUNDING sentences — register, not verified logic —
-# and users deserve to know that before they read the number as real.
+# Compact provenance, not meta-prose: a tag says HOW each number is derived.
+# emb = embedding resemblance to hand-written example sentences (register,
+# not verified logic — hence ε). count = transparent counting. All dims are
+# roster-relative z-scores over peak (top ~10%) messages. No LLM grading.
+DIM_HOW = {
+    "reasoning": "reasoning [emb ε]: resemblance of peak messages to reasoning-shaped "
+                 "sentences — register, not verified logic",
+    "abstraction": "abstraction [emb ε]: resemblance to abstract/technical-register sentences",
+    "vocab": "vocab [count]: word rarity (emotes, usernames, non-English excluded) "
+             "+ lexical diversity",
+    "syntax": "syntax [count]: clause density × length of peak messages",
+    "breadth": "breadth [emb]: topic spread across embedding clusters",
+    "depth": "depth [emb]: how far your topics sit from the roster average (niche focus)",
+}
 HOW_TEXT = (
-    "text-IQ is a roster-relative toy: every dimension is a z-score vs this "
-    "roster (~34 chatters), blended and rescaled to 100±15 (clamped 62-158). "
-    "reasoning/abstraction = how much your messages RESEMBLE reasoning-/abstract-"
-    "sounding example sentences in embedding space (register, not verified logic) · "
-    "vocab = word rarity (emotes/usernames excluded) + diversity · syntax = "
-    "clause/length shape · breadth = topic spread · depth = niche focus. "
-    "Each dimension scores your top ~10% of messages (peaks, not average). "
-    "No LLM grades anyone."
+    "text-IQ: roster-relative toy, z vs ~34 chatters → 100±15. "
+    "reasoning ε · abstraction ε · breadth · depth = [emb] | vocab · syntax = [count]. "
+    "ε = register-read, not verified logic. peaks (top ~10% msgs), no LLM grading. "
+    "~iq how <dim> for one dimension."
 )
 
 
@@ -38,7 +45,8 @@ async def handle_iq(bot, message, params):
         return
     sub = params[0].lower().lstrip("@")
     if sub in ("how", "why", "explain", "method"):
-        await message.channel.send(HOW_TEXT[:480])
+        dim = params[1].lower() if len(params) > 1 else ""
+        await message.channel.send(DIM_HOW.get(dim, HOW_TEXT)[:480])
         return
     n = 5
     if len(params) > 1 and params[1].isdigit():

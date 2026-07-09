@@ -115,13 +115,20 @@ trusting rankings.
    persona generation as a fourth evidence section, and surface confirmed
    facts in `~askchat`.
 6. Add IQ receipts: component z-scores, confidence, split deltas, and driver
-   utterances. (Rarity contamination fixed in code 2026-07-09 — emote names
-   and usernames no longer count as rare vocabulary
-   (`persona_iq._rarity_exclusions`); takes effect on the next
-   `scripts/build_iq_v2.py` rebuild. A new self-supervised dial also exists:
-   `scripts/eval_emote_prediction.py` masks the emote a chatter actually used
-   and scores a model on picking it from a lineup — unlimited free labels for
-   "does it understand emotes".)
+   utterances. (Rarity contamination fixed in code 2026-07-09 — emote names,
+   usernames, and confidently non-English utterances no longer count toward
+   rare vocabulary (`persona_iq._rarity_exclusions`, `_non_english`); reasoning
+   markers count DISTINCT markers so doubled lines can't fake a chain. A new
+   self-supervised dial also exists: `scripts/eval_emote_prediction.py` masks
+   the emote a chatter actually used and scores a model on picking it from a
+   lineup — unlimited free labels for "does it understand emotes".
+   **Next known contaminant, from the 2026-07-09 audit receipts: pasted
+   text.** A pasted psych definition drove one chatter's causal-reasoning
+   axis and the "new viewer here" copypasta drove another's syntax peak —
+   quotes/copypasta score as smart. Fix: filter IQ input utterances with the
+   fact-bank's archive-grounded copypasta check (`user_profiles._said_by_others`
+   generalized), and note the cognitive-axis projections are tiny (~0.07-0.09
+   cosine) — treat the embedding reasoning dims as weak signals.)
 7. Implement resident persona controls from
    [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md): `~botpersona`,
    `~botmode`, `~botcontext`, and `~botchance`.

@@ -411,6 +411,10 @@ def _profile_hits(author: str | None, query: str, limit: int = 3) -> list[dict]:
     out = []
     for slot, data in prof.items():
         entries = data["values"] if "values" in data else [data]
+        # once a slot has a confirmed answer, its candidates are noise —
+        # "pets: dog (4 days)" must not drag "pets: panda [unconfirmed]" along
+        if any(e.get("status") == "confirmed" for e in entries):
+            entries = [e for e in entries if e.get("status") == "confirmed"]
         for entry in entries:
             status = entry.get("status", "candidate")
             if slot in asked_slots:
@@ -446,6 +450,10 @@ def _profile_hits(author: str | None, query: str, limit: int = 3) -> list[dict]:
 def _fact_hits(author: str | None, query: str, limit: int = 4) -> list[dict]:
     rows = fact_bank.load_jsonl()
     out = _profile_hits(author, query, limit=max(2, limit - 1))
+    # A confirmed profile fact answers the question; v1 regex claims can only
+    # dilute it ("says they are 'accepting what youre saying...'").
+    if any(h.get("status") == "confirmed" for h in out):
+        return out
     if not rows:
         return out
     terms = chat_archive.query_terms(query)

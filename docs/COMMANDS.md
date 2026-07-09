@@ -91,7 +91,7 @@ fast.
 | `~irony <message> [context=...]` | anyone | Experimental irony/sincerity read using sarcasm and content-extremity axes. |
 | `~iq <user>` | anyone | Roster-relative text-IQ style score: peak expressed cognition in chat, not actual IQ. |
 | `~iq top [n]` / `~iq bottom [n]` | anyone | Highest or lowest text-IQ style scores in the current cache. |
-| `~iq how` | anyone | Honest derivation notes: what each dimension actually measures (reasoning = embedding similarity to reasoning-sounding sentences — register, not verified logic; vocab excludes emotes/usernames; peaks not averages; no LLM grading). |
+| `~iq how [dim]` | anyone | Compact derivation tags per dimension ([emb] = embedding register-read, marked ε; [count] = transparent counting); with a dimension name, one honest line for that dimension. |
 | `~funny <user>` | anyone | Comedy-influence score: how much more OTHER people laugh in the ~30s after you talk than the ~30s before (before/after delta cancels stream-wide reactions). Roster-relative index (100 = average chatter); `breadth` = distinct people you've made laugh. Self-laughs excluded; bot/command lines excluded. Default chats are the configured conversational ones; `chat=` overrides. |
 | `~funny top [n]` / `~funny bottom [n]` | anyone | Funniest / least-funny chatters by comedy influence across the configured chats. |
 
