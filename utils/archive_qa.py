@@ -116,6 +116,28 @@ def parse_params(params: list[str], current_channel: str | None = None) -> dict:
             except Exception:
                 pass
 
+    # Natural questions name the person mid-sentence ("where does someuser
+    # live"), not just in front. Scope to the first token that is a real
+    # archived chatter — @-prefixed, digit/underscore-shaped, or simply a
+    # known heavy author — so profile/fact routing actually fires.
+    if not author:
+        skip = {"has", "did", "does", "what", "who", "when", "where", "why",
+                "how", "the", "and", "for", "with", "about", "does", "is",
+                "are", "was", "were", "live", "lives", "from", "old", "age"}
+        for token in rest[1:]:
+            candidate = token.strip("?,.!").lstrip("@")
+            low = candidate.lower()
+            if len(low) < 4 or low in skip:
+                continue
+            name_shaped = token.startswith("@") or any(c.isdigit() or c == "_" for c in low)
+            try:
+                s = chat_archive.stats(candidate)
+            except Exception:
+                continue
+            if s and (name_shaped or int(s.get("messages", 0)) >= 500):
+                author = candidate
+                break
+
     author = chat_archive.normalize_author(author) if author else None
     return {
         "author": author,
@@ -315,6 +337,11 @@ def _rrf_author_hits(author: str, query: str, *, channel: str | None = None,
 
 
 def _chatworthy_fact(fact: dict) -> bool:
+    # Profile-slot facts are always presentable: they were LLM-verified in
+    # context and _fact_phrase carries their status label (unconfirmed/
+    # disputed), so a labeled lead beats a blank "not mentioned".
+    if str(fact.get("kind", "")).startswith("profile:"):
+        return True
     support = int(fact.get("support_count") or 0)
     return support >= CHAT_FACT_MIN_SUPPORT
 
@@ -342,36 +369,77 @@ def _near_author(author: str, query: str, *, channel: str | None = None, limit: 
     ]
 
 
+# A question's words never overlap its answer's words ("where does X live"
+# shares nothing with "germany"), so profile facts are routed by QUESTION
+# INTENT, not term overlap. Each pattern maps a question shape to the slot
+# that answers it.
+_SLOT_INTENTS = [
+    ("location", re.compile(
+        r"\bwhere\b.*\b(live|from|located|based)\b|\bwhat country\b|\bnationality\b", re.I)),
+    ("age", re.compile(r"\bhow old\b|\bage\b|\bbirthday\b|\bborn\b", re.I)),
+    ("gender", re.compile(r"\bgender\b|\bguy or girl\b|\bman or woman\b", re.I)),
+    ("occupation", re.compile(
+        r"\bjob\b|\boccupation\b|\bcareer\b|\bdo for a living\b|\bwork as\b|"
+        r"\bstud(y|ies|ying)\b|\bdegree\b", re.I)),
+    ("relationship", re.compile(
+        r"\b(girlfriend|boyfriend|gf|bf|wife|husband|married|single|dating)\b", re.I)),
+    ("pets", re.compile(r"\bpets?\b|\bdog\b|\bcat\b", re.I)),
+    ("hobbies", re.compile(r"\bhobb(y|ies)\b|\binterests?\b|\bwhat .*play\b", re.I)),
+    ("languages", re.compile(r"\blanguages?\b|\bspeak\b", re.I)),
+    ("family", re.compile(
+        r"\b(brothers?|sisters?|siblings?|mom|dad|mother|father|parents|kids)\b", re.I)),
+]
+
+
 def _profile_hits(author: str | None, query: str, limit: int = 3) -> list[dict]:
-    """Confirmed slot-profile facts (fact bank v2) for the scoped author.
-    These outrank v1 regex claims: each one was LLM-verified in context and
-    corroborated on >= 2 independent days."""
+    """Slot-profile facts (fact bank v2) for the scoped author.
+
+    Slots whose question-intent matches the query are served at ANY status —
+    ~askchat is an explicit lookup, so a labeled candidate with a receipt
+    beats a blank "not mentioned". Everything else serves confirmed-only via
+    term overlap. Profile hits outrank v1 regex claims: each was LLM-verified
+    in context and (when confirmed) corroborated on >= 2 independent days."""
     if not author:
         return []
     try:
         from utils import user_profiles
-        prof = user_profiles.profile_for(author, min_status="confirmed")
+        prof = user_profiles.profile_for(author)
     except Exception:
         return []
+    asked_slots = {slot for slot, pat in _SLOT_INTENTS if pat.search(query or "")}
     terms = {t.casefold() for t in chat_archive.query_terms(query)}
     out = []
     for slot, data in prof.items():
         entries = data["values"] if "values" in data else [data]
         for entry in entries:
-            hay = f"{slot} {entry['value']}".casefold()
-            if terms and not any(t in hay for t in terms):
+            status = entry.get("status", "candidate")
+            if slot in asked_slots:
+                pass  # intent match: serve even unconfirmed, labeled below
+            elif status != "confirmed":
                 continue
+            else:
+                hay = f"{slot} {entry['value']}".casefold()
+                if terms and not any(t in hay for t in terms):
+                    continue
             ev = (entry.get("evidence") or [{}])[-1]
             out.append({
                 "author": author,
                 "kind": f"profile:{slot}",
                 "claim": entry["value"],
+                "status": status,
+                "days": entry.get("days", 1),
                 "support_count": entry.get("supports", 1),
-                "confidence": 0.9,
+                "confidence": {"confirmed": 0.9, "disputed": 0.5}.get(status, 0.4),
                 "sent_at": ev.get("sent_at"),
                 "channel": ev.get("channel"),
                 "evidence": ev.get("text") or "",
             })
+    # confirmed first, then disputed, then candidates; the cap trims
+    # candidates before it ever trims confirmed
+    rank = {"confirmed": 0, "disputed": 1, "candidate": 2}
+    out.sort(key=lambda h: (rank.get(h.get("status"), 3), -h.get("days", 0)))
+    if asked_slots:
+        limit = max(limit, 4)
     return out[:limit]
 
 
@@ -476,7 +544,15 @@ _KIND_PHRASE = {
 def _fact_phrase(fact: dict, claim_len: int = 150) -> str:
     """Render a fact-bank claim as a human sentence attributed to its author."""
     who = fact.get("author") or "someone"
-    verb = _KIND_PHRASE.get(fact.get("kind", ""), "said")
+    kind = fact.get("kind", "")
+    if kind.startswith("profile:"):
+        slot = kind.split(":", 1)[1]
+        status = fact.get("status", "candidate")
+        tag = {"confirmed": "", "disputed": " [disputed]"}.get(status, " [unconfirmed]")
+        days = int(fact.get("days") or 1)
+        rep = f" (stated on {days} days)" if days > 1 else ""
+        return f"{who}'s {slot}: {clip(fact['claim'], claim_len)}{tag}{rep}"
+    verb = _KIND_PHRASE.get(kind, "said")
     count = fact.get("support_count", 1) or 1
     rep = f" ({count}x)" if count > 1 else ""
     return f"{who} {verb} \"{clip(fact['claim'], claim_len)}\"{rep}"
