@@ -41,7 +41,7 @@ CATEGORIES = [
         "iq", "funny", "irony",
     ]),
     ("utility", [
-        "help", "ping", "artifacts",
+        "help", "experimental", "ping", "artifacts",
     ]),
 ]
 
@@ -107,6 +107,10 @@ async def handle_help(bot, message, params):
     command = params[0].lower()
     if command == "admin":
         await message.channel.send(format_admin_list(bot.prefix, command_handlers.keys()))
+        return
+    if command in {"experimental", "experiments"}:
+        module = import_module("commands.experimental")
+        await message.channel.send(module.format_experimental_list(bot.prefix))
         return
     if command.isdigit():
         pages = _known_command_pages(command_handlers.keys())

@@ -438,6 +438,7 @@ _QUERY_STOPWORDS = {
     # should anchor retrieval.
     "hows", "whats", "whos", "whens", "wheres", "whys", "why", "who",
     "going", "treating", "think", "thinks", "thinking", "thought", "thoughts",
+    "opinion", "opinions", "view", "views", "take", "takes", "stance",
     "answer", "answers", "felt", "feel", "feels", "see", "seen", "seeing",
     "such", "tell", "tells", "telling", "says", "saying", "thats", "well",
     "know", "knows", "knew", "mean", "means", "meant",

@@ -415,6 +415,83 @@ class ArchiveQaPureTests(unittest.TestCase):
         out = archive_qa.format_answer_chat(report, "They directly said it.")
         self.assertIn("[A1]", out)
 
+    def test_opinion_is_query_scaffolding_not_topic(self):
+        terms = chat_archive.query_terms("opinion on his country")
+        self.assertEqual(terms, ["country"])
+
+    def test_askchat_emote_hits_ignore_plain_lowercase_words(self):
+        original_registry = archive_qa.emote_meaning.registry
+        original_lookup = archive_qa.emote_meaning.lookup
+        original_nearest = archive_qa.emote_meaning.nearest_emotes
+        try:
+            archive_qa.emote_meaning.registry = lambda: {"his": {"tags": ["fake"]}}
+            archive_qa.emote_meaning.lookup = lambda raw: (raw.upper(), {"tags": ["fake"]})
+            archive_qa.emote_meaning.nearest_emotes = lambda raw, n=4: [("HIS", 0.9)]
+            self.assertEqual(archive_qa._emote_hits("his country"), [])
+        finally:
+            archive_qa.emote_meaning.registry = original_registry
+            archive_qa.emote_meaning.lookup = original_lookup
+            archive_qa.emote_meaning.nearest_emotes = original_nearest
+
+    def test_evidence_items_filter_unanchored_archive_noise(self):
+        report = {
+            "query": "opinion on his country",
+            "author": "mainuser",
+            "channel": None,
+            "terms": ["country"],
+            "facts": [],
+            "archive": [
+                {
+                    "author": "mainuser",
+                    "channel": "mainroom",
+                    "sent_at": "2026-01-01 00:00:00",
+                    "text": "opinions on the mass shooting in the US",
+                },
+                {
+                    "author": "mainuser",
+                    "channel": "mainroom",
+                    "sent_at": "2026-01-01 00:00:01",
+                    "text": "invaded the wrong country",
+                },
+            ],
+            "near": [],
+            "emotes": [],
+        }
+        evidence = archive_qa.evidence_items(report)
+        joined = " ".join(item["text"] for item in evidence)
+        self.assertIn("wrong country", joined)
+        self.assertNotIn("mass shooting", joined)
+
+    def test_fact_hits_filter_single_term_unrelated_claims(self):
+        rows = [
+            {
+                "author": "mainuser",
+                "kind": "self_identity",
+                "claim": "running ai for my game",
+                "support_count": 2,
+                "confidence": 0.8,
+                "evidence": [{"clean_text": "running ai for my game"}],
+            },
+            {
+                "author": "mainuser",
+                "kind": "belief",
+                "claim": "all women are evil",
+                "support_count": 2,
+                "confidence": 0.8,
+                "evidence": [{"clean_text": "all women are evil"}],
+            },
+        ]
+        original_load = archive_qa.fact_bank.load_jsonl
+        original_search = archive_qa.fact_bank.search
+        try:
+            archive_qa.fact_bank.load_jsonl = lambda: rows
+            archive_qa.fact_bank.search = lambda rows, **kwargs: rows
+            facts = archive_qa._fact_hits("mainuser", "women", limit=4)
+        finally:
+            archive_qa.fact_bank.load_jsonl = original_load
+            archive_qa.fact_bank.search = original_search
+        self.assertEqual([fact["claim"] for fact in facts], ["all women are evil"])
+
 
 class EmoteExplainPureTests(unittest.TestCase):
     def test_format_chat_keeps_emote_token_bare(self):
@@ -488,6 +565,49 @@ class EmoteExplainPureTests(unittest.TestCase):
         report = {"name": "tickpooJAWLINE", "query": "tickpooJAWLINE", "neighbors": []}
         out = emote_explain.clean_synthesis(report, "'tickpooJAWLINE' is used to mean x")
         self.assertEqual(out, "tickpooJAWLINE is used to mean x")
+
+    def test_clean_synthesis_strips_llm_similar_tail(self):
+        report = {
+            "name": "CLARKSON",
+            "query": "CLARKSON",
+            "neighbors": [
+                {"name": "QUIDES5"},
+                {"name": "QUIDES5"},
+                {"name": "SometimesMyGeniusIsAlmostFrightening"},
+            ],
+        }
+        cleaned = emote_explain.clean_synthesis(
+            report,
+            "CLARKSON is used around Jeremy Clarkson bits. Similar emotes QUIDES5, QUIDES5, SometimesMyGeniusIsAlmostFrightening.",
+        )
+        self.assertEqual(cleaned, "CLARKSON is used around Jeremy Clarkson bits")
+        out = emote_explain._append_similar_clause(report, cleaned, max_chars=200)
+        self.assertIn("Similar emotes QUIDES5 SometimesMyGeniusIsAlmostFrightening", out)
+        self.assertNotIn("QUIDES5,", out)
+        self.assertNotIn("QUIDES5 QUIDES5", out)
+
+    def test_archive_only_emote_uses_cautious_fallback(self):
+        report = {
+            "name": "CLARKSON",
+            "query": "CLARKSON",
+            "registry": {"origin": "ffz"},
+            "registry_tags": [],
+            "has_vector": False,
+            "neighbor_tags": [],
+            "neighbors": [],
+            "archive": {
+                "sampled": 90,
+                "terms": [
+                    {"term": "jeremy", "count": 13},
+                    {"term": "generate", "count": 6},
+                ],
+            },
+        }
+        self.assertFalse(emote_explain._should_use_llm_synthesis(report))
+        self.assertEqual(
+            emote_explain.format_sentence(report),
+            "CLARKSON appears in archive contexts around jeremy",
+        )
 
 
 class PersonaIqPureTests(unittest.TestCase):

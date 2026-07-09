@@ -132,7 +132,12 @@ def _registry_tags(info: dict[str, Any] | None) -> list[str]:
 def _neighbor_rows(neighbors: list[tuple[str, float]]) -> list[dict[str, Any]]:
     reg = emote_meaning.registry()
     rows = []
+    seen = set()
     for name, score in neighbors:
+        key = str(name).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
         rows.append({
             "name": name,
             "score": float(score),
@@ -389,7 +394,14 @@ def _join_scored(rows: list[dict[str, Any]], key: str, *, n: int, scores: bool) 
 def emote_tokens(report: dict[str, Any], *, n: int = 8) -> list[str]:
     tokens = [report.get("name") or report.get("query") or ""]
     tokens.extend(str(row.get("name") or "") for row in report.get("neighbors", [])[:n])
-    return [token for token in tokens if token]
+    out = []
+    seen = set()
+    for token in tokens:
+        key = str(token).casefold()
+        if token and key not in seen:
+            seen.add(key)
+            out.append(token)
+    return out
 
 
 def _fit(prefix: str, segments: list[str], max_chars: int) -> str:
@@ -417,9 +429,51 @@ def _meaning_words(report: dict[str, Any]) -> list[str]:
     return [word.replace("_", " ") for word in words if word]
 
 
+def _archive_terms(report: dict[str, Any], n: int = 2) -> list[str]:
+    archive = report.get("archive") or {}
+    sampled = int(archive.get("sampled") or 0)
+    min_count = max(3, round(sampled * 0.08)) if sampled else 1
+    terms = []
+    for row in archive.get("terms", []):
+        term = str(row.get("term") or "").strip()
+        count = int(row.get("count") or min_count)
+        if count < min_count:
+            continue
+        if term:
+            terms.append(term)
+        if len(terms) >= n:
+            break
+    return terms
+
+
 def _similar_clause(report: dict[str, Any], n: int = 4) -> str:
-    neighbors = [row["name"] for row in report.get("neighbors", [])[:n]]
+    neighbors = []
+    seen = set()
+    for row in report.get("neighbors", []):
+        name = str(row.get("name") or "").strip("`*'\".,:;!?()[]{}<>")
+        key = name.casefold()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        neighbors.append(name)
+        if len(neighbors) >= n:
+            break
     return "Similar emotes " + " ".join(neighbors) if neighbors else ""
+
+
+def _strip_similar_tail(text: str) -> str:
+    return re.sub(r"\s*(?:[.;]\s*)?Similar emotes\b.*$", "", text or "", flags=re.IGNORECASE).strip()
+
+
+def _append_similar_clause(report: dict[str, Any], text: str, *,
+                           max_chars: int = 470, n: int = 4) -> str:
+    text = _strip_similar_tail(text)
+    similar = _similar_clause(report, n=n)
+    if not similar:
+        return _clip(text, max_chars)
+    if len(text) + 2 + len(similar) <= max_chars:
+        return f"{text}. {similar}"
+    return _clip(text, max_chars)
 
 
 def format_sentence(report: dict[str, Any], *, max_chars: int = 470) -> str:
@@ -442,6 +496,11 @@ def format_sentence(report: dict[str, Any], *, max_chars: int = 470) -> str:
         sentence = (
             f"{name} seems to be used in the same chat-reaction cluster as "
             f"{neighbor_text}"
+        )
+    elif _archive_terms(report):
+        sentence = (
+            f"{name} appears in archive contexts around "
+            + " / ".join(_archive_terms(report))
         )
     else:
         sentence = f"{name} is known from the registry, but this bot has little learned usage for it yet."
@@ -491,6 +550,8 @@ def synthesis_messages(report: dict[str, Any]) -> list[dict[str, str]]:
         "registry_tags": report.get("registry_tags", [])[:6],
         "neighbor_tag_consensus": neighbor_tags,
         "similar_emotes_by_usage": neighbor_names,
+        "confidence": report.get("confidence"),
+        "has_usage_vector": bool(report.get("has_vector")),
         "archive_total_hits": archive.get("hits") or 0,
         "archive_sampled_hits": archive.get("sampled") or 0,
         "weak_archive_context_terms": archive.get("terms", [])[:10],
@@ -500,21 +561,23 @@ def synthesis_messages(report: dict[str, Any]) -> list[dict[str, str]]:
     }
     system = (
         "You explain Twitch emote meaning from evidence. Write one compact chat "
-        "message under 330 characters. Format: '<EMOTE> is used to mean ...' "
-        "then optionally 'Similar emotes <space-separated emotes>'. Keep emote "
+        "message under 280 characters. Usually format it as '<EMOTE> is used to mean ...'. "
+        "Do not include a Similar emotes section; the caller appends that. Keep emote "
         "tokens case-sensitive and standalone: no colon, comma, quote, period, "
         "or parenthesis attached to an emote token. Do not mention vectors, "
         "basis, confidence, n, or sampled contexts. Do not repeat the same "
-        "similar emotes twice. Similar emotes are evidence, not the answer. "
-        "If you include similar emotes, only use emotes from "
-        "similar_emotes_by_usage. Treat vector neighbors and registry tags as "
+        "emote token twice. Similar emotes are evidence, not the answer. "
+        "Treat vector neighbors and registry tags as "
         "the primary meaning signal. Use representative archive contexts to "
         "understand the situations where it appears, but do not define the "
         "emote from topical nouns like movie, game, streamer names, or links "
         "unless that theme is strongly repeated. Context terms and co-emotes "
         "are weak aggregate hints and may contain noise. Do not use outside "
-        "Twitch knowledge as a shortcut. If the evidence is weak or mixed, say "
-        "what it seems to be used with/around instead of pretending certainty."
+        "Twitch knowledge as a shortcut. If has_usage_vector is false and "
+        "registry/neighbor tags are empty, do not infer emotional valence; say "
+        "what it seems to be used with/around instead. If the evidence is weak "
+        "or mixed, say what it seems to be used with/around instead of "
+        "pretending certainty."
     )
     user = (
         "Evidence JSON:\n"
@@ -539,6 +602,7 @@ def clean_synthesis(report: dict[str, Any], answer: str | None,
             flags=re.IGNORECASE,
         )
     text = text.replace("<", "").replace(">", "")
+    text = _strip_similar_tail(text)
     text = re.sub(rf"^{re.escape(name)}\s*[:;,.-]\s*", f"{name} ", text)
     starts = re.match(r"^([^\s]+)", text)
     first_key = (starts.group(1).strip("`*'\".,:;!?()[]{}<>").casefold()
@@ -584,10 +648,23 @@ def clean_synthesis(report: dict[str, Any], answer: str | None,
     return _clip(text, max_chars)
 
 
+def _should_use_llm_synthesis(report: dict[str, Any]) -> bool:
+    if report.get("has_vector"):
+        return True
+    if report.get("registry_tags") or report.get("neighbor_tags"):
+        return True
+    # Archive-only/no-vector cases are useful as raw receipts, but too easy for
+    # the model to overread into confident valence. Use the deterministic
+    # archive-term fallback until a usage vector or tags exist.
+    return False
+
+
 async def chat_response(report: dict[str, Any], *, detail: bool = False,
                         raw: bool = False, max_chars: int = 470) -> str:
     if raw:
         return raw_report(report, max_chars=max_chars)
+    if not _should_use_llm_synthesis(report):
+        return format_chat(report, detail=detail, raw=False, max_chars=max_chars)
     try:
         from services import llm
         from utils.output_filter import is_clean
@@ -600,7 +677,7 @@ async def chat_response(report: dict[str, Any], *, detail: bool = False,
             )
             text = clean_synthesis(report, answer, max_chars=max_chars)
             if text and is_clean(text):
-                return text
+                return _append_similar_clause(report, text, max_chars=max_chars)
     except Exception:
         pass
     return format_chat(report, detail=detail, raw=False, max_chars=max_chars)

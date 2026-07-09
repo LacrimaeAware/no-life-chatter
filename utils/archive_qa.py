@@ -24,6 +24,7 @@ CHAT_FACT_MIN_SUPPORT = 2
 QUERY_INTENT_TERMS = {
     "love", "loves", "loved", "like", "likes", "liked", "enjoy", "enjoys",
     "enjoyed", "hate", "hates", "hated", "prefer", "prefers", "preferred",
+    "opinion", "opinions", "view", "views", "take", "takes", "stance",
 }
 
 
@@ -346,12 +347,11 @@ def _fact_hits(author: str | None, query: str, limit: int = 4) -> list[dict]:
     if not rows:
         return []
     terms = chat_archive.query_terms(query)
-    required = terms[0] if len(terms) >= 2 else None
     out = []
     for row in fact_bank.search(rows, author=author, query=query, limit=limit * 4):
-        if required:
+        if terms:
             hay = f"{row.get('kind', '')} {row.get('claim', '')}".casefold()
-            if required.casefold() not in hay:
+            if not any(term.casefold() in hay for term in terms):
                 continue
         ev = (row.get("evidence") or [{}])[0]
         out.append({
@@ -372,10 +372,19 @@ def _fact_hits(author: str | None, query: str, limit: int = 4) -> list[dict]:
 def _emote_hits(query: str, limit: int = 2) -> list[dict]:
     out = []
     seen = set()
+    registry = emote_meaning.registry()
     for raw in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,40}", query or ""):
         if raw.lower() in seen:
             continue
         seen.add(raw.lower())
+        # Askchat scans ordinary prose, so do not let lowercase words like
+        # "his" or "country" become fake emote evidence just because an emote
+        # vector exists with the same letters. Emote evidence should come from
+        # emote-shaped tokens or exact case-sensitive registry aliases.
+        exact_registry = raw in registry and raw.lower() != raw
+        emote_shaped = raw != raw.lower() or raw.isupper()
+        if not exact_registry and not emote_shaped:
+            continue
         name, info = emote_meaning.lookup(raw)
         near = emote_meaning.nearest_emotes(raw, n=4)
         if not info and not near:
@@ -440,6 +449,20 @@ def _fact_phrase(fact: dict, claim_len: int = 150) -> str:
     return f"{who} {verb} \"{clip(fact['claim'], claim_len)}\"{rep}"
 
 
+def _focused_archive_hits(report: dict) -> list[dict]:
+    """Archive receipts strong enough to cite to the answer model.
+
+    Retrieval can use loose dense/paraphrase lanes, but the live answer should
+    not cite a line unless it still matches the cleaned topic terms. This keeps
+    question scaffolding such as "opinion" from turning into random evidence.
+    """
+    hits = report.get("archive", []) or []
+    focus = _focus_terms(report.get("query", ""), report.get("author"))
+    if not focus:
+        return hits
+    return [hit for hit in hits if _matches_focus(hit.get("text", ""), focus)]
+
+
 def evidence_items(report: dict, max_items: int = 6) -> list[dict]:
     """Evidence lines safe to give an answer model.
 
@@ -447,7 +470,7 @@ def evidence_items(report: dict, max_items: int = 6) -> list[dict]:
     rows, not verified facts. The model gets raw archive receipts first.
     """
     items = []
-    for hit in report.get("archive", [])[:4]:
+    for hit in _focused_archive_hits(report)[:4]:
         items.append({
             "label": f"A{len([i for i in items if i['label'].startswith('A')]) + 1}",
             "text": (
@@ -522,7 +545,7 @@ def format_answer_chat(report: dict, answer: str, max_chars: int = 470) -> str:
 def format_chat(report: dict, max_chars: int = 470) -> str:
     parts = [f"{_scope(report)}: "]
 
-    for hit in report.get("archive", [])[:2]:
+    for hit in _focused_archive_hits(report)[:2]:
         parts.append(
             f"{hit['author']}#{hit['channel']} {hit['sent_at'][:10]} "
             f"\"{clip(hit['text'], 75)}\""
