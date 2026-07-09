@@ -667,9 +667,10 @@ async def chat_response(report: dict[str, Any], *, detail: bool = False,
         return format_chat(report, detail=detail, raw=False, max_chars=max_chars)
     try:
         from services import llm
+        from services import model_queue
         from utils.output_filter import is_clean
 
-        if await llm.available():
+        if await model_queue.server_state() == "up":
             answer = await llm.chat(
                 synthesis_messages(report),
                 max_tokens=100,

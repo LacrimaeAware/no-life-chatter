@@ -12,6 +12,7 @@ from utils.romanize import romanize, is_supported, thai_segment
 from utils.language_detect import detect_language, detect_confidences
 from services.translators import deepl_translate
 from services.emotes import ensure_channel_emotes, strip_emotes
+from services import model_queue
 from utils.speaker_profile import known_languages, record_language, is_massive_speaker
 import re
 import sqlite3
@@ -295,9 +296,19 @@ class MessageService:
         return directed
 
     async def _persona_line(self, target, channel, is_clean, persona_llm):
-        cand = await persona_llm.generate(
-            target, channel, mode="normal", copy_strategy="drop",
-            invoked_by="ambient-reaction",
+        async def work():
+            return await persona_llm.generate(
+                target, channel, mode="normal", copy_strategy="drop",
+                invoked_by="ambient-reaction",
+            )
+        cand = await model_queue.submit(
+            label=f"ambient {channel} {target}",
+            work=work,
+            model_kind="required",
+            announce=False,
+            queue_if_busy=False,
+            user_key=f"ambient:{channel}",
+            sig=f"ambient:{channel}:{target}",
         )
         if cand and len(cand.split()) >= 2 and is_clean(cand):
             return cand
@@ -545,14 +556,23 @@ class MessageService:
         if chance <= 0 or random.random() >= chance:
             return False
 
-        line = await persona_llm.generate(
-            state.get("persona"),
-            channel_name,
-            self._resident_idle_prompt(state),
-            mode="normal",
-            copy_strategy="drop",
-            invoked_by="resident-idle",
-            candidates=1,
+        async def work():
+            return await persona_llm.generate(
+                state.get("persona"),
+                channel_name,
+                self._resident_idle_prompt(state),
+                mode="normal",
+                copy_strategy="drop",
+                invoked_by="resident-idle",
+                candidates=1,
+            )
+        line = await model_queue.submit(
+            label=f"resident idle {channel_name}",
+            work=work,
+            model_kind="required",
+            announce=False,
+            queue_if_busy=False,
+            user_key=f"resident:{channel_name}",
         )
         if not line or is_stop_followup(line):
             return False
@@ -608,14 +628,24 @@ class MessageService:
                 return False
 
             prompt = self._resident_prompt(state, message, directed, greeting, affinity, hits)
-            line = await persona_llm.generate(
-                persona,
-                channel,
-                prompt,
-                mode="normal",
-                copy_strategy="drop",
-                invoked_by=author,
-                candidates=1,
+            async def work():
+                return await persona_llm.generate(
+                    persona,
+                    channel,
+                    prompt,
+                    mode="normal",
+                    copy_strategy="drop",
+                    invoked_by=author,
+                    candidates=1,
+                )
+            line = await model_queue.submit(
+                label=f"resident {channel} {persona}",
+                work=work,
+                model_kind="required",
+                announce=False,
+                queue_if_busy=False,
+                user_key=f"resident:{channel}",
+                sig=f"resident:{channel}:{persona}",
             )
             if not line or is_stop_followup(line):
                 return False
@@ -662,13 +692,23 @@ class MessageService:
                 f"short follow-up. If no coherent follow-up is natural, "
                 f"output exactly STOP. Do not change topic."
             )
-            line = await persona_llm.generate(
-                target,
-                message.channel.name,
-                follow_prompt,
-                mode="normal",
-                exemplar_count=getattr(config, "LLM_RETRY_EXEMPLARS", 60),
-                context_count=getattr(config, "LLM_RETRY_CONTEXT", 12),
+            async def work():
+                return await persona_llm.generate(
+                    target,
+                    message.channel.name,
+                    follow_prompt,
+                    mode="normal",
+                    exemplar_count=getattr(config, "LLM_RETRY_EXEMPLARS", 60),
+                    context_count=getattr(config, "LLM_RETRY_CONTEXT", 12),
+                )
+            line = await model_queue.submit(
+                label=f"ambient followup {message.channel.name} {target}",
+                work=work,
+                model_kind="required",
+                announce=False,
+                queue_if_busy=False,
+                user_key=f"ambient:{message.channel.name}",
+                sig=f"ambient-followup:{message.channel.name}:{target}",
             )
             if not line or is_stop_followup(line) or not is_clean(line):
                 break

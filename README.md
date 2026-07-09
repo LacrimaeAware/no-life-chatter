@@ -117,6 +117,7 @@ The table below is a project overview, not the audited source of truth.
 | `~experimental` | anyone | List prototype/evidence commands and their raw/receipts modes. |
 | `~ping` | anyone | Latency + host stats. |
 | `~artifacts` | anyone | Compact status for generated persona artifacts and stale semantic caches. |
+| `~modelqueue [status\|clear]` | super admin | Inspect or clear pending local-model work. |
 | `~practice on <langs> [native]` | anyone | Start practice mode. e.g. `~practice on es,ja en` |
 | `~practice off` / `~practice show` | anyone | Stop / inspect practice mode. |
 | `~romanize on\|off\|show` | anyone | Toggle romanized readings in practice mode. |
@@ -157,6 +158,8 @@ The table below is a project overview, not the audited source of truth.
 | `~notranslate <user> [undo]` | super admin | Stop auto-translating a specific user (slang the detector misreads as foreign); `undo` re-enables; no arg lists opted-out. |
 
 Admins and super-admins are configured in `config.toml` — no hard-coded users.
+
+Local-model-heavy commands share one queue, announce `Processing...` when they start, and show queue position when delayed.
 
 ## Setup
 

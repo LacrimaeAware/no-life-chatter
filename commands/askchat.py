@@ -1,6 +1,6 @@
 import asyncio
 
-from services import llm
+from services import llm, model_queue
 from utils import archive_qa
 from utils.output_filter import is_clean
 
@@ -32,7 +32,7 @@ async def handle_askchat(bot, message, params):
         await message.channel.send(fallback)
         return
 
-    if await llm.available():
+    if await model_queue.server_state() == "up":
         answer = await llm.chat(
             archive_qa.answer_messages(report),
             max_tokens=110,

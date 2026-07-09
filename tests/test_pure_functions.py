@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import math
 import sys
@@ -35,8 +36,9 @@ install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
 from utils import archive_qa, chat_archive, emote_explain, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona  # noqa: E402
 from utils import persona_axes  # noqa: E402
+from services import model_queue  # noqa: E402
 from commands import markers  # noqa: E402
-from command_processor import _backend_offline, _backend_rejected  # noqa: E402
+from command_processor import _backend_offline, _backend_rejected, _model_command_kind  # noqa: E402
 
 
 class ArchiveNormalizationTests(unittest.TestCase):
@@ -205,6 +207,63 @@ class CommandProcessorPureTests(unittest.TestCase):
         )
         self.assertFalse(_backend_offline(exc))
         self.assertTrue(_backend_rejected(exc))
+
+    def test_url_timeout_is_busy_not_offline(self):
+        exc = urllib.error.URLError(TimeoutError("timed out"))
+        self.assertFalse(_backend_offline(exc))
+        self.assertTrue(_backend_rejected(exc))
+
+    def test_model_command_kind_routes_heavy_and_fast_paths(self):
+        self.assertEqual(_model_command_kind("persona", ["mainuser"]), "required")
+        self.assertEqual(_model_command_kind("top", ["breedable"]), "required")
+        self.assertEqual(_model_command_kind("distinct", ["top"]), "required")
+        self.assertEqual(_model_command_kind("askchat", ["mainuser", "math"]), "optional")
+        self.assertIsNone(_model_command_kind("askchat", ["raw", "mainuser", "math"]))
+        self.assertIsNone(_model_command_kind("emote", ["BatChest", "raw"]))
+        self.assertIsNone(_model_command_kind("generate", ["list"]))
+        self.assertIsNone(_model_command_kind("generate", ["mainuser", "engine=markov"]))
+
+
+class ModelQueuePureTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.original_state = model_queue.server_state
+
+        async def up():
+            return "up"
+
+        model_queue.server_state = up
+        model_queue.clear_pending()
+
+    async def asyncTearDown(self):
+        model_queue.clear_pending()
+        model_queue.server_state = self.original_state
+
+    async def test_queue_finishes_one_handler_before_starting_next(self):
+        events = []
+
+        async def send(text):
+            events.append(("send", text))
+
+        async def first():
+            events.append(("work", "first-start"))
+            await asyncio.sleep(0.02)
+            events.append(("work", "first-done"))
+
+        async def second():
+            events.append(("work", "second-start"))
+            events.append(("work", "second-done"))
+
+        task1 = asyncio.create_task(model_queue.submit(
+            label="first", work=first, send=send, user="a", user_key="a", sig="first"))
+        await asyncio.sleep(0.005)
+        task2 = asyncio.create_task(model_queue.submit(
+            label="second", work=second, send=send, user="b", user_key="b", sig="second"))
+        await asyncio.gather(task1, task2)
+
+        self.assertLess(events.index(("work", "first-done")),
+                        events.index(("work", "second-start")))
+        self.assertLess(events.index(("send", "@b Processing...")),
+                        events.index(("work", "second-start")))
 
 
 class PersonaAxisPureTests(unittest.TestCase):
@@ -398,7 +457,8 @@ class ArchiveQaPureTests(unittest.TestCase):
             "emotes": [],
         }
         out = archive_qa.format_chat(report, max_chars=180)
-        self.assertIn("No strong archive evidence", out)
+        self.assertIn("No clear archive receipts", out)
+        self.assertNotIn("Weak one-off", out)
         self.assertNotIn("on drugs", out)
 
     def test_answer_prompt_uses_receipts_not_weak_claims(self):

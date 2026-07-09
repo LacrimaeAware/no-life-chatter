@@ -63,6 +63,12 @@ Important distinction: `~persona`, `~hyper`, and `~generate` are one-shot
 commands. The resident persona commands above are channel-scoped and
 super-admin-only.
 
+Local-model-heavy commands share one global queue across channels. Commands
+such as `~persona`, `~hyper`, LLM `~generate`, dynamic `~top`/`~bottom`,
+`~axis`, `~why`, `~traits`, `~distinct`, `~irony`, normal `~askchat`, and
+normal emote explainers answer one at a time; raw/receipts-only variants stay
+fast.
+
 ### Stylometry, Similarity, Traits
 
 | Command | Access | What it does |
@@ -104,13 +110,14 @@ comparisons, not clinical or total-person labels.
 | `~banuser list` | super admin | Show command-banned users. |
 | `~unbanuser <name>` | super admin | Remove a command ban. |
 | `~warnings [n]` | super admin | Review recent anti-spam cooldown offenses. |
+| `~modelqueue [status\|clear]` | super admin | Inspect or clear pending local-model work. The running command is allowed to finish. |
 
 ## Planned But Not Live
 
 The current resident layer supports one real chatter persona per channel, topic
 affinity boosting from archive hits, rare idle messages, and Twitch reply-thread
 responses when a triggering message ID is available. Full `~generate` recipes
-as resident personas and queue-depth feedback are still future work.
+as resident personas are still future work.
 
 ## Artifact Dependencies
 

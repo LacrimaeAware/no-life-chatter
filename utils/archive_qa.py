@@ -573,8 +573,7 @@ def format_chat(report: dict, max_chars: int = 470) -> str:
     if len(parts) == 1:
         terms = ", ".join(report.get("terms") or [])
         suffix = f" terms={terms}" if terms else ""
-        weak = " Weak one-off claim candidates were ignored." if report.get("facts") else ""
-        return f"No strong archive evidence found for '{clip(report.get('query', ''), 90)}'.{suffix}{weak}"
+        return f"No clear archive receipts for '{clip(report.get('query', ''), 90)}'.{suffix}"
 
     out = " | ".join(parts)
     return clip(out, max_chars)
