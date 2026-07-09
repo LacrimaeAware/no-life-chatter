@@ -43,7 +43,7 @@ def _emote_set():
 
 def _is_emote(tok):
     """Best-effort emote detection from text. Requires MIXED case (an upper AND a
-    lower letter) — Pog/Sadge/Lemon/FeelsDankMan/fernardoAnalysis qualify, while
+    lower letter) — Pog/Sadge/Lemon/FeelsDankMan/chatterAnalysis qualify, while
     the common-word emotes that cause false positives do not: lowercase words
     ('there', 'omg') and all-caps shouting/words ('HELP', 'YOU') are excluded.
     Within mixed-case, accept camelCase shape OR an exact registry match.

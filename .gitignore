@@ -69,5 +69,6 @@ dist/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs (including rotated bot.log.1, bot.log.2, …)
 *.log
+*.log.*

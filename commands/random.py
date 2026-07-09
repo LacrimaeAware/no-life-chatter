@@ -10,7 +10,7 @@ from utils.chat_archive import (
 description = (
     "A random real quote from the archive containing a word/phrase. Anyone by "
     "default; narrow it with user=<name> and/or chat=<channel>.\n"
-    "  ~random <word>   ·   ~random user=duardo cars   ·   ~random chat=forsen fart"
+    "  ~random <word>   ·   ~random user=someguy cars   ·   ~random chat=somechat fart"
 )
 
 

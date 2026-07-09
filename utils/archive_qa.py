@@ -86,7 +86,7 @@ def parse_params(params: list[str], current_channel: str | None = None) -> dict:
 
     Supports explicit `user=`, `author=`, `about=`, and `chat=`. For ergonomic
     chat use, a first token that resolves to an archived author is also treated
-    as the user scope: `~askchat fernardo minecraft`.
+    as the user scope: `~askchat someuser minecraft`.
     """
     author = None
     channel = None

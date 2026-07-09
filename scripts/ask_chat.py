@@ -2,8 +2,8 @@
 
 Examples:
 
-    python scripts/ask_chat.py --author fernardo twin primes
-    python scripts/ask_chat.py --channel thickpoo "what did people say about Claude?"
+    python scripts/ask_chat.py --author someuser twin primes
+    python scripts/ask_chat.py --channel somechannel "what did people say about Claude?"
 """
 
 from __future__ import annotations
