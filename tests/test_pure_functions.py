@@ -101,6 +101,15 @@ class ArchiveNormalizationTests(unittest.TestCase):
     def test_display_name_short_circuits_for_unaliased_user(self):
         self.assertEqual(chat_archive.display_name("solochatter"), "solochatter")
 
+    def test_pick_casing_prefers_how_chat_types_the_name(self):
+        forms = ["MainUserGuy", "MainUserGuy", "mainuserguy", "MAINUSERGUY"]
+        self.assertEqual(chat_archive._pick_casing(forms, "mainuserguy"),
+                         "MainUserGuy")
+
+    def test_pick_casing_needs_two_sightings_and_exact_casefold(self):
+        self.assertEqual(chat_archive._pick_casing(["OneOff"], "oneoff"), "oneoff")
+        self.assertEqual(chat_archive._pick_casing([], "nobody"), "nobody")
+
     def test_query_terms_drop_basic_scaffolding_words(self):
         terms = chat_archive.query_terms("thats such an answer and the wrong one about wow")
         self.assertNotIn("thats", terms)

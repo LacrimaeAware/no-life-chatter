@@ -29,7 +29,8 @@ class MessageHandler:
         # record_live swallows its own errors — it can never break chat handling.
         # message.channel is None for whispers (twitchio routes them here too).
         if message.author:
-            record_author_id(message.author.name, getattr(message.author, "id", None))
+            record_author_id(message.author.name, getattr(message.author, "id", None),
+                             getattr(message.author, "display_name", None))
         if config.ARCHIVE_LIVE and message.channel and message.author and message.content:
             record_live(
                 message.channel.name,

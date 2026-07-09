@@ -148,22 +148,24 @@ def _pick_display(canonical: str, keys, checked: dict, sent: dict) -> str:
 
 
 def display_name(author: str) -> str:
-    """The name this person most recently chatted under — for chat OUTPUT.
+    """The name this person most recently chatted under, with the casing they
+    actually use — for chat OUTPUT.
 
-    Storage, artifacts, and lookups key a person by their canonical alias
-    ([archive.user_aliases]), which is often a retired account name; output
-    should call people what they go by now. Timestamps mix UTC (author_ids)
-    and local (messages), which is fine at the day granularity this decides.
-    Never raises; falls back to the canonical name.
+    Storage, artifacts, and lookups key a person by their lowercase canonical
+    alias ([archive.user_aliases]), which is often a retired account name;
+    output should call people what they go by now, capitalized the way chat
+    knows them. Timestamps mix UTC (author_ids) and local (messages), which
+    is fine at the day granularity this decides. Never raises; falls back to
+    the canonical name.
     """
     canonical = normalize_author(author)
     keys = author_keys(canonical)
     if len(keys) <= 1:
-        return canonical
+        return _display_casing(canonical)
     now = time.time()
     hit = _display_cache.get(canonical)
     if hit and hit[1] > now:
-        return hit[0]
+        return _display_casing(hit[0])
     try:
         conn = connect()
         placeholders, params = _in_clause(keys)
@@ -179,7 +181,55 @@ def display_name(author: str) -> str:
         return canonical
     best = _pick_display(canonical, keys, checked, sent)
     _display_cache[canonical] = (best, now + _DISPLAY_TTL)
-    return best
+    return _display_casing(best)
+
+
+_casing_cache: dict = {}
+
+
+def _pick_casing(forms: list[str], key: str) -> str:
+    """The most common non-lowercase way chat types the name; the plain key
+    when chat doesn't consistently capitalize it (>= 2 sightings to trust)."""
+    counts = Counter(f for f in forms if f != key and f.casefold() == key)
+    if not counts:
+        return key
+    form, n = counts.most_common(1)[0]
+    return form if n >= 2 else key
+
+
+def _display_casing(key: str) -> str:
+    """Real capitalization for a lowercase author key. Prefers the Twitch
+    display name captured live (author_ids.display); falls back to how other
+    chatters type the name in archived messages (@mentions carry casing)."""
+    now = time.time()
+    hit = _casing_cache.get(key)
+    if hit and hit[1] > now:
+        return hit[0]
+    result = key
+    try:
+        conn = connect()
+        try:
+            row = conn.execute(
+                "SELECT display FROM author_ids WHERE author = ?", (key,)).fetchone()
+        except sqlite3.OperationalError:
+            row = None  # pre-migration table without the display column
+        if row and row[0] and str(row[0]).casefold() == key:
+            result = str(row[0])
+        else:
+            rows = conn.execute(
+                "SELECT m.content FROM messages_fts f JOIN messages m ON m.id = f.rowid "
+                "WHERE f.messages_fts MATCH ? LIMIT 60",
+                (_fts_phrase(key),)).fetchall()
+            pat = re.compile(
+                rf"(?<![A-Za-z0-9_])({re.escape(key)})(?![A-Za-z0-9_])", re.I)
+            forms = []
+            for (content,) in rows:
+                forms.extend(pat.findall(content or ""))
+            result = _pick_casing(forms, key)
+    except Exception as e:
+        logging.debug(f"_display_casing({key!r}) failed: {e}")
+    _casing_cache[key] = (result, now + _DISPLAY_TTL)
+    return result
 
 
 _MATCH_TRANSLATION = str.maketrans({
@@ -413,25 +463,34 @@ def ingest_file(path: str, channel: str, date: str) -> dict:
 _seen_ids = set()
 
 
-def record_author_id(author: str, twitch_id) -> None:
+def record_author_id(author: str, twitch_id, display: str = None) -> None:
     """Names change, ids don't — keep an author->twitch_id table current from
     live chat (message.author.id), once per author per day (checked_at doubles
     as a last-seen-live stamp for display_name, so it must stay fresh across
-    long-lived workers). Future identity merging is id-dominant for anyone
-    the bot has ever seen."""
+    long-lived workers). `display` is the Twitch display name — stored only
+    when it's a pure CASING variant of the login (localized display names are
+    a different string, not a casing). Future identity merging is id-dominant
+    for anyone the bot has ever seen."""
     if not author or not twitch_id:
         return
     key = (author.lower(), str(twitch_id), time.strftime("%Y-%m-%d"))
     if key in _seen_ids:
         return
+    disp = (display or "").strip()
+    if disp.casefold() != author.lower():
+        disp = None
     try:
         conn = connect()
         conn.execute(
             "CREATE TABLE IF NOT EXISTS author_ids ("
             " author TEXT PRIMARY KEY, twitch_id TEXT, checked_at TEXT)")
+        try:
+            conn.execute("ALTER TABLE author_ids ADD COLUMN display TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         conn.execute(
-            "INSERT OR REPLACE INTO author_ids VALUES (?,?,datetime('now'))",
-            (author.lower(), str(twitch_id)))
+            "INSERT OR REPLACE INTO author_ids VALUES (?,?,datetime('now'),?)",
+            (author.lower(), str(twitch_id), disp))
         conn.commit()
         _seen_ids.add(key)
     except Exception as e:

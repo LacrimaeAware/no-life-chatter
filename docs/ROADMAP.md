@@ -94,7 +94,12 @@ trusting rankings.
    pipeline.
 3. Improve archive-QA/lore v2: contradiction handling and answer synthesis.
    (Semantic evidence + RRF bm25/dense ranking now landed for the author path;
-   remaining: all-channel dense index, contradiction grouping, a rerank step.)
+   profile slot-intent routing landed 2026-07-09; remaining: all-channel dense
+   index, contradiction grouping, a rerank step, and **HyDE-style query
+   expansion** — for arbitrary questions, have the local LLM write 2-3 phrases
+   the answer would have been stated as first-person ("where does X live" →
+   "i live in", "im from") and search THOSE; the profile slots' hand-written
+   anchors are the manual special case of this.)
 4. Build a persona output reranker for contextual fit, target voice, copy risk,
    and likely chat reaction.
 5. Fact-bank v2 — the slot-profile core landed (`utils/user_profiles.py`,
