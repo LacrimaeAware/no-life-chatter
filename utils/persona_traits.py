@@ -13,6 +13,7 @@ mirror, not a diagnosis.
 """
 
 import json
+import urllib.error
 import urllib.request
 
 import config
@@ -95,8 +96,12 @@ def _embed(texts):
     body = json.dumps({"model": config.LLM_EMBED_MODEL, "input": texts}).encode()
     req = urllib.request.Request(base + "/v1/embeddings", data=body,
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return [d["embedding"] for d in json.load(r)["data"]]
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return [d["embedding"] for d in json.load(r)["data"]]
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"embedding HTTP {exc.code}: {body}") from exc
 
 
 def _axis_vectors():

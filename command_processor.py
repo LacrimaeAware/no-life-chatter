@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import urllib.error
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from command_registry import command_handlers, load_command_handlers  # noqa: F401
 from utils.command_bans import is_banned
@@ -14,6 +14,10 @@ from utils import cooldowns
 # NEVER cost a cooldown — that was the over-eager behavior chat complained about.
 SERIAL_COMMANDS = {"persona", "hyper", "generate"}
 
+# Commands that may build dynamic axes. They hit LM Studio chat + embeddings
+# from blocking helper code, so they need one global lane across all channels.
+MODEL_QUEUE_COMMANDS = {"top", "bottom", "axis"}
+
 _OFFLINE_SIGNS = ("10061", "actively refused", "connection refused", "max retries",
                   "connection aborted", "failed to establish", "[errno 111]")
 
@@ -21,9 +25,24 @@ _OFFLINE_SIGNS = ("10061", "actively refused", "connection refused", "max retrie
 def _backend_offline(exc):
     """True if exc looks like the local model server (LM Studio) being down —
     so embedding/LLM commands can say so instead of a generic error."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return False
     if isinstance(exc, (urllib.error.URLError, ConnectionError)):
         return True
     return any(sign in str(exc).lower() for sign in _OFFLINE_SIGNS)
+
+
+def _backend_rejected(exc):
+    if isinstance(exc, urllib.error.HTTPError):
+        return True
+    text = str(exc).lower()
+    return (
+        "http error 400" in text
+        or "http error 500" in text
+        or "failed to load model" in text
+        or "has not started loading" in text
+        or "operation canceled" in text
+    )
 
 
 class CommandProcessor:
@@ -32,6 +51,9 @@ class CommandProcessor:
         self._gen_locks = defaultdict(asyncio.Lock)   # channel -> serialization lock
         self._inflight = defaultdict(set)             # channel -> signatures running/queued
         self._warned = defaultdict(set)               # channel -> sigs already warned about
+        self._model_lock = asyncio.Lock()
+        self._model_queue = deque()
+        self._model_inflight = set()
 
     async def process_command(self, message):
         # command-banned users are silently ignored (~banuser/~unbanuser)
@@ -55,7 +77,9 @@ class CommandProcessor:
         # Only GPU-heavy generation commands WITH args go through the cooldown +
         # serialization path. Everything else (incl. a bare '~persona' that just
         # prints usage) runs freely — no cooldown, no lock.
-        if command in SERIAL_COMMANDS and params and message.channel:
+        if command in MODEL_QUEUE_COMMANDS and params and message.channel:
+            await self._run_model_queued(message, command, params, handler, user)
+        elif command in SERIAL_COMMANDS and params and message.channel:
             verdict, secs = cooldowns.before(user)
             if verdict == "drop":
                 return
@@ -77,6 +101,11 @@ class CommandProcessor:
         if _backend_offline(exc):
             await message.channel.send(
                 "🔌 local model server is offline — this command needs it (start LM Studio).")
+        elif _backend_rejected(exc):
+            logging.warning(f"Local model rejected command {command}: {exc}")
+            await message.channel.send(
+                "Local model is up, but rejected/overloaded that request. "
+                "Try again after the model queue clears.")
         else:
             logging.error(f"Error handling command {command}: {exc}")
             await message.channel.send("An error occurred while processing your command.")
@@ -87,6 +116,40 @@ class CommandProcessor:
             await handler(self.bot, message, params)
         except Exception as e:
             await self._report_error(message, command, e)
+
+    async def _run_model_queued(self, message, command, params, handler, user):
+        """One global lane for dynamic-axis commands.
+
+        LM Studio can keep chat completions alive while the embedding model is
+        loading/unloading. Without this queue, several ~top calls can hit the
+        embedding endpoint at once and come back late/out of order.
+        """
+        sig = command + " " + " ".join(params).strip().lower()
+        if sig in self._model_inflight:
+            await message.channel.send(f"@{user} already queued/running that model command ⏳")
+            return
+
+        position = len(self._model_queue) + (1 if self._model_lock.locked() else 0)
+        self._model_inflight.add(sig)
+        self._model_queue.append(sig)
+        if position:
+            await message.channel.send(f"@{user} queued for model work (#{position})")
+
+        try:
+            async with self._model_lock:
+                try:
+                    self._model_queue.remove(sig)
+                except ValueError:
+                    pass
+                await handler(self.bot, message, params)
+        except Exception as e:
+            await self._report_error(message, command, e)
+        finally:
+            self._model_inflight.discard(sig)
+            try:
+                self._model_queue.remove(sig)
+            except ValueError:
+                pass
 
     async def _run_serial(self, message, command, params, handler, user):
         """GPU-heavy generation commands: one at a time per channel, with an

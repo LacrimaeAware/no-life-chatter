@@ -1,7 +1,7 @@
 import asyncio
 
 from utils import chat_archive
-from utils.persona_axes import top
+from utils.persona_axes import top, axis_error_message
 from utils.persona_traits import pole_map
 
 description = (
@@ -26,9 +26,10 @@ async def handle_bottom(bot, message, params):
         n = max(1, min(int(args[1]), 10))
     rows, note = await asyncio.to_thread(top, trait, n * 3, burst, True)
     if rows is None:
+        reason = axis_error_message(trait)
         await message.channel.send(
-            f"Couldn't build a '{trait}' axis this time -- the local model flaked. "
-            "Trying again usually works."
+            f"Couldn't build a '{trait}' axis -- {reason}. "
+            "Queued commands run one at a time now."
         )
         return
 

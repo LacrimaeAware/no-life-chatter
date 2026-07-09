@@ -1,3 +1,5 @@
+import asyncio
+
 description = (
     "~axis <trait> [n] — what an axis is closest to (its nearest neighbour axes)."
 )
@@ -14,7 +16,7 @@ def _axis_report(term, n=6):
 
     resolved = persona_axes.resolve_axis(term)
     if not resolved:
-        return f"no axis for '{term}'"
+        return f"no axis for '{term}' — {persona_axes.axis_error_message(term)}"
     axis, sign, note = resolved
     axes = persona_axes._all_axis_vectors()
     av, pos, neg = axes[axis]
@@ -47,4 +49,5 @@ async def handle_axis(bot, message, params):
             n = int(params[1])
         except ValueError:
             pass
-    await message.channel.send(_axis_report(term, n))
+    msg = await asyncio.to_thread(_axis_report, term, n)
+    await message.channel.send(msg)

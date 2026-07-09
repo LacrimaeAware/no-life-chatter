@@ -4,6 +4,7 @@ import sys
 import threading
 import types
 import unittest
+import urllib.error
 from collections import Counter
 
 
@@ -16,6 +17,13 @@ def install_fake_config():
         ARCHIVE_DB="data/unsynced/test_archive.db",
         CLASSIFIER_FILE="data/unsynced/test_classifier.pkl",
         EXCLUDE_USERS={"helperbot"},
+        DB_PATH="data/unsynced/test_settings.db",
+        LLM_ENDPOINT="http://127.0.0.1:1234/v1/chat/completions",
+        LLM_MODEL="local",
+        LLM_EMBED_MODEL="text-embedding-bge-m3",
+        LLM_MODEL_SHORTCUTS={},
+        COMEDY_CHANNELS=(),
+        CHANNELS=("mainroom",),
         LLM_SEMANTIC_MIN_SCORE=0.50,
         LLM_SEMANTIC_UNANCHORED_MIN_SCORE=0.62,
     )
@@ -26,7 +34,9 @@ def install_fake_config():
 install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
 from utils import archive_qa, chat_archive, emote_explain, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona  # noqa: E402
+from utils import persona_axes  # noqa: E402
 from commands import markers  # noqa: E402
+from command_processor import _backend_offline, _backend_rejected  # noqa: E402
 
 
 class ArchiveNormalizationTests(unittest.TestCase):
@@ -182,6 +192,28 @@ class ArchiveNormalizationTests(unittest.TestCase):
         total, rows = chat_archive.said("searchperson", phrase, limit=5, channel=channel)
         self.assertEqual(total, 2)
         self.assertEqual(len(rows), 2)
+
+
+class CommandProcessorPureTests(unittest.TestCase):
+    def test_http_400_model_error_is_not_offline(self):
+        exc = urllib.error.HTTPError(
+            "http://127.0.0.1:1234/v1/embeddings",
+            400,
+            "Bad Request",
+            None,
+            None,
+        )
+        self.assertFalse(_backend_offline(exc))
+        self.assertTrue(_backend_rejected(exc))
+
+
+class PersonaAxisPureTests(unittest.TestCase):
+    def test_axis_error_message_explains_embedding_busy(self):
+        persona_axes._set_axis_error(
+            "breedable",
+            'embedding HTTP 400: {"error":"Model has not started loading/has been unloaded."}',
+        )
+        self.assertIn("busy/loading", persona_axes.axis_error_message("breedable"))
 
 
 class ScopeParserTests(unittest.TestCase):

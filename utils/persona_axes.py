@@ -21,6 +21,7 @@ import logging
 import os
 import pickle
 import re
+import urllib.error
 import urllib.request
 
 import config
@@ -35,6 +36,53 @@ TEXT_W, EMOTE_W = 0.75, 0.25
 
 _custom = None
 _emote_person_vecs = None
+_last_axis_error = {}
+
+
+def _axis_key(term):
+    return (term or "").lower().strip()
+
+
+def _error_text(exc) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:240]
+        except Exception:
+            body = ""
+        return f"HTTP {exc.code}: {body or exc.reason}"
+    return str(exc)
+
+
+def _set_axis_error(term, exc_or_text):
+    text = _error_text(exc_or_text) if isinstance(exc_or_text, BaseException) else str(exc_or_text)
+    _last_axis_error[_axis_key(term)] = text
+
+
+def _clear_axis_error(term):
+    _last_axis_error.pop(_axis_key(term), None)
+
+
+def axis_error_message(term) -> str:
+    """Short chat-safe explanation for the last dynamic-axis build failure."""
+    text = _last_axis_error.get(_axis_key(term), "")
+    low = text.lower()
+    if not text:
+        return "local model could not build it"
+    if (
+        "failed to load model" in low
+        or "has not started loading" in low
+        or "operation canceled" in low
+        or "embedding http 400" in low
+        or "embedding http 500" in low
+        or "http error 400" in low
+        or "http error 500" in low
+    ):
+        return "the embedding model is busy/loading, not offline"
+    if "no json" in low:
+        return "the chat model returned invalid axis JSON"
+    if "failed validation" in low:
+        return "the model made a bad axis and it was rejected"
+    return "the local model failed while building it"
 
 
 # ----------------------------- custom axes -----------------------------
@@ -65,8 +113,12 @@ def _chat_sync(prompt, max_tokens=400, model=None):
     base = config.LLM_ENDPOINT.split("/v1/")[0]
     req = urllib.request.Request(base + "/v1/chat/completions", data=body,
                                  headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=90) as r:
-        return json.load(r)["choices"][0]["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            return json.load(r)["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"chat HTTP {exc.code}: {body}") from exc
 
 
 def _generate_poles(term):
@@ -81,6 +133,7 @@ def _generate_poles(term):
     pole more than the opposite pole, else retry once and then give up.
     Returns (opposite_label, pos_sentences, neg_sentences) or None."""
     import numpy as np
+    _clear_axis_error(term)
     # the abliterated model won't dodge charged traits, but it's persona-tuned
     # so its JSON discipline is shaky — fall back to the base instruct model
     # (better JSON, may soften) before giving up entirely
@@ -106,6 +159,7 @@ def _generate_poles(term):
             raw = _chat_sync(prompt, model=model)
             m = re.search(r"\{.*\}", raw, re.DOTALL)
             if not m:
+                _set_axis_error(term, "no JSON in output")
                 logging.warning(f"axis gen for {term!r}: no JSON in output (attempt {attempt + 1})")
                 continue
             # persona-tuned models love trailing commas; json.loads doesn't
@@ -125,9 +179,12 @@ def _generate_poles(term):
             N = np.asarray(embs[1 + len(pos):]).mean(axis=0)
             P /= (np.linalg.norm(P) + 1e-9); N /= (np.linalg.norm(N) + 1e-9)
             if float(t @ P) > float(t @ N):   # poles face the right way
+                _clear_axis_error(term)
                 return opp, pos, neg
+            _set_axis_error(term, "axis poles failed validation")
             logging.warning(f"axis poles for {term!r} failed validation (attempt {attempt + 1})")
         except Exception as e:
+            _set_axis_error(term, e)
             logging.warning(f"dynamic axis generation failed for {term!r}: {e}")
     return None
 
@@ -190,7 +247,12 @@ def resolve_axis(term):
             return name, -1, None
 
     # synonym of an existing axis? alias it instead of building a duplicate
-    hit = _name_merge_candidate(term)
+    try:
+        hit = _name_merge_candidate(term)
+    except Exception as exc:
+        _set_axis_error(term, exc)
+        logging.warning(f"axis name-merge lookup failed for {term!r}: {exc}")
+        return None
     if hit:
         name, sign = hit
         if name in custom:
@@ -202,7 +264,12 @@ def resolve_axis(term):
     if not made:
         return None
     opp, pos_s, neg_s = made
-    embs = _embed(neg_s + pos_s)
+    try:
+        embs = _embed(neg_s + pos_s)
+    except Exception as exc:
+        _set_axis_error(term, exc)
+        logging.warning(f"axis embedding failed for {term!r}: {exc}")
+        return None
     neg = np.asarray(embs[:len(neg_s)], dtype="float32").mean(axis=0)
     pos = np.asarray(embs[len(neg_s):], dtype="float32").mean(axis=0)
     v = pos - neg
