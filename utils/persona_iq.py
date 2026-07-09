@@ -353,11 +353,17 @@ def _rarity_fn(freqs: Counter, total: int, exclusions: set[str] | None = None):
 
 
 def _mean_rarity(toks: list[str], rarity) -> float | None:
-    vals = [rarity(t) for t in toks]
-    vals = [v for v in vals if v is not None]
+    # DISTINCT tokens with a >= 3-distinct floor: "TAP-IN TAP-IN TAP-IN" is
+    # one rare token repeated, not three rare words.
+    vals: dict[str, float] = {}
+    for t in toks:
+        if t not in vals:
+            v = rarity(t)
+            if v is not None:
+                vals[t] = v
     if len(vals) < 3:
         return None
-    return sum(vals) / len(vals)
+    return sum(vals.values()) / len(vals)
 
 
 def _has_reasoning_shape(text: str, toks: list[str]) -> bool:
@@ -416,7 +422,10 @@ def _interpretable_features(rows: list[dict], rarity) -> dict[str, float]:
         toks = row["tokens"]
         text = row["clean"]
         all_tokens.extend(toks)
-        r = None if _non_english(text) else _mean_rarity(toks, rarity)
+        # quoting a bot command mid-message ("~whosaid xyz") is chat plumbing,
+        # not vocabulary; command NAMES are corpus-rare and inflate rarity
+        quotes_command = getattr(config, "PREFIX", "~") in row["raw"]
+        r = None if (quotes_command or _non_english(text)) else _mean_rarity(toks, rarity)
         if r is not None:
             rarity_scores.append(r)
         n = len(toks)
