@@ -828,6 +828,31 @@ class UserProfilesPureTests(unittest.TestCase):
         self.assertEqual(statuses, {"dog": "confirmed", "cat": "candidate"})
 
 
+class PersonaOutputPureTests(unittest.TestCase):
+    def test_clean_output_skips_meta_preamble_for_target_labeled_line(self):
+        raw = (
+            "Based on the chat history and the style of Bluepigman5000, "
+            "their next message could be:\n"
+            "Bluepigman5000: DuardoCry"
+        )
+        self.assertEqual(persona_llm._clean_output(raw, "Bluepigman5000"), "DuardoCry")
+
+    def test_candidate_rejects_assistant_preamble(self):
+        text = "Based on the chat history and the style of Bluepigman5000, their next message could be:"
+        self.assertEqual(
+            persona_llm._candidate_issues("Bluepigman5000", text, []),
+            "assistant preamble",
+        )
+
+    def test_candidate_rejects_nested_speaker_label(self):
+        cleaned = persona_llm._clean_output("Bluepigman5000: duardo1: peepoZ", "Bluepigman5000")
+        self.assertEqual(cleaned, "duardo1: peepoZ")
+        self.assertEqual(
+            persona_llm._candidate_issues("Bluepigman5000", cleaned, []),
+            "speaker label",
+        )
+
+
 class ResidentPersonaPureTests(unittest.TestCase):
     def test_format_line_replaces_persona_label_with_prefix(self):
         state = {"persona": "normanbiz", "prefix": "tickpooJAWLINE \U0001f4e3"}

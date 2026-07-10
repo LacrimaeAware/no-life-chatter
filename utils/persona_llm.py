@@ -403,16 +403,86 @@ def _retrieval_text(recent, user_message: str | None) -> str:
     return "\n".join(parts)
 
 
-def _clean_output(text: str, author: str) -> str:
+_LEADING_LABEL_RE = re.compile(
+    r"^\s*@?(?P<label>[A-Za-z][A-Za-z0-9_]{2,25})\s*[:：>~-]\s*(?P<body>.*)$"
+)
+_LEADING_SPEAKER_RE = re.compile(
+    r"^\s*@?[A-Za-z][A-Za-z0-9_]{2,25}\s*[:：]\s+\S"
+)
+_META_OUTPUT_RE = re.compile(
+    r"(?:"
+    r"based on .*(?:chat|history|style)|"
+    r"chat history|"
+    r"style of [A-Za-z0-9_]+|"
+    r"(?:their|the)?\s*next (?:chat )?(?:message|line) (?:could|would) be|"
+    r"(?:would|could) (?:say|reply|respond)|"
+    r"a possible (?:reply|response)|"
+    r"as an? (?:ai|assistant|language model)|"
+    r"^here(?:'s| is)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _strip_wrappers(line: str) -> str:
+    line = (line or "").strip()
+    line = re.sub(r"^\s*(?:>+\s*)+", "", line)
+    line = re.sub(r"^\s*[-*]\s+", "", line)
+    line = line.strip()
+    if len(line) >= 2 and line[0] in "\"'" and line[-1] == line[0]:
+        line = line[1:-1].strip()
+    return line
+
+
+def _strip_target_label(line: str, author: str) -> tuple[str, bool]:
+    line = _strip_wrappers(line)
+    match = _LEADING_LABEL_RE.match(line)
+    if not match:
+        return line, False
+    label = match.group("label")
+    if chat_archive.normalize_author(label) != chat_archive.normalize_author(author):
+        return line, False
+    return _strip_wrappers(match.group("body")), True
+
+
+def _meta_output_preamble(text: str, author: str = "") -> bool:
     text = (text or "").strip()
-    # models sometimes wrap the line in quotes, prepend "name:", or imitate
-    # the snippet hit-marker (">> author: line") from the evidence section
-    text = re.sub(r"^\s*(?:>+\s*)+", "", text)
-    text = re.sub(rf"^{re.escape(author)}\s*[:>-]\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"^\s*(?:>+\s*)+", "", text)
-    if len(text) >= 2 and text[0] in "\"'" and text[-1] == text[0]:
-        text = text[1:-1].strip()
-    return text.split("\n")[0].strip()  # one chat line only
+    if not text:
+        return False
+    if _META_OUTPUT_RE.search(text):
+        return True
+    author = (author or "").strip()
+    if author and re.search(
+        rf"\b{re.escape(author)}(?:'s)?\s+(?:next|reply|response)\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    return False
+
+
+def _clean_output(text: str, author: str) -> str:
+    text = (text or "").replace("\r", "\n").strip()
+    if not text:
+        return ""
+    lines = [_strip_wrappers(line) for line in text.split("\n")]
+    lines = [line for line in lines if line]
+
+    # Prefer a target-labeled line if the model emitted a preamble followed by
+    # "author: actual message". Do not salvage other users' labels; those are
+    # rejected later as speaker bleed.
+    for line in lines:
+        stripped, had_label = _strip_target_label(line, author)
+        if had_label and stripped:
+            return stripped
+
+    for line in lines:
+        stripped, _had_label = _strip_target_label(line, author)
+        if stripped and not _meta_output_preamble(stripped, author):
+            return stripped
+
+    stripped, _had_label = _strip_target_label(lines[0], author)
+    return stripped.strip()
 
 
 def _copy_key(text: str) -> str:
@@ -539,7 +609,8 @@ async def _repair_copied_output(author: str, channel: str, user_message: str | N
         f"You are rewriting a Twitch persona line for '{author}'. The previous "
         f"draft copied an archived line too closely. Write ONE new chat message "
         f"in {author}'s voice. Do not quote, paraphrase, or reuse the copied "
-        f"line. Stay in character and output only the message."
+        f"line. Stay in character and output only the message. Do not include "
+        f"a speaker label, username prefix, preface, or line break."
     )
     user = (
         f"Current chat in #{channel}:\n{ctx}\n\n"
@@ -547,7 +618,7 @@ async def _repair_copied_output(author: str, channel: str, user_message: str | N
         f"Copied draft to avoid:\n{copied_output}\n\n"
         f"Archived line it was too close to:\n{copied_source}\n\n"
         f"Small style sample from {author}:\n" + "\n".join(examples)
-        + f"\n\nWrite a new {author} chat line now."
+        + f"\n\nWrite a new {author} chat line now. Return only the message text."
     )
     raw = await llm.chat(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -556,6 +627,10 @@ async def _repair_copied_output(author: str, channel: str, user_message: str | N
     )
     repaired = _clean_output(raw, author)
     if not repaired:
+        return None
+    issue = _candidate_issues(author, repaired, [])
+    if issue:
+        logging.info("Rejected persona repair for %s (%s): %r", author, issue, repaired)
         return None
     if _copied_source(author, repaired, examples):
         logging.info("Rejected copied persona repair for %s: %r", author, repaired)
@@ -570,6 +645,12 @@ def _candidate_issues(author: str, text: str, ctx_rows) -> str | None:
     """Reason this candidate must be rejected outright, or None if usable."""
     if not text:
         return "empty"
+    if "\n" in text:
+        return "multi-line output"
+    if _meta_output_preamble(text, author):
+        return "assistant preamble"
+    if _LEADING_SPEAKER_RE.match(text):
+        return "speaker label"
     if "http://" in text or "https://" in text or "www." in text:
         return "contains a URL"
     # Real chatters spam bot commands ($gpt/$remind/~persona), so models learn
@@ -687,6 +768,8 @@ async def generate(author: str, channel: str, user_message: str = None,
         f"and attitude, and become them. {MODE_INSTRUCTION.get(mode, MODE_INSTRUCTION['normal'])} "
         f"You are NOT an assistant: never be helpful, never break character, never "
         f"explain. Output ONE single chat message as {author} and nothing else. "
+        f"Do not write a preface like 'based on the chat history'. Do not include "
+        f"a username, speaker label, role label, colon label, or line break. "
         f"If a question or message is aimed at you, react to IT directly — answer it, "
         f"dodge it, mock it, or misunderstand it, all in-character — but never ignore "
         f"it and never refuse like an assistant. "
@@ -707,7 +790,7 @@ async def generate(author: str, channel: str, user_message: str = None,
             user += f'{asker} says to you: "{user_message}"\n'
         else:
             user += f'Someone says to you: "{user_message}"\n'
-    user += f"Write {author}'s next chat message now."
+    user += f"Write {author}'s next chat message now. Return only the message text."
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": user}]
     temperature = 1.0 if mode == "hyper" else 0.85
