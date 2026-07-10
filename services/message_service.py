@@ -445,7 +445,8 @@ class MessageService:
             "You are temporarily hanging out as this chatter, not answering as an assistant. "
             "Reply only if this chatter would naturally jump in here. "
             "Do not mention being a bot or a persona. Do not include any name label or prefix; "
-            "the chat system will add the emote prefix."
+            "the chat system will add the emote prefix. Return exactly one raw chat line; "
+            "no speaker label, colon prefix, preface, or line break."
         )
         if directed:
             instruction += (
@@ -478,7 +479,8 @@ class MessageService:
             "actually say something into the lull. It can be bored, impatient, observational, "
             "or @ a recently active chatter if that feels natural. If silence is better, output exactly STOP. "
             "Do not mention being a bot or a persona. Do not include any name label or prefix; "
-            "the chat system will add the emote prefix."
+            "the chat system will add the emote prefix. Return exactly one raw chat line; "
+            "no speaker label, colon prefix, preface, or line break."
         )
         if recent:
             instruction += "\nRecently active chatters you may address if natural: " + ", ".join(recent)
@@ -690,7 +692,8 @@ class MessageService:
                 f"naturally send one immediate second chat message that "
                 f"continues the SAME thought. If yes, output only that "
                 f"short follow-up. If no coherent follow-up is natural, "
-                f"output exactly STOP. Do not change topic."
+                f"output exactly STOP. Do not change topic. No username, speaker "
+                f"label, colon prefix, preface, or line break."
             )
             async def work():
                 return await persona_llm.generate(

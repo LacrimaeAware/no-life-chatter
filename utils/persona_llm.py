@@ -68,6 +68,12 @@ MODE_INSTRUCTION = {
     ),
 }
 
+OUTPUT_CONTRACT = (
+    "Output contract: return exactly one raw Twitch chat line only. "
+    "No explanations, no analysis, no 'based on the chat history', no username "
+    "or speaker label, no colon-prefix format, no quotes, and no line breaks."
+)
+
 
 def _usable_exemplar(message: str) -> bool:
     return message_quality.usable_for_persona_exemplar(message)
@@ -609,8 +615,7 @@ async def _repair_copied_output(author: str, channel: str, user_message: str | N
         f"You are rewriting a Twitch persona line for '{author}'. The previous "
         f"draft copied an archived line too closely. Write ONE new chat message "
         f"in {author}'s voice. Do not quote, paraphrase, or reuse the copied "
-        f"line. Stay in character and output only the message. Do not include "
-        f"a speaker label, username prefix, preface, or line break."
+        f"line. Stay in character and output only the message. {OUTPUT_CONTRACT}"
     )
     user = (
         f"Current chat in #{channel}:\n{ctx}\n\n"
@@ -618,7 +623,7 @@ async def _repair_copied_output(author: str, channel: str, user_message: str | N
         f"Copied draft to avoid:\n{copied_output}\n\n"
         f"Archived line it was too close to:\n{copied_source}\n\n"
         f"Small style sample from {author}:\n" + "\n".join(examples)
-        + f"\n\nWrite a new {author} chat line now. Return only the message text."
+        + f"\n\nWrite a new {author} chat line now. {OUTPUT_CONTRACT}"
     )
     raw = await llm.chat(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -767,9 +772,7 @@ async def generate(author: str, channel: str, user_message: str = None,
         f"sent — study their voice, vocabulary, emotes, spelling, punctuation, length "
         f"and attitude, and become them. {MODE_INSTRUCTION.get(mode, MODE_INSTRUCTION['normal'])} "
         f"You are NOT an assistant: never be helpful, never break character, never "
-        f"explain. Output ONE single chat message as {author} and nothing else. "
-        f"Do not write a preface like 'based on the chat history'. Do not include "
-        f"a username, speaker label, role label, colon label, or line break. "
+        f"explain. {OUTPUT_CONTRACT} "
         f"If a question or message is aimed at you, react to IT directly — answer it, "
         f"dodge it, mock it, or misunderstand it, all in-character — but never ignore "
         f"it and never refuse like an assistant. "
@@ -790,7 +793,7 @@ async def generate(author: str, channel: str, user_message: str = None,
             user += f'{asker} says to you: "{user_message}"\n'
         else:
             user += f'Someone says to you: "{user_message}"\n'
-    user += f"Write {author}'s next chat message now. Return only the message text."
+    user += f"Write {author}'s next chat message now. {OUTPUT_CONTRACT}"
     messages = [{"role": "system", "content": system},
                 {"role": "user", "content": user}]
     temperature = 1.0 if mode == "hyper" else 0.85

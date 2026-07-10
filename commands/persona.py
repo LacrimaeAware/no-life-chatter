@@ -113,7 +113,8 @@ async def _maybe_continue(message, user, original_prompt, previous_line, mode):
             f'You just said: "{last_line}". Decide if {user} would naturally '
             f"send one immediate second chat message that continues the SAME "
             f"thought. If yes, output only that short follow-up. If no coherent "
-            f"follow-up is natural, output exactly STOP. Do not change topic."
+            f"follow-up is natural, output exactly STOP. Do not change topic. "
+            f"No username, speaker label, colon prefix, preface, or line break."
         )
         follow = await persona_llm.generate(
             user,
