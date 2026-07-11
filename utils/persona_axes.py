@@ -300,6 +300,23 @@ def resolve_axis(term):
     return term, +1, f"new axis '{term}' (opposite: {opp}) built and saved"
 
 
+def axis_cached(term) -> bool:
+    """True if `term` already resolves with NO model or embedding call — a
+    built-in pole, a saved custom axis, one of its aliases, or its opposite
+    pole (opposites are stored together, so ~top intelligent reuses the
+    low-iq axis). Lets the dispatcher run already-built axes on the fast path
+    instead of queuing them behind live LLM axis builds."""
+    term = (term or "").lower().strip()
+    if not term:
+        return False
+    if term in pole_map():
+        return True
+    for name, d in _load_custom().items():
+        if term == name or term == d.get("neg_label") or term in d.get("aliases", []):
+            return True
+    return False
+
+
 # ----------------------- emote-aware projections -----------------------
 
 def _emote_vectors():

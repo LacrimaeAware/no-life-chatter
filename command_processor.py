@@ -50,6 +50,17 @@ def _has_raw_flag(params, start=0) -> bool:
     return any((p or "").lower() in RAW_RECEIPT_FLAGS for p in params[start:])
 
 
+def _axis_term(params) -> str:
+    """The trait token for ~top/~bottom — the first non-flag word (skip burst,
+    user=<name>, and @user; a numeric n only appears after the trait)."""
+    for p in params:
+        low = (p or "").lower()
+        if low == "burst" or low.startswith("user=") or (p or "").startswith("@"):
+            continue
+        return low
+    return ""
+
+
 def _model_command_kind(command, params) -> str | None:
     """Return 'required', 'optional', or None for a command invocation."""
     if not params:
@@ -72,6 +83,17 @@ def _model_command_kind(command, params) -> str | None:
         if len(params) < 2:
             return None
         return None if _has_raw_flag(params, 2) else "optional"
+    if command in {"top", "bottom"}:
+        # Only a genuinely NEW axis is model work. Built-in poles and
+        # already-built dynamic axes (incl. their opposite pole / aliases)
+        # resolve with no LLM call — run them fast so they don't stall behind
+        # a live axis build in the global queue.
+        term = _axis_term(params)
+        if term:
+            from utils import persona_axes
+            if persona_axes.axis_cached(term):
+                return None
+        return "required"
     if command in MODEL_REQUIRED_COMMANDS:
         return "required"
     if command in MODEL_OPTIONAL_COMMANDS:
