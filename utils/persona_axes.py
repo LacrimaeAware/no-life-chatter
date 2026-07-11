@@ -505,16 +505,18 @@ def top(term, n=5, burst=False, bottom=False):
 
 def rank(term, user):
     """Where one `user` stands on the `term` axis: their rank, σ, and the people
-    just above/below them. Returns a dict, or None if the axis can't be built or
-    the user isn't in the roster."""
+    just above/below them. Distinguishes the two failure modes so the caller can
+    say WHICH: returns {"error": "axis"} if the axis can't be built, or
+    {"error": "roster"} if it built fine but the user isn't in the ranked roster.
+    On success returns the full rank dict (no "error" key)."""
     resolved = resolve_axis(term)
     if not resolved:
-        return None
+        return {"error": "axis"}
     axis, sign, note = resolved
     scores = axis_scores(axis)
     canon = chat_archive.normalize_author(user)
     if canon not in scores:
-        return None
+        return {"error": "roster", "user": canon}
     signed = sorted(((a, sign * z) for a, z in scores.items()), key=lambda kv: -kv[1])
     idx = next(i for i, (a, _z) in enumerate(signed) if a == canon)
     return {

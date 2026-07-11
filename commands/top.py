@@ -5,16 +5,23 @@ from utils.persona_axes import top, rank, axis_error_message
 from utils.persona_traits import pole_map
 
 description = (
-    "~top <trait> [n] [burst] — who leans most toward a trait. Add a username "
-    "(~top <trait> <user>) to see that user's rank + neighbours instead. "
-    "burst = peak moments."
+    "~top <trait> [n] [burst] — who leans most toward a trait (a leaderboard). "
+    "The trait can be more than one word (~top anal lover). For ONE person's "
+    "rank + neighbours use an explicit @user or user=<name> (~top intelligent "
+    "@bob). burst = peak moments."
 )
+
+MAX_TRAIT_WORDS = 3
 
 
 def _parse(params):
+    """(user, burst, n, trait, nwords). A user is taken ONLY from @name or
+    user=name — bare words are the (possibly multi-word) trait, so ~top never
+    silently reads a trait word as a username."""
     user = None
     burst = False
-    rest = []
+    n = 5
+    words = []
     for p in params:
         low = p.lower()
         if low == "burst":
@@ -23,30 +30,39 @@ def _parse(params):
             user = p.split("=", 1)[1].lstrip("@") or None
         elif p.startswith("@"):
             user = p.lstrip("@") or None
+        elif low.isdigit():
+            n = max(1, min(int(low), 10))
         else:
-            rest.append(p)
-    return user, burst, rest
+            words.append(low)
+    return user, burst, n, " ".join(words).strip(), len(words)
 
 
 async def handle_top(bot, message, params):
-    user, burst, rest = _parse(params or [])
-    trait = rest[0].lower() if rest else ""
+    user, burst, n, trait, nwords = _parse(params or [])
     if not trait:
         await message.channel.send(
-            f"Usage: ~top <trait> [n] [user] — built-ins: {', '.join(sorted(pole_map()))}"
+            f"Usage: ~top <trait> [n] — built-ins: {', '.join(sorted(pole_map()))}. "
+            "For one person's rank: ~top <trait> @user"
         )
         return
-    # bare "~top <trait> <user>": a 2nd non-numeric word is a username, so you
-    # don't need the @ or user= (traits are single words, so it's unambiguous).
-    if not user and len(rest) > 1 and not rest[1].isdigit():
-        user = rest[1].lstrip("@")
+    if nwords > MAX_TRAIT_WORDS:
+        await message.channel.send(
+            f"That's a lot of words for a trait — keep it to {MAX_TRAIT_WORDS} or fewer. "
+            "For a single person's rank use ~top <trait> @user."
+        )
+        return
 
     if user:
         info = await asyncio.to_thread(rank, trait, user)
-        if not info:
+        if info.get("error") == "axis":
             await message.channel.send(
-                f"No '{trait}' read for {chat_archive.display_name(user)} "
-                "(not in the roster, or the axis couldn't be built)."
+                f"Couldn't build a '{trait}' axis — {axis_error_message(trait)}."
+            )
+            return
+        if info.get("error") == "roster":
+            await message.channel.send(
+                f"{chat_archive.display_name(user)} isn't in the ranked roster yet "
+                "(needs more archived messages to score)."
             )
             return
         bits = []
@@ -61,15 +77,10 @@ async def handle_top(bot, message, params):
         )
         return
 
-    n = 5
-    if len(rest) > 1 and rest[1].isdigit():
-        n = max(1, min(int(rest[1]), 10))
     rows, note = await asyncio.to_thread(top, trait, n * 3, burst)
     if rows is None:
-        reason = axis_error_message(trait)
         await message.channel.send(
-            f"Couldn't build a '{trait}' axis — {reason}. "
-            "Queued commands run one at a time now."
+            f"Couldn't build a '{trait}' axis — {axis_error_message(trait)}."
         )
         return
 

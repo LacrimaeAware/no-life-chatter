@@ -81,8 +81,8 @@ fast.
 | `~twin <user>` | anyone | Overall nearest match, blending lexical and semantic similarity. |
 | `~traits <user>` | anyone | Project a chatter onto built-in trait axes relative to the room average. ⚡ marks an axis where their messages span both poles, not one side. |
 | `~style <user>` | anyone | How a chatter TYPES — standout behaviors vs the room (emote rate, verbosity, caps, @mentions, profanity, vocabulary). Data-driven "structural" personality; unlike ~traits it doesn't touch the topic embedder. |
-| `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. Add `@user` (or `user=`) to show that user's rank, σ, and the people just above/below instead of the leaderboard. |
-| `~bottom <trait> [n] [burst]` | anyone | Reverse leaderboard — who leans LEAST toward a trait (most toward its opposite). |
+| `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. The trait may be more than one word (`~top anal lover`). For one person's rank, σ, and neighbours use an explicit `@user` or `user=<name>` — bare words are always read as the trait, never a username. |
+| `~bottom <trait> [n] [burst]` | anyone | Reverse leaderboard — who leans LEAST toward a trait (most toward its opposite). Trait may be multi-word. |
 | `~distinct [top\|bottom] [n]` | anyone | Chatters farthest from or closest to the room average across built-in trait axes. |
 | `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. `~why emote <emote> [raw]` explains learned emote meaning; `raw` shows vector receipts. |
 | `~axis <trait> [n]` | anyone | Inspect a trait/custom axis by showing nearest neighboring axes. |

@@ -14,16 +14,29 @@ async def handle_bottom(bot, message, params):
     if not params:
         await message.channel.send(
             f"Usage: ~bottom <trait> [n] -- built-ins: {', '.join(sorted(pole_map()))} "
-            "(or any word)"
+            "(or any word; the trait can be more than one word)"
         )
         return
-    args = [p.lower() for p in params]
-    burst = "burst" in args
-    args = [a for a in args if a != "burst"]
-    trait = args[0] if args else ""
+    burst = False
     n = 5
-    if len(args) > 1 and args[1].isdigit():
-        n = max(1, min(int(args[1]), 10))
+    words = []
+    for p in params:
+        low = p.lower()
+        if low == "burst":
+            burst = True
+        elif low.isdigit():
+            n = max(1, min(int(low), 10))
+        else:
+            words.append(low)
+    trait = " ".join(words).strip()
+    if not trait:
+        await message.channel.send("Usage: ~bottom <trait> [n]")
+        return
+    if len(words) > 3:
+        await message.channel.send(
+            "That's a lot of words for a trait — keep it to 3 or fewer."
+        )
+        return
     rows, note = await asyncio.to_thread(top, trait, n * 3, burst, True)
     if rows is None:
         reason = axis_error_message(trait)

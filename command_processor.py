@@ -51,14 +51,18 @@ def _has_raw_flag(params, start=0) -> bool:
 
 
 def _axis_term(params) -> str:
-    """The trait token for ~top/~bottom — the first non-flag word (skip burst,
-    user=<name>, and @user; a numeric n only appears after the trait)."""
+    """The trait phrase for ~top/~bottom — every bare word joined (traits can be
+    multi-word, e.g. 'anal lover'), skipping flags (burst, user=<name>, @user)
+    and a numeric n. Matches how the command parses the trait, so the cache
+    check (fast-path vs model queue) is made against the real axis name."""
+    words = []
     for p in params:
         low = (p or "").lower()
-        if low == "burst" or low.startswith("user=") or (p or "").startswith("@"):
+        if (low == "burst" or low.startswith("user=")
+                or (p or "").startswith("@") or low.isdigit()):
             continue
-        return low
-    return ""
+        words.append(low)
+    return " ".join(words).strip()
 
 
 def _model_command_kind(command, params) -> str | None:
