@@ -243,7 +243,7 @@ def resolve_axis(term):
     for name, d in custom.items():
         if term == name or term in d.get("aliases", []):
             return name, +1, None
-        if term == d["neg_label"]:
+        if term == d["neg_label"] or term in d.get("neg_aliases", []):
             return name, -1, None
 
     # synonym of an existing axis? alias it instead of building a duplicate
@@ -312,9 +312,55 @@ def axis_cached(term) -> bool:
     if term in pole_map():
         return True
     for name, d in _load_custom().items():
-        if term == name or term == d.get("neg_label") or term in d.get("aliases", []):
+        if (term == name or term == d.get("neg_label")
+                or term in d.get("aliases", []) or term in d.get("neg_aliases", [])):
             return True
     return False
+
+
+def merge_axes(canonical, dup, *, opposite=False):
+    """Fold the saved axis `dup` into `canonical` — human-curated dedup.
+
+    Automatic merging is unreliable (measured: no cosine threshold separates
+    synonyms from distinct concepts, and the LLM hands out generic opposites
+    like 'american' for german/french/czech), so collapsing duplicates is an
+    explicit action, not a guess.
+
+    opposite=False: `dup` names the SAME pole as `canonical` — its name and
+      aliases become positive aliases of `canonical`.
+    opposite=True:  `dup` names the OPPOSITE pole — its name and aliases become
+      NEGATIVE aliases, so ~top <dup> ranks toward canonical's opposite pole.
+    Returns a short summary. Raises KeyError if either axis is missing."""
+    custom = _load_custom()
+    if canonical not in custom:
+        raise KeyError(f"no saved axis {canonical!r}")
+    if dup not in custom:
+        raise KeyError(f"no saved axis {dup!r}")
+    if canonical == dup:
+        raise ValueError("cannot merge an axis into itself")
+    c, d = custom[canonical], custom[dup]
+    # dup's positive side (its name + positive aliases) + dup's opposite side
+    pos_side = [dup] + list(d.get("aliases", []))
+    neg_side = list(d.get("neg_aliases", []))
+    if d.get("neg_label"):
+        neg_side.append(d["neg_label"])
+    # route to canonical's pos/neg alias buckets (flipped when opposite=True)
+    pos_bucket = c.setdefault("neg_aliases" if opposite else "aliases", [])
+    neg_bucket = c.setdefault("aliases" if opposite else "neg_aliases", [])
+    reserved = {canonical, c.get("neg_label", "")}
+    for a in pos_side:
+        if a and a not in pos_bucket and a not in reserved:
+            pos_bucket.append(a)
+    for a in neg_side:
+        if a and a not in neg_bucket and a not in reserved:
+            neg_bucket.append(a)
+    # keep the two buckets disjoint (a label can't be both poles)
+    c["neg_aliases"] = [a for a in c.get("neg_aliases", []) if a not in set(c.get("aliases", []))]
+    del custom[dup]
+    _save_custom()
+    return (f"merged '{dup}' into '{canonical}'"
+            f"{' (opposite pole)' if opposite else ''}: "
+            f"+{len(pos_side)} pos, +{len(neg_side)} opp aliases")
 
 
 # ----------------------- emote-aware projections -----------------------

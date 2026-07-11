@@ -112,6 +112,7 @@ comparisons, not clinical or total-person labels.
 | `~unbanuser <name>` | super admin | Remove a command ban. |
 | `~warnings [n]` | super admin | Review recent anti-spam cooldown offenses. |
 | `~modelqueue [status\|clear]` | super admin | Inspect or clear pending local-model work. The running command is allowed to finish. |
+| `~axismerge <canonical> <dup> [flip]` | super admin | Fold a duplicate dynamic trait axis into another (`flip` when `<dup>` is the opposite pole); `~axismerge list` inspects saved axes. Dedup is manual on purpose — embedding cosine can't reliably tell synonyms from distinct concepts. |
 
 ## Planned But Not Live
 

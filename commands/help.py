@@ -14,7 +14,7 @@ HIDDEN = {"markov", "mimic", "admin"}
 ADMIN_CATEGORIES = [
     ("super admin", [
         "botpersona", "botmode", "botcontext", "botchance",
-        "banuser", "unbanuser", "warnings", "modelqueue",
+        "banuser", "unbanuser", "warnings", "modelqueue", "axismerge",
         "chan_autotl", "global_autotl", "notranslate",
     ]),
     ("admin", [
