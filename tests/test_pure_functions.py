@@ -37,7 +37,7 @@ sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
 from utils import archive_qa, chat_archive, emote_explain, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona, user_profiles  # noqa: E402
 from utils import persona_axes  # noqa: E402
 from services import model_queue  # noqa: E402
-from commands import markers  # noqa: E402
+from commands import markers, why  # noqa: E402
 from command_processor import _backend_offline, _backend_rejected, _model_command_kind  # noqa: E402
 
 
@@ -325,6 +325,19 @@ class PersonaAxisPureTests(unittest.TestCase):
             'embedding HTTP 400: {"error":"Model has not started loading/has been unloaded."}',
         )
         self.assertIn("busy/loading", persona_axes.axis_error_message("breedable"))
+
+
+class WhyCommandPureTests(unittest.TestCase):
+    def test_squash_repeated_text_halves(self):
+        text = "i am intelligent i am intelligent"
+        self.assertEqual(why._squash_repeated_text(text), "i am intelligent")
+
+    def test_axis_basis_note_exposes_opposite_custom_axis(self):
+        axes = {"goy": (object(), "goy", "sophisticated")}
+        self.assertEqual(
+            why._axis_basis_note("sophisticated", "goy", -1, axes["goy"][1], axes["goy"][2]),
+            "basis sophisticated vs goy (axis goy)",
+        )
 
 
 class ScopeParserTests(unittest.TestCase):

@@ -84,7 +84,7 @@ raw/receipts-only and cached-axis variants stay fast.
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard. Built-in traits answer instantly; new words build dynamic axes. The trait may be more than one word (`~top anal lover`). For one person's rank, σ, and neighbours use an explicit `@user` or `user=<name>` — bare words are always read as the trait, never a username. |
 | `~bottom <trait> [n] [burst]` | anyone | Reverse leaderboard — who leans LEAST toward a trait (most toward its opposite). Trait may be multi-word. |
 | `~distinct [top\|bottom] [n]` | anyone | Chatters farthest from or closest to the room average across built-in trait axes. |
-| `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score on a trait axis. `~why emote <emote> [raw]` explains learned emote meaning; `raw` shows vector receipts. |
+| `~why <user> <trait> [words]` | anyone | Show real indexed messages that drive a user's score and the resolved axis basis/pole. `~why emote <emote> [raw]` explains learned emote meaning; `raw` shows vector receipts. |
 | `~axis <trait> [n]` | anyone | Inspect a trait/custom axis by showing nearest neighboring axes. |
 | `~emote <emote> [raw]` | anyone | Explain what the bot thinks an emote means in one readable sentence; `raw` shows registry, sampled usage-vector contexts, neighbors, and cached axis scores. |
 | `~explain emote <emote> [raw]` | anyone | Same emote meaning explainer, routed through the general `~explain` command. |

@@ -435,17 +435,35 @@ def _ortho_builtin():
     return ortho_axis_vectors()
 
 
+def scoring_axis_vector(axis_name):
+    """Vector used for live scoring.
+
+    Built-in axes use the decorrelated scoring directions. Custom axes are
+    already saved as concrete vectors, so do not warm/rebuild built-in axis
+    embeddings just to score a custom axis.
+    """
+    if axis_name in AXES:
+        return _ortho_builtin()[axis_name]
+    import numpy as np
+    return np.asarray(_load_custom()[axis_name]["vector"], dtype="float32")
+
+
+def axis_labels(axis_name):
+    """Return (positive_label, negative_label) without warming unrelated axes."""
+    if axis_name in AXES:
+        neg, pos, _neg_s, _pos_s = AXES[axis_name]
+        return pos, neg
+    d = _load_custom()[axis_name]
+    return d["pos_label"], d["neg_label"]
+
+
 def axis_scores(axis_name):
     """{author: z} on an axis, blending text and emote-name semantics.
     Short-form posters whose traits live in their emotes get read correctly.
     Built-in axes use the orthogonalized directions (independent dials);
     custom axes project on their own raw direction."""
     import numpy as np
-    ortho = _ortho_builtin()
-    if axis_name in ortho:
-        av = ortho[axis_name]
-    else:
-        av, _pos, _neg = _all_axis_vectors()[axis_name]
+    av = scoring_axis_vector(axis_name)
     text = persona_embeddings._centered()
     emote = _emote_vectors()
     names = list(text)

@@ -1,16 +1,41 @@
 import asyncio
 import os
+import re
 
 from utils import chat_archive
 from utils import emote_explain
 
 description = (
     "~why <user> <trait> [words] - actual messages driving a user's trait score. "
+    "Shows the resolved axis basis when a trait maps to a saved axis. "
     "~why emote <emote> [raw] explains learned emote meaning from vector evidence."
 )
 
 
 _axis_cal = {}   # axis -> (mu, sd) of per-message projections, index-wide
+
+
+def _squash_repeated_text(text):
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    words = text.split()
+    if len(words) >= 4 and len(words) % 2 == 0:
+        half = len(words) // 2
+        if words[:half] == words[half:]:
+            return " ".join(words[:half])
+    return text
+
+
+def _clip(text, limit):
+    text = _squash_repeated_text(text)
+    return text if len(text) <= limit else text[:max(0, limit - 1)].rstrip() + "..."
+
+
+def _axis_basis_note(trait, axis, sign, pos_label, neg_label):
+    wanted = pos_label if sign > 0 else neg_label
+    other = neg_label if sign > 0 else pos_label
+    if trait == wanted and trait == axis:
+        return f"basis {wanted} vs {other}"
+    return f"basis {wanted} vs {other} (axis {axis})"
 
 
 def _calibration(axis, av):
@@ -31,16 +56,16 @@ def _calibration(axis, av):
 
 def _explain(user, trait):
     import numpy as np
-    from utils.persona_axes import (_ortho_builtin, _all_axis_vectors,
-                                    axis_scores, resolve_axis)
+    from utils.persona_axes import (axis_labels, axis_scores, resolve_axis,
+                                    scoring_axis_vector)
     resolved = resolve_axis(trait)
     if not resolved:
         return None, f"no axis for '{trait}'"
     axis, sign, _note = resolved
     person_z = sign * axis_scores(axis).get(
         chat_archive.normalize_author(user), 0.0)
-    ortho = _ortho_builtin()
-    av = ortho[axis] if axis in ortho else _all_axis_vectors()[axis][0]
+    pos_label, neg_label = axis_labels(axis)
+    av = scoring_axis_vector(axis)
     canon = chat_archive.normalize_author(user)
     path = os.path.join("data", "unsynced", "msg_index", f"{canon}.npz")
     if not os.path.exists(path):
@@ -55,18 +80,18 @@ def _explain(user, trait):
     z = (proj - sign * mu) / sd
     top = proj.argsort()[::-1][:2]
     bottom = proj.argsort()[:1]
-    pos = [(str(d["texts"][i])[:150], float(z[i])) for i in top]
-    neg = [(str(d["texts"][i])[:110], float(z[i])) for i in bottom]
-    return (pos, neg, person_z), None
+    pos = [(_clip(d["texts"][i], 150), float(z[i])) for i in top]
+    neg = [(_clip(d["texts"][i], 110), float(z[i])) for i in bottom]
+    basis = _axis_basis_note(trait, axis, sign, pos_label, neg_label)
+    return (pos, neg, person_z, axis, sign, basis), None
 
 
 def _word_attribution(text, axis, sign):
     """Occlusion: drop each word, re-embed, measure projection loss."""
     import numpy as np
-    from utils.persona_axes import _ortho_builtin, _all_axis_vectors
+    from utils.persona_axes import scoring_axis_vector
     from utils.persona_traits import _embed
-    ortho = _ortho_builtin()
-    av = ortho[axis] if axis in ortho else _all_axis_vectors()[axis][0]
+    av = scoring_axis_vector(axis)
     av = np.asarray(av, dtype="float32")
     words = text.split()[:24]
     variants = [" ".join(words)] + [
@@ -97,18 +122,16 @@ async def handle_why(bot, message, params):
     if err:
         await message.channel.send(err)
         return
-    pos, neg, person_z = result
+    pos, neg, person_z, axis, sign, basis = result
     if words_mode:
-        from utils.persona_axes import resolve_axis
-        axis, sign, _n = resolve_axis(trait)
         attr = await asyncio.to_thread(_word_attribution, pos[0][0], axis, sign)
         parts = " | ".join(f"{w} (+{d:.3f})" for w, d in attr) or "no single word carries it"
         await message.channel.send(
-            f'"{pos[0][0][:120]}" reads {trait!r} because of: {parts}')
+            f'"{_clip(pos[0][0], 120)}" reads {trait!r} because of: {parts}')
         return
-    msg = (f"{user} on '{trait}' ({person_z:+.1f} sigma overall) - "
+    msg = (f"{user} on '{trait}' ({person_z:+.1f} sigma; {basis}) - "
            f"most ({pos[0][1]:+.1f}): \"{pos[0][0]}\"")
     if len(pos) > 1 and abs(person_z) >= 0.4:
-        msg += f" | also ({pos[1][1]:+.1f}): \"{pos[1][0][:80]}\""
-    msg += f" | least ({neg[0][1]:+.1f}): \"{neg[0][0][:70]}\""
+        msg += f" | also ({pos[1][1]:+.1f}): \"{_clip(pos[1][0], 80)}\""
+    msg += f" | least ({neg[0][1]:+.1f}): \"{_clip(neg[0][0], 70)}\""
     await message.channel.send(msg[:480])
