@@ -250,13 +250,30 @@ class CommandProcessorPureTests(unittest.TestCase):
 
     def test_model_command_kind_routes_heavy_and_fast_paths(self):
         self.assertEqual(_model_command_kind("persona", ["mainuser"]), "required")
-        self.assertEqual(_model_command_kind("top", ["breedable"]), "required")
         self.assertEqual(_model_command_kind("distinct", ["top"]), "required")
         self.assertEqual(_model_command_kind("askchat", ["mainuser", "math"]), "optional")
         self.assertIsNone(_model_command_kind("askchat", ["raw", "mainuser", "math"]))
         self.assertIsNone(_model_command_kind("emote", ["BatChest", "raw"]))
         self.assertIsNone(_model_command_kind("generate", ["list"]))
         self.assertIsNone(_model_command_kind("generate", ["mainuser", "engine=markov"]))
+        original = persona_axes.axis_cached
+        try:
+            persona_axes.axis_cached = lambda term: False
+            self.assertEqual(_model_command_kind("top", ["uncachedtrait"]), "required")
+            persona_axes.axis_cached = lambda term: term == "known"
+            self.assertIsNone(_model_command_kind("top", ["known"]))
+        finally:
+            persona_axes.axis_cached = original
+
+    def test_why_only_queues_for_uncached_axis_or_words_mode(self):
+        original = persona_axes.axis_cached
+        try:
+            persona_axes.axis_cached = lambda term: term == "known"
+            self.assertIsNone(_model_command_kind("why", ["mainuser", "known"]))
+            self.assertEqual(_model_command_kind("why", ["mainuser", "newtrait"]), "required")
+            self.assertEqual(_model_command_kind("why", ["mainuser", "known", "words"]), "required")
+        finally:
+            persona_axes.axis_cached = original
 
 
 class ModelQueuePureTests(unittest.IsolatedAsyncioTestCase):

@@ -65,9 +65,9 @@ super-admin-only.
 
 Local-model-heavy commands share one global queue across channels. Commands
 such as `~persona`, `~hyper`, LLM `~generate`, dynamic `~top`/`~bottom`,
-`~axis`, `~why`, `~traits`, `~distinct`, `~irony`, normal `~askchat`, and
-normal emote explainers answer one at a time; raw/receipts-only variants stay
-fast.
+`~axis`, uncached/`words`-mode `~why`, `~traits`, `~distinct`, `~irony`,
+normal `~askchat`, and normal emote explainers answer one at a time;
+raw/receipts-only and cached-axis variants stay fast.
 
 ### Stylometry, Similarity, Traits
 

@@ -65,6 +65,15 @@ def _axis_term(params) -> str:
     return " ".join(words).strip()
 
 
+def _why_trait(params) -> tuple[str, bool] | None:
+    """Return (trait, words_mode) for ordinary ~why user trait [words]."""
+    if len(params) < 2 or params[0].lower() in {"emote", "emotes"}:
+        return None
+    trait = params[1].lower().strip()
+    words_mode = len(params) > 2 and params[2].lower() == "words"
+    return trait, words_mode
+
+
 def _model_command_kind(command, params) -> str | None:
     """Return 'required', 'optional', or None for a command invocation."""
     if not params:
@@ -87,6 +96,16 @@ def _model_command_kind(command, params) -> str | None:
         if len(params) < 2:
             return None
         return None if _has_raw_flag(params, 2) else "optional"
+    if command == "why":
+        parsed = _why_trait(params)
+        if parsed:
+            trait, words_mode = parsed
+            if words_mode:
+                return "required"
+            from utils import persona_axes
+            if persona_axes.axis_cached(trait):
+                return None
+        return "required"
     if command in {"top", "bottom"}:
         # Only a genuinely NEW axis is model work. Built-in poles and
         # already-built dynamic axes (incl. their opposite pole / aliases)
