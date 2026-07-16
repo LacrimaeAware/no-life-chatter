@@ -14,6 +14,7 @@ local server by default, so edgy content stays on the machine.
 
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -91,11 +92,18 @@ def _unique_messages(messages, n: int, seen=None):
     if n <= 0:
         return []
     seen = seen or set()
+    seen_keys = {
+        chat_archive.line_match_key(message)
+        for message in seen
+        if chat_archive.line_match_key(message)
+    }
     out = []
     for message in messages:
-        if not _usable_exemplar(message) or message in seen:
+        key = chat_archive.line_match_key(message)
+        if not _usable_exemplar(message) or not key or key in seen_keys:
             continue
         seen.add(message)
+        seen_keys.add(key)
         out.append(message)
         if len(out) >= n:
             break
@@ -674,14 +682,130 @@ def _candidate_issues(author: str, text: str, ctx_rows) -> str | None:
     return None
 
 
-def _candidate_score(text: str, engage_terms) -> float:
-    words = text.split()
-    shape = 1.0 if 2 <= len(words) <= 60 else 0.0
-    if not engage_terms:
-        return shape
-    content_terms = {w.strip(".,!?\"'").lower() for w in words}
-    overlap = len(set(engage_terms) & content_terms)
-    return shape + overlap
+def _median(values) -> float:
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        return 0.0
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def _voice_score(author: str, text: str) -> tuple[float, dict]:
+    """Target-authorship evidence for selecting among valid generations.
+
+    This is deliberately a reranking signal, not a rejection rule. Short emote
+    replies can be excellent Twitch lines even when the classifier is unsure.
+    """
+    try:
+        from utils import persona_classifier
+
+        ranked = persona_classifier.classify(text, top_k=100)
+        target = chat_archive.normalize_author(author)
+        target_prob = next((prob for name, prob in ranked if name == target), 0.0)
+        rank = next(
+            (index for index, (name, _prob) in enumerate(ranked, 1) if name == target),
+            len(ranked) or 1,
+        )
+        n_authors = max(1, len(ranked))
+        baseline = 1.0 / n_authors
+        relative = target_prob / (target_prob + baseline) if target_prob else 0.0
+        rank_score = 1.0 if n_authors == 1 else 1.0 - ((rank - 1) / (n_authors - 1))
+
+        profile = persona_classifier.profile_for(target) or {}
+        folded_words = [
+            word.strip(".,!?\"'():;[]{}").casefold()
+            for word in (text or "").split()
+        ]
+        word_set = {word for word in folded_words if word}
+        phrase_set = {
+            f"{folded_words[i]} {folded_words[i + 1]}"
+            for i in range(max(0, len(folded_words) - 1))
+        }
+        raw_tokens = set((text or "").split())
+        marker_mass = sum(
+            float(weight) for word, weight in (profile.get("words") or {}).items()
+            if word.casefold() in word_set
+        )
+        marker_mass += sum(
+            float(weight) for phrase, weight in (profile.get("phrases") or {}).items()
+            if phrase.casefold() in phrase_set
+        )
+        marker_mass += sum(
+            float(weight) for emote, weight in (profile.get("emotes") or {}).items()
+            if emote in raw_tokens
+        )
+        marker_score = 1.0 - math.exp(-4.0 * marker_mass)
+        score = (0.65 * relative) + (0.20 * rank_score) + (0.15 * marker_score)
+        return score, {
+            "target_prob": round(float(target_prob), 4),
+            "target_rank": int(rank),
+            "marker": round(float(marker_score), 4),
+        }
+    except Exception as exc:
+        logging.debug("persona candidate voice score unavailable: %s", exc)
+        return 0.5, {"target_prob": None, "target_rank": None, "marker": None}
+
+
+def _candidate_score(author: str, text: str, engage_terms, examples,
+                     mode: str = "normal") -> tuple[float, dict]:
+    """Score a valid candidate without another model call.
+
+    The live model already produced plausible lines. Reranking should choose the
+    one that most resembles the target and fits the directed message, while
+    keeping ordinary one-emote Twitch replies viable.
+    """
+    words = (text or "").split()
+    n_words = len(words)
+    voice, voice_details = _voice_score(author, text)
+
+    candidate_terms = _content_terms(text)
+    if engage_terms:
+        overlap = _term_overlap_weight(engage_terms, candidate_terms)
+        # One weak overlap helps a little; multiple/direct overlaps rise fast.
+        context_fit = 1.0 - math.exp(-0.85 * max(0.0, overlap))
+    else:
+        overlap = 0.0
+        context_fit = 0.5
+
+    evidence_lengths = [
+        len((example or "").split()) for example in examples
+        if example and 1 <= len((example or "").split()) <= 100
+    ]
+    target_length = _median(evidence_lengths) or 5.0
+    if mode == "hyper":
+        target_length *= 1.25
+    length_distance = abs(math.log1p(n_words) - math.log1p(target_length))
+    length_fit = math.exp(-length_distance / 0.9)
+
+    max_copy = max(
+        (chat_archive.line_similarity(text, example) for example in examples if example),
+        default=0.0,
+    )
+    if max_copy <= 0.75:
+        copy_margin = 1.0
+    else:
+        copy_margin = max(0.0, min(1.0, (0.94 - max_copy) / 0.19))
+
+    # Shape is intentionally weak: terse reactions are normal Twitch speech.
+    shape = 1.0 if 1 <= n_words <= 60 else 0.0
+    total = (
+        (0.45 * voice)
+        + (0.25 * context_fit)
+        + (0.15 * length_fit)
+        + (0.10 * copy_margin)
+        + (0.05 * shape)
+    )
+    details = {
+        "voice": round(float(voice), 4),
+        "context": round(float(context_fit), 4),
+        "context_overlap": round(float(overlap), 4),
+        "length": round(float(length_fit), 4),
+        "copy_margin": round(float(copy_margin), 4),
+        **voice_details,
+    }
+    return float(total), details
 
 
 async def generate(author: str, channel: str, user_message: str = None,
@@ -736,7 +860,7 @@ async def generate(author: str, channel: str, user_message: str = None,
         return None
 
     exemplar_sections = []
-    # Confirmed profile facts (fact bank v2) — verified, multi-day-corroborated
+    # Confirmed profile facts (profile v5) - verified, multi-day-corroborated
     # facts the person has stated about themselves, so the persona can KNOW
     # things (job, country, hobbies) instead of only sounding right. Confirmed
     # only: a persona prompt must not launder single-sighting guesses.
@@ -834,8 +958,15 @@ async def generate(author: str, channel: str, user_message: str = None,
             event["candidates"].append(
                 {"text": out, "status": "rejected", "reason": issue})
             continue
-        score = _candidate_score(out, engage_terms)
-        event["candidates"].append({"text": out, "status": "valid", "score": score})
+        score, score_parts = _candidate_score(
+            author, out, engage_terms, all_examples, mode=mode
+        )
+        event["candidates"].append({
+            "text": out,
+            "status": "valid",
+            "score": round(score, 4),
+            "score_parts": score_parts,
+        })
         if score > best_score:
             best, best_score = out, score
 

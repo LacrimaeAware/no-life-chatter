@@ -15,12 +15,13 @@ generic chatter. (Same cure as the lexical layer's everyone-overlaps problem.)
 import os
 import pickle
 
+import config
 from utils import chat_archive
 
 _FILE = os.path.join("data", "unsynced", "persona_embeddings.pkl")
 _DATA = None
 _CENTERED = None
-_MTIME = None
+_STAMP = None
 
 # All-but-the-top-k isotropy correction (Mu & Viswanath, ICLR 2018) applied
 # AFTER mean-centering. Centering already does the heavy lifting (mean
@@ -37,21 +38,43 @@ _MTIME = None
 ABTT_K = 2
 
 
+def _metadata_current(data) -> bool:
+    return bool(
+        isinstance(data, dict)
+        and data.get("unit") == "utterance"
+        and data.get("model") == config.LLM_EMBED_MODEL
+        and data.get("alias_signature") == chat_archive.alias_signature()
+        and data.get("utterance_version") == chat_archive.UTTERANCE_VERSION
+    )
+
+
 def load():
     """Cached pickle, hot-reloaded when the file changes (an offline rebuild
     should reach the running bot without a restart)."""
-    global _DATA, _CENTERED, _MTIME
-    mtime = os.path.getmtime(_FILE)
-    if _DATA is None or mtime != _MTIME:
+    global _DATA, _CENTERED, _STAMP
+    stat = os.stat(_FILE)
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    if _DATA is None or stamp != _STAMP:
         with open(_FILE, "rb") as fh:
-            _DATA = pickle.load(fh)
+            candidate = pickle.load(fh)
+        if not _metadata_current(candidate):
+            _DATA = None
+            _CENTERED = None
+            _STAMP = None
+            raise ValueError("stale or incompatible person semantic vectors")
+        _DATA = candidate
         _CENTERED = None
-        _MTIME = mtime
+        _STAMP = stamp
     return _DATA
 
 
 def available() -> bool:
-    return os.path.exists(_FILE)
+    if not os.path.exists(_FILE):
+        return False
+    try:
+        return bool(load().get("vectors"))
+    except Exception:
+        return False
 
 
 def _centered():

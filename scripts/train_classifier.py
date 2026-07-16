@@ -1,6 +1,6 @@
 """Train the authorship classifier (powers ~whosaid and persona eval).
 
-    python scripts/train_classifier.py [--authors a,b,c] [--max-authors 24]
+    python scripts/train_classifier.py [--authors a,b,c] [--max-authors 40]
                                        [--per-author 4000]
 
 Reads the local archive, trains a char-ngram + word Naive Bayes, saves it to
@@ -26,7 +26,7 @@ def main():
             pass
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--authors", default="", help="comma-separated; default = top non-bot authors")
-    ap.add_argument("--max-authors", type=int, default=24)
+    ap.add_argument("--max-authors", type=int, default=40)
     ap.add_argument("--per-author", type=int, default=4000)
     ap.add_argument("--min-messages", type=int, default=300)
     ap.add_argument("--vocab-size", type=int, default=20000)

@@ -1,12 +1,15 @@
 import asyncio
 import importlib
+import json
 import math
 import sys
+import tempfile
 import threading
 import types
 import unittest
 import urllib.error
 from collections import Counter
+from pathlib import Path
 
 
 def install_fake_config():
@@ -34,11 +37,38 @@ def install_fake_config():
 
 install_fake_config()
 sys.modules["services.llm"] = types.SimpleNamespace(chat=None)
-from utils import archive_qa, chat_archive, emote_explain, fact_bank, message_quality, persona_classifier, persona_iq, persona_llm, resident_persona, user_profiles  # noqa: E402
+from utils import archive_qa, artifact_status, atomic_file, chat_archive, emote_explain, fact_bank, irony, message_quality, persona_classifier, persona_embeddings, persona_iq, persona_llm, persona_msg_index, resident_persona, user_profiles  # noqa: E402
 from utils import persona_axes  # noqa: E402
 from services import model_queue  # noqa: E402
 from commands import markers, why  # noqa: E402
 from command_processor import _backend_offline, _backend_rejected, _model_command_kind  # noqa: E402
+
+
+def tearDownModule():
+    chat_archive.close_thread_connection()
+
+
+class AtomicFileTests(unittest.TestCase):
+    def test_atomic_write_replaces_only_after_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "artifact.txt"
+            path.write_text("old", encoding="utf-8")
+            with atomic_file.open_atomic(path, "w", encoding="utf-8") as handle:
+                handle.write("new")
+            self.assertEqual(path.read_text(encoding="utf-8"), "new")
+            with self.assertRaises(RuntimeError):
+                with atomic_file.open_atomic(path, "w", encoding="utf-8") as handle:
+                    handle.write("partial")
+                    raise RuntimeError("stop")
+            self.assertEqual(path.read_text(encoding="utf-8"), "new")
+
+
+class AxisParsingTests(unittest.TestCase):
+    def test_trailing_comma_repair_preserves_json_closers(self):
+        raw = '{"items":["one", "two",], "ok":true,}'
+        cleaned = persona_axes._clean_json_trailing_commas(raw)
+        self.assertEqual(cleaned, '{"items":["one", "two"], "ok":true}')
+        self.assertNotIn("\x01", cleaned)
 
 
 class ArchiveNormalizationTests(unittest.TestCase):
@@ -55,9 +85,67 @@ class ArchiveNormalizationTests(unittest.TestCase):
     def test_line_similarity_returns_zero_for_empty_normalized_text(self):
         self.assertEqual(chat_archive.line_similarity("!!!", "???"), 0.0)
 
+    def test_utterance_merge_never_crosses_channel_boundaries(self):
+        rows = [
+            ("2026-07-15 12:00:00", "room_a", "user", "first"),
+            ("2026-07-15 12:00:05", "room_b", "user", "unrelated"),
+            ("2026-07-15 12:00:10", "room_a", "user", "continued"),
+        ]
+        merged = chat_archive.merge_channel_utterances(rows, gap_seconds=45)
+        self.assertEqual(
+            merged,
+            [
+                ("2026-07-15 12:00:00", "room_a", "user", "first continued"),
+                ("2026-07-15 12:00:05", "room_b", "user", "unrelated"),
+            ],
+        )
+
+    def test_utterance_records_keep_component_ids(self):
+        rows = [
+            (10, "2026-07-15 12:00:00", "room_a", "user", "first"),
+            (11, "2026-07-15 12:00:05", "room_b", "user", "other"),
+            (12, "2026-07-15 12:00:10", "room_a", "user", "continued"),
+        ]
+        merged = chat_archive.merge_channel_utterance_records(rows, gap_seconds=45)
+        self.assertEqual(merged[0]["text"], "first continued")
+        self.assertEqual(merged[0]["message_ids"], [10, 12])
+        self.assertEqual(merged[0]["parts"], [(10, "first"), (12, "continued")])
+        self.assertEqual(merged[1]["text"], "other")
+
+    def test_utterance_merge_collapses_duplicate_components(self):
+        rows = [
+            (10, "2026-07-15 12:00:00", "room_a", "user", "same line"),
+            (11, "2026-07-15 12:00:05", "room_a", "user", "Same line!"),
+            (12, "2026-07-15 12:00:10", "room_a", "user", "new thought"),
+        ]
+        merged = chat_archive.merge_channel_utterance_records(rows, gap_seconds=45)
+        self.assertEqual(merged[0]["text"], "same line new thought")
+        self.assertEqual(merged[0]["message_ids"], [10, 11, 12])
+        self.assertEqual(len(merged[0]["parts"]), 3)
+
     def test_author_alias_chains_and_author_keys(self):
         self.assertEqual(chat_archive.normalize_author("@OldAlt,"), "mainuser")
         self.assertEqual(chat_archive.author_keys("oldalt"), ["altone", "mainuser", "oldalt"])
+
+    def test_canonical_roster_aggregates_aliases_before_cutoff(self):
+        class FakeConnection:
+            def execute(self, _query):
+                return [
+                    ("oldalt", 4),
+                    ("mainuser", 3),
+                    ("someone", 6),
+                    ("helperbot", 99),
+                ]
+
+        original_connect = chat_archive.connect
+        try:
+            chat_archive.connect = lambda: FakeConnection()
+            self.assertEqual(
+                chat_archive.canonical_author_counts(limit=2),
+                [("mainuser", 7), ("someone", 6)],
+            )
+        finally:
+            chat_archive.connect = original_connect
 
     def test_archive_connections_are_thread_local(self):
         main_conn = chat_archive.connect()
@@ -65,6 +153,7 @@ class ArchiveNormalizationTests(unittest.TestCase):
 
         def worker():
             seen.append(chat_archive.connect())
+            chat_archive.close_thread_connection()
 
         thread = threading.Thread(target=worker)
         thread.start()
@@ -249,6 +338,11 @@ class CommandProcessorPureTests(unittest.TestCase):
         self.assertTrue(_backend_rejected(exc))
 
     def test_model_command_kind_routes_heavy_and_fast_paths(self):
+        from utils import persona_traits
+
+        original_ready = persona_traits.axes_ready
+        persona_traits.axes_ready = lambda: False
+        self.addCleanup(setattr, persona_traits, "axes_ready", original_ready)
         self.assertEqual(_model_command_kind("persona", ["mainuser"]), "required")
         self.assertEqual(_model_command_kind("distinct", ["top"]), "required")
         self.assertEqual(_model_command_kind("askchat", ["mainuser", "math"]), "optional")
@@ -262,18 +356,43 @@ class CommandProcessorPureTests(unittest.TestCase):
             self.assertEqual(_model_command_kind("top", ["uncachedtrait"]), "required")
             persona_axes.axis_cached = lambda term: term == "known"
             self.assertIsNone(_model_command_kind("top", ["known"]))
+            persona_traits.axes_ready = lambda: True
+            self.assertIsNone(_model_command_kind("distinct", []))
+            self.assertIsNone(_model_command_kind("traits", ["mainuser"]))
         finally:
             persona_axes.axis_cached = original
 
     def test_why_only_queues_for_uncached_axis_or_words_mode(self):
+        from utils import persona_traits
+
         original = persona_axes.axis_cached
+        original_ready = persona_traits.axes_ready
         try:
+            persona_traits.axes_ready = lambda: True
             persona_axes.axis_cached = lambda term: term == "known"
             self.assertIsNone(_model_command_kind("why", ["mainuser", "known"]))
             self.assertEqual(_model_command_kind("why", ["mainuser", "newtrait"]), "required")
             self.assertEqual(_model_command_kind("why", ["mainuser", "known", "words"]), "required")
         finally:
             persona_axes.axis_cached = original
+            persona_traits.axes_ready = original_ready
+
+    def test_cold_builtin_axis_queues_once(self):
+        from utils import persona_traits
+
+        original_ready = persona_traits.axes_ready
+        try:
+            persona_traits.axes_ready = lambda: False
+            self.assertEqual(_model_command_kind("top", ["professor"]), "required")
+            self.assertEqual(
+                _model_command_kind("why", ["mainuser", "professor"]),
+                "required",
+            )
+            persona_traits.axes_ready = lambda: True
+            self.assertIsNone(_model_command_kind("top", ["professor"]))
+            self.assertIsNone(_model_command_kind("why", ["mainuser", "professor"]))
+        finally:
+            persona_traits.axes_ready = original_ready
 
 
 class ModelQueuePureTests(unittest.IsolatedAsyncioTestCase):
@@ -362,6 +481,17 @@ class ScopeParserTests(unittest.TestCase):
 
 
 class PersonaClassifierPureTests(unittest.TestCase):
+    def test_training_messages_are_normalized_exact_deduped(self):
+        messages = [
+            "This is my repeated line!",
+            "this is my repeated line",
+            "A genuinely different line here",
+        ]
+        self.assertEqual(
+            persona_classifier._unique_usable_messages(messages),
+            ["This is my repeated line!", "A genuinely different line here"],
+        )
+
     def test_is_emote_token_detects_case_marked_emotes(self):
         self.assertTrue(persona_classifier._is_emote_token("FeelsOkayMan"))
         self.assertTrue(persona_classifier._is_emote_token("OMEGALUL"))
@@ -411,13 +541,69 @@ class MessageQualityPureTests(unittest.TestCase):
         text = "i mean this because it works i mean this because it works"
         self.assertEqual(message_quality.clean_text(text), "i mean this because it works")
 
+    def test_detects_model_requests_and_generated_response_candidates(self):
+        self.assertTrue(message_quality.model_request_like("<gemini3 is this true"))
+        self.assertFalse(message_quality.model_request_like("what does gemini mean"))
+        response = (
+            "There is no publicly available information confirming that claim. "
+            "The available record is inconclusive."
+        )
+        self.assertTrue(message_quality.generated_response_candidate(response))
+
+    def test_pasted_prose_filter_is_conservative(self):
+        pasted = (
+            "Zarathustra contrasts the ideal with the last man of modernity, "
+            "an alternative goal which humanity might set for itself. The last "
+            "man appears only in the later work and is presented as a smothering "
+            "of aspiration. This paragraph continues in formal reference prose."
+        )
+        self.assertTrue(message_quality.likely_pasted_prose(pasted))
+        self.assertFalse(message_quality.likely_pasted_prose(
+            "i think the sample is biased because only regulars answered"
+        ))
+
     def test_keeps_reasonable_semantic_text(self):
         text = "because jupyter needs the kernel packages installed for interactive python"
         self.assertTrue(message_quality.usable_for_iq(text))
         self.assertIsNotNone(message_quality.semantic_text(text))
 
+    def test_semantic_selection_is_deterministic_and_deduped(self):
+        messages = [
+            f"this is ordinary discussion number word {i} about a different topic"
+            for i in range(30)
+        ]
+        messages += [messages[0], messages[0].upper()]
+        first, meta = message_quality.select_semantic_units(
+            messages, cap=10, label="sample-user"
+        )
+        second, _ = message_quality.select_semantic_units(
+            messages, cap=10, label="sample-user"
+        )
+        self.assertEqual([row["key"] for row in first], [row["key"] for row in second])
+        self.assertEqual(len({row["key"] for row in first}), 10)
+        self.assertEqual(meta["coverage"], 8)
+        self.assertEqual(meta["high_signal"], 2)
+
 
 class FactBankPureTests(unittest.TestCase):
+    def test_fact_bank_metadata_tracks_identity_provenance(self):
+        meta = {
+            "version": fact_bank.VERSION,
+            "alias_signature": chat_archive.alias_signature(),
+            "content_sha256": "abc",
+        }
+        self.assertTrue(fact_bank.metadata_current(meta))
+        meta["alias_signature"] = "old"
+        self.assertFalse(fact_bank.metadata_current(meta))
+
+    def test_fact_bank_hash_rejects_mismatched_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "facts.jsonl"
+            fact_bank.write_jsonl([{"author": "mainuser", "claim": "one"}], path)
+            self.assertEqual(len(fact_bank.load_jsonl(path)), 1)
+            path.write_text('{"author":"mainuser","claim":"tampered"}\n', encoding="utf-8")
+            self.assertEqual(fact_bank.load_jsonl(path), [])
+
     def test_extracts_self_claims_as_candidates_not_truths(self):
         rows = fact_bank.extract_claims("OldAlt", "I'm a software guy and I love graph theory lol")
         claims = {(row["kind"], row["claim"]) for row in rows}
@@ -436,8 +622,76 @@ class FactBankPureTests(unittest.TestCase):
         )
         self.assertFalse(any(row["kind"] == "possession" for row in rows))
 
+    def test_rejects_clause_shaped_possession_value(self):
+        rows = fact_bank.extract_claims(
+            "mainuser",
+            "I hate the arguments of my country is better than your country when people lose",
+        )
+        self.assertFalse(any(row["kind"] == "possession" for row in rows))
+
+    def test_possession_value_stops_at_discourse_connector(self):
+        rows = fact_bank.extract_claims(
+            "mainuser",
+            "yes but my degree is in math and statistics so i need another focus",
+        )
+        self.assertIn(
+            ("possession", "degree = in math and statistics"),
+            {(row["kind"], row["claim"]) for row in rows},
+        )
+
+    def test_claim_tail_drops_trailing_mention(self):
+        rows = fact_bank.extract_claims("mainuser", "I hate math @OtherUser")
+        self.assertIn(
+            ("preference_negative", "math"),
+            {(row["kind"], row["claim"]) for row in rows},
+        )
+
 
 class ArchiveQaPureTests(unittest.TestCase):
+    def test_dense_metadata_recovery_reconstructs_merged_utterance(self):
+        class EmptyCursor:
+            def fetchall(self):
+                return []
+
+        class FakeConnection:
+            def execute(self, _query, _params):
+                return EmptyCursor()
+
+        original_connect = archive_qa.chat_archive.connect
+        original_records = archive_qa.chat_archive.utterance_records_for
+        try:
+            archive_qa.chat_archive.connect = lambda: FakeConnection()
+            archive_qa.chat_archive.utterance_records_for = lambda *_args, **_kwargs: [{
+                "id": 10,
+                "sent_at": "2026-07-15 12:00:00",
+                "channel": "mainroom",
+                "author": "mainuser",
+                "text": "first continued",
+                "message_ids": [10, 12],
+            }]
+            recovered = archive_qa._recover_author_meta(
+                "mainuser", ["first continued"]
+            )
+        finally:
+            archive_qa.chat_archive.connect = original_connect
+            archive_qa.chat_archive.utterance_records_for = original_records
+        row = recovered[chat_archive.line_match_key("first continued")]
+        self.assertEqual(row["message_ids"], [10, 12])
+
+    def test_disputed_profile_keeps_supported_alternative(self):
+        data = {
+            "value": "poland",
+            "status": "disputed",
+            "alternatives": [
+                {"value": "canada", "status": "confirmed"},
+                {"value": "france", "status": "candidate"},
+            ],
+        }
+        self.assertEqual(
+            [entry["value"] for entry in archive_qa._profile_entries(data)],
+            ["poland", "canada"],
+        )
+
     def test_parse_params_accepts_author_and_chat_scope(self):
         parsed = archive_qa.parse_params(
             ["user=OldAlt", "chat=here", "graph", "theory"],
@@ -484,6 +738,27 @@ class ArchiveQaPureTests(unittest.TestCase):
             chat_archive.search_author_hits = original
         self.assertEqual([hit["text"] for hit in hits], ["deviled eggs Evilge"])
 
+    def test_attach_context_uses_human_rows_and_marks_receipt(self):
+        original = chat_archive.context_window
+        try:
+            chat_archive.context_window = lambda *args, **kwargs: [
+                (9, "other", "did you actually finish it"),
+                (10, "oldalt", "yes because the parser was broken"),
+                (11, "helperbot", "~automated response"),
+            ]
+            hits = archive_qa._attach_context([{
+                "id": 10,
+                "author": "mainuser",
+                "channel": "mainroom",
+                "sent_at": "2026-01-01 00:00:00",
+                "text": "yes because the parser was broken",
+            }])
+        finally:
+            chat_archive.context_window = original
+        self.assertEqual(len(hits[0]["context"]), 2)
+        self.assertTrue(hits[0]["context"][1]["hit"])
+        self.assertEqual(hits[0]["context"][1]["author"], "mainuser")
+
     def test_format_chat_returns_compact_evidence(self):
         report = {
             "query": "graph theory",
@@ -494,6 +769,10 @@ class ArchiveQaPureTests(unittest.TestCase):
                 "kind": "preference_positive",
                 "claim": "graph theory",
                 "support_count": 2,
+                "support_days": 2,
+                "unique_phrasings": 2,
+                "evidence_confidence": 0.6,
+                "status": "corroborated_claim",
                 "sent_at": "2026-01-01 00:00:00",
             }],
             "archive": [],
@@ -523,6 +802,7 @@ class ArchiveQaPureTests(unittest.TestCase):
         }
         out = archive_qa.format_chat(report, max_chars=180)
         self.assertIn("No clear archive receipts", out)
+        self.assertNotIn("terms=", out)
         self.assertNotIn("Weak one-off", out)
         self.assertNotIn("on drugs", out)
 
@@ -619,6 +899,27 @@ class ArchiveQaPureTests(unittest.TestCase):
         self.assertIn("wrong country", joined)
         self.assertNotIn("mass shooting", joined)
 
+    def test_evidence_items_keep_high_confidence_dense_paraphrase(self):
+        report = {
+            "query": "does he like cars",
+            "author": "mainuser",
+            "channel": None,
+            "terms": ["cars"],
+            "facts": [],
+            "archive": [{
+                "author": "mainuser",
+                "channel": "mainroom",
+                "sent_at": "2026-01-01 00:00:00",
+                "text": "my civic absolutely rips",
+                "lanes": ["dense"],
+                "dense_score": 0.72,
+            }],
+            "near": [],
+            "emotes": [],
+        }
+        evidence = archive_qa.evidence_items(report)
+        self.assertIn("my civic absolutely rips", evidence[0]["text"])
+
     def test_fact_hits_filter_single_term_unrelated_claims(self):
         rows = [
             {
@@ -649,8 +950,109 @@ class ArchiveQaPureTests(unittest.TestCase):
             archive_qa.fact_bank.search = original_search
         self.assertEqual([fact["claim"] for fact in facts], ["all women are evil"])
 
+    def test_unscoped_fact_hits_require_the_claim_owner_in_the_question(self):
+        rows = [
+            {
+                "author": "mainuser",
+                "kind": "self_identity",
+                "claim": "dead",
+                "support_count": 2,
+                "confidence": 0.8,
+                "evidence": [{"clean_text": "i am dead"}],
+            },
+            {
+                "author": "someoneelse",
+                "kind": "self_identity",
+                "claim": "dead",
+                "support_count": 2,
+                "confidence": 0.8,
+                "evidence": [{"clean_text": "i am dead too"}],
+            },
+        ]
+        original_load = archive_qa.fact_bank.load_jsonl
+        original_search = archive_qa.fact_bank.search
+        try:
+            archive_qa.fact_bank.load_jsonl = lambda: rows
+            archive_qa.fact_bank.search = lambda rows, **kwargs: rows
+            facts = archive_qa._fact_hits(None, "is mainuser dead?", limit=4)
+        finally:
+            archive_qa.fact_bank.load_jsonl = original_load
+            archive_qa.fact_bank.search = original_search
+        self.assertEqual([fact["author"] for fact in facts], ["mainuser"])
+
 
 class EmoteExplainPureTests(unittest.TestCase):
+    def test_emote_semantic_checkpoint_path_is_not_live_artifact(self):
+        from scripts import build_emote_semantics
+
+        self.assertEqual(
+            build_emote_semantics._partial_path("folder/emotes.pkl"),
+            "folder/emotes.partial.pkl",
+        )
+
+    def test_emote_checkpoint_signature_normalizes_requested_case_and_order(self):
+        from scripts import build_emote_semantics
+
+        first = build_emote_semantics._request_signature(
+            top=20, contexts=160, emotes="KEKW,BatChest", refresh=True
+        )
+        second = build_emote_semantics._request_signature(
+            top=20, contexts=160, emotes="batchest,kekw", refresh=True
+        )
+        self.assertEqual(first, second)
+
+    def test_emote_semantics_reader_accepts_versioned_wrapper(self):
+        import pickle
+
+        from utils import emote_meaning
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "emote_semantics.pkl"
+            with path.open("wb") as handle:
+                pickle.dump({
+                    "__meta__": {"version": 2},
+                    "emotes": {"ExampleEmote": {"vector": [1.0, 0.0], "n": 160}},
+                }, handle)
+            original_path = emote_meaning.SEM_PATH
+            original_state = (
+                emote_meaning._sem,
+                emote_meaning._centered,
+                emote_meaning._names,
+                emote_meaning._sem_stamp,
+            )
+            try:
+                emote_meaning.SEM_PATH = str(path)
+                emote_meaning._sem = None
+                emote_meaning._sem_stamp = None
+                self.assertEqual(emote_meaning.usage_count("exampleemote"), 160)
+                self.assertEqual(emote_meaning.semantics_metadata()["version"], 2)
+            finally:
+                emote_meaning.SEM_PATH = original_path
+                (
+                    emote_meaning._sem,
+                    emote_meaning._centered,
+                    emote_meaning._names,
+                    emote_meaning._sem_stamp,
+                ) = original_state
+
+    def test_emote_context_builder_uses_previous_line_for_bare_reaction(self):
+        from scripts import build_emote_semantics
+
+        text, used_previous = build_emote_semantics._clean_context(
+            "CLARKSON", "the new episode starts tomorrow", "CLARKSON"
+        )
+        self.assertTrue(used_previous)
+        self.assertIn("episode", text)
+
+    def test_emote_context_builder_strips_token_case_insensitively(self):
+        from scripts import build_emote_semantics
+
+        text, used_previous = build_emote_semantics._clean_context(
+            "batChest this launch is wildly overhyped", "", "BatChest"
+        )
+        self.assertFalse(used_previous)
+        self.assertNotIn("batchest", text.casefold())
+
     def test_format_chat_keeps_emote_token_bare(self):
         report = {
             "name": "BatChest",
@@ -768,6 +1170,89 @@ class EmoteExplainPureTests(unittest.TestCase):
 
 
 class PersonaIqPureTests(unittest.TestCase):
+    def test_required_iq_quality_rejects_missing_model_phases(self):
+        failures = persona_iq._quality_failures(
+            embedding_requested=True,
+            embedding_authors=0,
+            judge_requested=True,
+            judged_authors=5,
+            total_authors=40,
+        )
+        self.assertEqual(len(failures), 2)
+        self.assertIn("embeddings covered 0/40", failures[0])
+        self.assertIn("judge covered 5/40", failures[1])
+
+    def test_optional_iq_phases_do_not_degrade_lexical_build(self):
+        self.assertEqual(persona_iq._quality_failures(
+            embedding_requested=False,
+            embedding_authors=0,
+            judge_requested=False,
+            judged_authors=0,
+            total_authors=40,
+        ), [])
+
+    def test_utterance_rows_dedupes_repeated_personal_lines(self):
+        original = persona_iq.chat_archive.utterance_records_for
+        try:
+            persona_iq.chat_archive.utterance_records_for = lambda _author: [
+                {"id": 1, "text": "because this model predicts the same result",
+                 "parts": [(1, "because this model predicts the same result")]},
+                {"id": 2, "text": "Because this model predicts the same result!",
+                 "parts": [(2, "Because this model predicts the same result!")]},
+                {"id": 3, "text": "however the counterexample changes the conclusion",
+                 "parts": [(3, "however the counterexample changes the conclusion")]},
+            ]
+            rows = persona_iq._utterance_rows("mainuser", author_cap=100)
+        finally:
+            persona_iq.chat_archive.utterance_records_for = original
+        self.assertEqual(len(rows), 2)
+
+    def test_utterance_rows_rejects_command_generated_reply(self):
+        original_records = persona_iq.chat_archive.utterance_records_for
+        original_previous = persona_iq._preceded_by_model_request
+        try:
+            generated = (
+                "There is no publicly available information confirming that claim. "
+                "The evidence remains inconclusive."
+            )
+            persona_iq.chat_archive.utterance_records_for = lambda _author: [
+                {"id": 1, "text": generated, "parts": [(1, generated)]},
+                {"id": 2,
+                 "text": "because the sample changes the conclusion <gemini3 explain it",
+                 "parts": [
+                     (2, "because the sample changes the conclusion"),
+                     (3, "<gemini3 explain it"),
+                 ]},
+            ]
+            persona_iq._preceded_by_model_request = lambda message_id: message_id == 1
+            rows = persona_iq._utterance_rows("mainuser", author_cap=100)
+        finally:
+            persona_iq.chat_archive.utterance_records_for = original_records
+            persona_iq._preceded_by_model_request = original_previous
+        self.assertEqual([row["raw"] for row in rows], [
+            "because the sample changes the conclusion"
+        ])
+
+    def test_iq_cache_requires_current_identity_and_utterance_provenance(self):
+        payload = {"__meta__": {
+            "version": persona_iq.VERSION,
+            "alias_signature": chat_archive.alias_signature(),
+            "utterance_version": chat_archive.UTTERANCE_VERSION,
+        }}
+        self.assertTrue(persona_iq._cache_current(payload))
+        payload["__meta__"]["utterance_version"] -= 1
+        self.assertFalse(persona_iq._cache_current(payload))
+
+    def test_iq_cache_rejects_degraded_model_coverage(self):
+        payload = {"__meta__": {
+            "version": persona_iq.VERSION,
+            "alias_signature": chat_archive.alias_signature(),
+            "utterance_version": chat_archive.UTTERANCE_VERSION,
+            "build_quality": "degraded",
+            "quality_failures": ["judge covered 0/40 authors"],
+        }}
+        self.assertFalse(persona_iq._cache_current(payload))
+
     def test_roster_canonicalizes_aliases_and_drops_noise(self):
         roster = persona_iq._canonical_roster(["oldalt", "mainuser", "helperbot"])
         self.assertEqual(roster, ["mainuser"])
@@ -781,12 +1266,248 @@ class PersonaIqPureTests(unittest.TestCase):
         self.assertIsNone(rarity("mainuser"))
         self.assertIsNotNone(rarity("epistemology"))
 
+    def test_tail_receipts_show_top_tail_median_before_maximum(self):
+        rows = persona_iq._tail_receipts(
+            [(value, f"reasoning example number {value} with enough text")
+             for value in range(20)],
+            "causal",
+        )
+        self.assertEqual([row["value"] for row in rows], [18.0, 19.0])
+
+    def test_cross_author_long_copypasta_is_removed(self):
+        copied = "this is a sufficiently long repeated definition copied into chat"
+        unique = "this is a sufficiently long original explanation from one person"
+        make = lambda text: {"raw": text, "clean": text, "tokens": text.split()}
+        filtered, removed = persona_iq._drop_cross_author_copies({
+            "a": [make(copied), make(unique)],
+            "b": [make(copied)],
+        })
+        self.assertEqual(removed, 2)
+        self.assertEqual([row["raw"] for row in filtered["a"]], [unique])
+        self.assertEqual(filtered["b"], [])
+
+    def test_reasoning_blend_includes_direct_text_structure(self):
+        row = {
+            "causal": 0.0,
+            "nuance": 0.0,
+            "connections": 0.0,
+            "problem_solving": 0.0,
+            "metacognition": 0.0,
+            "reasoning_markers": 2.0,
+            "question_quality": 2.0,
+        }
+        self.assertAlmostEqual(persona_iq._group_scores(row)["reasoning"], 1.3)
+        row["llm_reasoning"] = -1.0
+        self.assertAlmostEqual(
+            persona_iq._group_scores(row)["reasoning"],
+            (0.55 * 1.3) + (0.45 * -1.0),
+        )
+
+    def test_syntax_requires_structure_not_one_short_marker(self):
+        make = lambda text: {
+            "raw": text,
+            "clean": text,
+            "tokens": persona_iq._tokens(text),
+        }
+        short = persona_iq._interpretable_scored(
+            [make("liverpool has not lost though")], lambda _word: 1.0
+        )[0]["syntax_peak"][0][0]
+        structured = persona_iq._interpretable_scored(
+            [make("although the sample is small the result changes because the selection is biased")],
+            lambda _word: 1.0,
+        )[0]["syntax_peak"][0][0]
+        self.assertEqual(short, 0.0)
+        self.assertGreater(structured, short)
+
+    def test_breadth_and_depth_are_topic_geometry_only(self):
+        row = {
+            "topic_breadth": 1.25,
+            "niche_depth": -0.75,
+            "question_quality": 9.0,
+            "technical": 9.0,
+            "vocab_peak": 9.0,
+        }
+        groups = persona_iq._group_scores(row)
+        self.assertEqual(groups["breadth"], 1.25)
+        self.assertEqual(groups["depth"], -0.75)
+
+    def test_judge_cache_reuses_identical_evidence(self):
+        original_path = persona_iq.JUDGE_CACHE
+        original_payload = persona_iq._judge_cache_payload
+        original_chat = persona_iq._chat_sync
+        row = {
+            "raw": "because the sample changed the conclusion after selection",
+            "clean": "because the sample changed the conclusion after selection",
+            "tokens": persona_iq._tokens(
+                "because the sample changed the conclusion after selection"
+            ),
+        }
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                persona_iq.JUDGE_CACHE = str(Path(directory) / "judge.pkl")
+                persona_iq._judge_cache_payload = None
+                persona_iq._chat_sync = lambda _prompt: (
+                    '{"items":[{"reasoning":3,"abstraction":2,'
+                    '"precision":3,"nuance":2,"authored_chat":4}]}'
+                )
+                first = persona_iq._judge_author("mainuser", [row], items=1)
+                persona_iq._chat_sync = lambda _prompt: (_ for _ in ()).throw(
+                    AssertionError("cache miss")
+                )
+                second = persona_iq._judge_author("mainuser", [row], items=1)
+        finally:
+            persona_iq.JUDGE_CACHE = original_path
+            persona_iq._judge_cache_payload = original_payload
+            persona_iq._chat_sync = original_chat
+        self.assertFalse(first[2])
+        self.assertTrue(second[2])
+
 
 class UserProfilesPureTests(unittest.TestCase):
+    def test_profile_candidate_gate_requires_an_explicit_self_value(self):
+        accepted = [
+            ("location", "i live in poland"),
+            ("age", "i'm 25 years old"),
+            ("gender", "i'm a woman"),
+            ("occupation", "i work as a software developer"),
+            ("hobbies", "i've been playing quake"),
+            ("languages", "i speak polish"),
+        ]
+        rejected = [
+            ("location", "the cia ruined my country"),
+            ("location", "i live in the middle of nowhere"),
+            ("location", "i live in the other side of the country"),
+            ("age", "this remake is 25 years old"),
+            ("gender", "you play as a woman"),
+            ("occupation", "why is he in uni"),
+            ("occupation", "my boss is annoying"),
+            ("occupation", "i work in that field"),
+            ("hobbies", "i've been playing for two weeks"),
+            ("languages", "if i speak"),
+            ("languages", "i'm learning history from video games"),
+        ]
+        for slot, text in accepted:
+            with self.subTest(slot=slot, text=text):
+                self.assertTrue(user_profiles._candidate_has_explicit_value(slot, text))
+        for slot, text in rejected:
+            with self.subTest(slot=slot, text=text):
+                self.assertFalse(user_profiles._candidate_has_explicit_value(slot, text))
+
+    def test_incomplete_profile_build_keeps_live_artifact_untouched(self):
+        original_candidates = user_profiles.candidate_rows
+        row = {
+            "id": 1,
+            "sent_at": "2026-07-16 01:00:00",
+            "channel": "mainroom",
+            "content": "i live in poland",
+        }
+        try:
+            user_profiles.candidate_rows = lambda _author, slot, **_kwargs: (
+                [row] if slot == "location" else []
+            )
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "profiles.json"
+                path.write_text('{"sentinel":true}', encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "covered 0/1"):
+                    user_profiles.build_profiles(
+                        ["mainuser"],
+                        llm_call=lambda _system, _user: None,
+                        path=path,
+                    )
+                self.assertEqual(
+                    json.loads(path.read_text(encoding="utf-8")),
+                    {"sentinel": True},
+                )
+                self.assertTrue(user_profiles._partial_path(path).exists())
+        finally:
+            user_profiles.candidate_rows = original_candidates
+
+    def test_artifact_status_rejects_empty_profile_shell(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "profiles.json"
+            path.write_text(json.dumps({
+                "_meta": {
+                    "version": user_profiles.VERSION,
+                    "alias_signature": chat_archive.alias_signature(),
+                },
+                "profiles": {f"user{i}": {} for i in range(10)},
+                "judged": {},
+            }), encoding="utf-8")
+            original = artifact_status.USER_PROFILES
+            try:
+                artifact_status.USER_PROFILES = path
+                row = artifact_status._user_profiles_status()
+            finally:
+                artifact_status.USER_PROFILES = original
+        self.assertEqual(row["status"], "warn")
+        self.assertIn("all profile records are empty", row["detail"])
+
+    def test_candidate_spread_uses_canonical_author(self):
+        class Result:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def fetchone(self):
+                return self.rows[0] if self.rows else None
+
+            def fetchall(self):
+                return list(self.rows)
+
+        class FakeConnection:
+            def execute(self, query, _params):
+                if "MIN(id)" in query:
+                    return Result([(1, 100)])
+                return Result([(
+                    50,
+                    "2026-07-15 12:00:00",
+                    "mainroom",
+                    "i live in a city near the coast",
+                )])
+
+        original_connect = user_profiles.chat_archive.connect
+        original_echo = user_profiles._said_by_others
+        try:
+            user_profiles.chat_archive.connect = lambda: FakeConnection()
+            user_profiles._said_by_others = lambda _content, _author: False
+            rows = user_profiles.candidate_rows(
+                "oldalt", "location", per_anchor=4, cap=3
+            )
+        finally:
+            user_profiles.chat_archive.connect = original_connect
+            user_profiles._said_by_others = original_echo
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], 50)
+
+    def test_copypasta_query_excludes_entire_target_alias_group(self):
+        captured = {}
+
+        class EmptyCursor:
+            def fetchall(self):
+                return []
+
+        class FakeConnection:
+            def execute(self, query, params):
+                captured["query"] = query
+                captured["params"] = list(params)
+                return EmptyCursor()
+
+        original = user_profiles.chat_archive.connect
+        try:
+            user_profiles.chat_archive.connect = lambda: FakeConnection()
+            self.assertFalse(user_profiles._said_by_others(
+                "this is one sufficiently long copied personal claim", "oldalt"
+            ))
+        finally:
+            user_profiles.chat_archive.connect = original
+        self.assertIn("m.author NOT IN", captured["query"])
+        self.assertIn("mainuser", captured["params"])
+        self.assertIn("oldalt", captured["params"])
+
     def _judged(self, value, sent_at, sincerity="sincere", asserts=True):
         # distinct phrasing per row: verbatim repeats are deduped by design
         # (a running gag repeated word-for-word must not corroborate itself)
         return {"asserts": asserts, "value": value, "sincerity": sincerity,
+                "plausibility": "ordinary",
                 "id": 1, "sent_at": sent_at, "channel": "mainroom",
                 "content": f"i said {value} at {sent_at}"}
 
@@ -795,9 +1516,68 @@ class UserProfilesPureTests(unittest.TestCase):
             'Sure! Here is the answer:\n{"asserts": true, "value": "Poland", '
             '"sincerity": "sincere"} hope that helps')
         self.assertEqual(out, {"asserts": True, "value": "poland",
-                               "sincerity": "sincere"})
+                               "sincerity": "sincere", "plausibility": "unclear"})
         self.assertIsNone(user_profiles._parse_judgment("no json here"))
         self.assertIsNone(user_profiles._parse_judgment(None))
+        self.assertFalse(user_profiles._normalize_judgment({
+            "asserts": "false", "value": None, "sincerity": "unclear"
+        })["asserts"])
+
+    def test_profile_build_discards_stale_semantic_cache(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "profiles.json"
+            path.write_text(
+                '{"_meta":{"version":2},"profiles":{"mainuser":{}},'
+                '"judged":{"old":"verdict"}}',
+                encoding="utf-8",
+            )
+            store = user_profiles.build_profiles(
+                [], llm_call=lambda _system, _user: None, path=path
+            )
+        self.assertEqual(store["judged"], {})
+        self.assertEqual(store["profiles"], {})
+        self.assertEqual(store["_meta"]["version"], user_profiles.VERSION)
+
+    def test_profile_checkpoint_is_resume_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "profiles.json"
+            store = {
+                "_meta": {},
+                "profiles": {"mainuser": {"location": {"value": "poland"}}},
+                "judged": {f"v{user_profiles.VERSION}|mainuser|location|1": {"asserts": True}},
+            }
+            user_profiles._checkpoint(store, path)
+            loaded = user_profiles.load(path)
+            self.assertEqual(loaded["_meta"]["version"], user_profiles.VERSION)
+            self.assertEqual(
+                loaded["_meta"]["alias_signature"], chat_archive.alias_signature()
+            )
+            self.assertIn(
+                f"v{user_profiles.VERSION}|mainuser|location|1",
+                loaded["judged"],
+            )
+
+    def test_batch_judge_maps_each_result_back_to_its_receipt(self):
+        rows = [
+            {"id": 10, "sent_at": "2026-01-01 10:00:00", "channel": "mainroom",
+             "content": "i am from poland"},
+            {"id": 11, "sent_at": "2026-01-02 10:00:00", "channel": "mainroom",
+             "content": "my country is canada Kappa"},
+        ]
+        response = (
+            '{"items":['
+            '{"index":1,"asserts":true,"value":"poland",'
+            '"sincerity":"sincere","plausibility":"ordinary"},'
+            '{"index":2,"asserts":false,"value":null,'
+            '"sincerity":"joke","plausibility":"unclear"}'
+            ']}'
+        )
+        judged = user_profiles.judge_candidates_batch(
+            "mainuser", "location", rows, lambda _system, _user: response
+        )
+        self.assertEqual(judged[10]["value"], "poland")
+        self.assertFalse(judged[11]["asserts"])
+        self.assertEqual(judged[10]["content"], rows[0]["content"])
 
     def test_reconcile_confirms_only_with_multi_day_support(self):
         one_day = [self._judged("poland", "2026-01-01 10:00:00"),
@@ -808,6 +1588,45 @@ class UserProfilesPureTests(unittest.TestCase):
         self.assertEqual(user_profiles._reconcile("location", two_days)["status"],
                          "confirmed")
 
+    def test_unusual_claim_needs_extra_corroboration(self):
+        rows = [
+            dict(self._judged("two wives", f"2026-01-0{day} 10:00:00"),
+                 plausibility="unusual")
+            for day in (1, 2, 3)
+        ]
+        self.assertEqual(user_profiles._reconcile("relationship", rows[:2])["status"],
+                         "candidate")
+        self.assertEqual(user_profiles._reconcile("relationship", rows)["status"],
+                         "confirmed")
+
+    def test_one_impossible_read_blocks_auto_confirmation(self):
+        rows = [
+            self._judged("140", "2026-01-01 10:00:00"),
+            self._judged("140", "2026-02-01 10:00:00"),
+            self._judged("140", "2026-03-01 10:00:00"),
+        ]
+        rows[-1]["plausibility"] = "impossible"
+        self.assertEqual(user_profiles._reconcile("age", rows)["status"], "candidate")
+
+    def test_claim_parser_marks_multiple_spouses_unusual(self):
+        claims = user_profiles.claims_in_text("I have two wives")
+        self.assertEqual(claims, [{
+            "slot": "relationship",
+            "value": "2 wives",
+            "plausibility": "unusual",
+        }])
+
+    def test_irony_format_names_evidence_without_overclaiming(self):
+        out = irony.format_analysis({
+            "verdict": "likely a repeated bit",
+            "confidence": "medium",
+            "sarcasm": -0.1,
+            "extremity": 0.2,
+            "reasons": ["near-copy used by 4 other chatters"],
+        })
+        self.assertIn("near-copy used by 4 other chatters", out)
+        self.assertIn("surface sarcasm -0.1", out)
+
     def test_placeholder_and_anecdote_values_rejected(self):
         judged = [self._judged("my country", "2026-01-01 10:00:00"),
                   self._judged("my country", "2026-01-02 10:00:00")]
@@ -816,6 +1635,11 @@ class UserProfilesPureTests(unittest.TestCase):
         self.assertFalse(user_profiles._valid_value("still working on july 2nd at work"))
         self.assertTrue(user_profiles._valid_value("germany"))
         self.assertTrue(user_profiles._valid_value("software developer"))
+        self.assertFalse(user_profiles._valid_value("room next door", slot="location"))
+        self.assertFalse(user_profiles._valid_value("peasants since 2000 years", slot="family"))
+        self.assertEqual(user_profiles._norm_value("pets", "cat has covid"), "cat")
+        self.assertEqual(user_profiles._norm_value("gender", "a girl"), "female")
+        self.assertEqual(user_profiles._norm_value("relationship", "two wives"), "2 wives")
 
     def test_verbatim_repeats_never_corroborate(self):
         gag = {"asserts": True, "value": "husband", "sincerity": "sincere",
@@ -882,6 +1706,38 @@ class PersonaOutputPureTests(unittest.TestCase):
             "speaker label",
         )
 
+    def test_candidate_reranker_uses_nonlinear_context_fit(self):
+        original = persona_llm._voice_score
+        persona_llm._voice_score = lambda _author, _text: (0.5, {})
+        try:
+            weak, weak_parts = persona_llm._candidate_score(
+                "mainuser", "idk maybe", ["favorite", "game"], ["idk maybe"]
+            )
+            strong, strong_parts = persona_llm._candidate_score(
+                "mainuser", "my favorite game is quake", ["favorite", "game"],
+                ["idk maybe"],
+            )
+        finally:
+            persona_llm._voice_score = original
+        self.assertGreater(strong, weak)
+        self.assertGreater(strong_parts["context"], weak_parts["context"])
+
+    def test_candidate_reranker_prefers_target_voice_when_context_ties(self):
+        original = persona_llm._voice_score
+        persona_llm._voice_score = lambda _author, text: (
+            (0.9 if "targetlike" in text else 0.1), {}
+        )
+        try:
+            target, _ = persona_llm._candidate_score(
+                "mainuser", "targetlike reply", ["reply"], ["short reply"]
+            )
+            generic, _ = persona_llm._candidate_score(
+                "mainuser", "generic reply", ["reply"], ["short reply"]
+            )
+        finally:
+            persona_llm._voice_score = original
+        self.assertGreater(target, generic)
+
 
 class ResidentPersonaPureTests(unittest.TestCase):
     def test_format_line_replaces_persona_label_with_prefix(self):
@@ -921,6 +1777,47 @@ class ResidentPersonaPureTests(unittest.TestCase):
 
 
 class PersonaRetrievalPureTests(unittest.TestCase):
+    def test_prompt_evidence_dedupes_punctuation_and_case_variants(self):
+        rows = persona_llm._unique_messages([
+            "This model predicts the same result",
+            "this model predicts the same result!",
+            "The counterexample changes it",
+        ], 5)
+        self.assertEqual(rows, [
+            "This model predicts the same result",
+            "The counterexample changes it",
+        ])
+
+    def test_person_vectors_require_matching_provenance(self):
+        current = {
+            "unit": "utterance",
+            "model": "text-embedding-bge-m3",
+            "alias_signature": chat_archive.alias_signature(),
+            "utterance_version": chat_archive.UTTERANCE_VERSION,
+            "vectors": {"mainuser": [1.0]},
+        }
+        self.assertTrue(persona_embeddings._metadata_current(current))
+        current["utterance_version"] -= 1
+        self.assertFalse(persona_embeddings._metadata_current(current))
+
+    def test_message_index_metadata_must_match_runtime_provenance(self):
+        class Scalar:
+            def __init__(self, value):
+                self.value = value
+
+            def item(self):
+                return self.value
+
+        current = {
+            "unit": Scalar("utterance"),
+            "model": Scalar("text-embedding-bge-m3"),
+            "alias_signature": Scalar(chat_archive.alias_signature()),
+            "utterance_version": Scalar(chat_archive.UTTERANCE_VERSION),
+        }
+        self.assertTrue(persona_msg_index._metadata_current(current))
+        current.pop("utterance_version")
+        self.assertFalse(persona_msg_index._metadata_current(current))
+
     def test_repeated_token_spam_is_not_usable_persona_evidence(self):
         self.assertFalse(persona_llm._usable_exemplar("FART Fart FART Fart FART Fart"))
         self.assertFalse(persona_llm._usable_exemplar("@Quin69 FART AYAP Fart " * 6))

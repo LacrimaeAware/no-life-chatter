@@ -28,7 +28,10 @@ def main() -> int:
                         help="comma-separated authors; default = top archive authors")
     parser.add_argument("--max-authors", type=int, default=40)
     parser.add_argument("--min-messages", type=int, default=500)
-    parser.add_argument("--max-utterances", type=int, default=2000)
+    parser.add_argument(
+        "--max-utterances", type=int, default=20000,
+        help="message-local rows scanned per author; facts intentionally use deeper history",
+    )
     parser.add_argument("--evidence-limit", type=int, default=5)
     parser.add_argument("--out", default=str(fact_bank.DEFAULT_OUT))
     args = parser.parse_args()
@@ -42,7 +45,12 @@ def main() -> int:
         evidence_limit=args.evidence_limit,
     )
     out = Path(args.out)
-    fact_bank.write_jsonl(rows, out)
+    fact_bank.write_jsonl(rows, out, metadata={
+        "max_authors": args.max_authors,
+        "min_messages": args.min_messages,
+        "max_utterances": args.max_utterances,
+        "evidence_limit": args.evidence_limit,
+    })
     by_author = {}
     for row in rows:
         by_author[row["author"]] = by_author.get(row["author"], 0) + 1

@@ -76,9 +76,12 @@ def _why_trait(params) -> tuple[str, bool] | None:
 
 def _model_command_kind(command, params) -> str | None:
     """Return 'required', 'optional', or None for a command invocation."""
-    if not params:
-        return None
     command = (command or "").lower()
+    if not params:
+        if command == "distinct":
+            from utils import persona_traits
+            return None if persona_traits.axes_ready() else "required"
+        return None
     first = params[0].lower()
     if command == "generate" and first in GENERATE_LOCAL_SUBCOMMANDS:
         return None
@@ -104,6 +107,9 @@ def _model_command_kind(command, params) -> str | None:
                 return "required"
             from utils import persona_axes
             if persona_axes.axis_cached(trait):
+                from utils import persona_traits
+                if trait in persona_traits.pole_map() and not persona_traits.axes_ready():
+                    return "required"
                 return None
         return "required"
     if command in {"top", "bottom"}:
@@ -115,8 +121,14 @@ def _model_command_kind(command, params) -> str | None:
         if term:
             from utils import persona_axes
             if persona_axes.axis_cached(term):
+                from utils import persona_traits
+                if term in persona_traits.pole_map() and not persona_traits.axes_ready():
+                    return "required"
                 return None
         return "required"
+    if command in {"traits", "distinct"}:
+        from utils import persona_traits
+        return None if persona_traits.axes_ready() else "required"
     if command in MODEL_REQUIRED_COMMANDS:
         return "required"
     if command in MODEL_OPTIONAL_COMMANDS:

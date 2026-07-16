@@ -9,6 +9,8 @@ from `docs/README.md`, `docs/STATE_OF_OPERATION.md`, `docs/ROADMAP.md`, and
 - `NEXT_WORK_RANKING_2026-06-13.md` - dated ranking before the active roadmap
   was consolidated.
 - `PROJECT_AUDIT_2026-06-13.md` - dated audit snapshot.
+- `PROJECT_AUDIT_2026-07-15.md` - identity, sampling, memory, QA, IQ, comedy,
+  command, and maintenance audit behind the current state/roadmap.
 - `PERSONA_BOT_ROADMAP.md` - older long-form persona roadmap.
 - `REORG_PLAN.md` - older reorganization plan.
 - `STATE_OF_ART_AND_REMAINING_WORK_2026-06-13.md` - dated roadmap snapshot

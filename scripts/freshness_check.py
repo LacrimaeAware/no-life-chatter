@@ -5,7 +5,7 @@ This is meant as the "before bed / after break" command:
     python scripts/freshness_check.py
 
 It wraps the command/doc audits, generated artifact status, docs layout sanity,
-latest rebuild-log status, and git dirtiness. Warnings are printed for stale
+latest maintenance-log status, and git dirtiness. Warnings are printed for stale
 artifacts or dirty worktrees; hard failures are reserved for broken command
 imports/docs or docs layout regressions.
 """
@@ -13,6 +13,7 @@ imports/docs or docs layout regressions.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ ARCHIVED_DOCS = {
     "docs/archive/NEXT_WORK_RANKING_2026-06-13.md",
     "docs/archive/PERSONA_BOT_ROADMAP.md",
     "docs/archive/PROJECT_AUDIT_2026-06-13.md",
+    "docs/archive/PROJECT_AUDIT_2026-07-15.md",
     "docs/archive/REORG_PLAN.md",
     "docs/archive/STATE_OF_ART_AND_REMAINING_WORK_2026-06-13.md",
 }
@@ -68,6 +70,17 @@ LEGACY_LINK_TEXT = (
     "(PROJECT_AUDIT_2026-06-13.md)",
     "(REORG_PLAN.md)",
     "(STATE_OF_ART_AND_REMAINING_WORK_2026-06-13.md)",
+)
+
+MAINTENANCE_SCRIPT_RE = (
+    r"(?:rebuild_persona_artifacts|build_iq_v2|build_user_profiles|"
+    r"build_emote_semantics)\.py"
+)
+MAINTENANCE_LOG_GLOBS = (
+    "rebuild_persona_artifacts*.log",
+    "iq-v5-*.out.log",
+    "user-profiles-*.out.log",
+    "emote-semantics-*.out.log",
 )
 
 
@@ -166,7 +179,8 @@ def _rebuild_pids() -> list[str]:
     if os.name == "nt":
         command = (
             "Get-CimInstance Win32_Process | "
-            "Where-Object { $_.CommandLine -match 'rebuild_persona_artifacts.py' } | "
+            "Where-Object { $_.Name -match '^python(w)?\\.exe$' -and "
+            f"$_.CommandLine -match '{MAINTENANCE_SCRIPT_RE}' }} | "
             "ForEach-Object { $_.ProcessId }"
         )
         result = subprocess.run(
@@ -195,23 +209,32 @@ def _rebuild_pids() -> list[str]:
         return []
     pids = []
     for line in result.stdout.splitlines():
-        if "rebuild_persona_artifacts.py" in line and "freshness_check.py" not in line:
+        if re.search(MAINTENANCE_SCRIPT_RE, line) and "freshness_check.py" not in line:
             pids.append(line.strip().split(maxsplit=1)[0])
     return pids
 
 
 def rebuild_log_step() -> Step:
-    logs = sorted((ROOT / "data/unsynced").glob("rebuild_persona_artifacts*.log"))
-    stdout_logs = [path for path in logs if not path.name.endswith(".err.log")]
-    latest = stdout_logs[-1] if stdout_logs else None
+    stdout_logs = []
+    for pattern in MAINTENANCE_LOG_GLOBS:
+        stdout_logs.extend(
+            path for path in (ROOT / "data/unsynced").glob(pattern)
+            if not path.name.endswith(".err.log")
+        )
+    latest = max(stdout_logs, key=lambda path: path.stat().st_mtime) if stdout_logs else None
     pids = _rebuild_pids()
     if not latest:
         detail = "no rebuild log found under data/unsynced"
         if pids:
             detail += f"; running pids={','.join(pids)}"
-        return Step("latest rebuild", "WARN", detail)
+        return Step("latest maintenance", "WARN", detail)
 
-    err = latest.with_name(latest.name.replace(".log", ".err.log"))
+    err_name = (
+        latest.name.replace(".out.log", ".err.log")
+        if latest.name.endswith(".out.log")
+        else latest.name.replace(".log", ".err.log")
+    )
+    err = latest.with_name(err_name)
     details = [f"log={latest.relative_to(ROOT)}"]
     if pids:
         details.append(f"running pids={','.join(pids)}")
@@ -223,7 +246,13 @@ def rebuild_log_step() -> Step:
     err_tail = _tail(err, lines=5)
     if err_tail:
         details.append("stderr tail:\n" + err_tail)
-    return Step("latest rebuild", "OK" if pids else "WARN", "\n".join(details))
+    completed = (
+        "exit_code=0" in (tail or "")
+        or "text-IQ rows ->" in (tail or "")
+        or "emote context-vectors ->" in (tail or "")
+    )
+    status = "OK" if pids or completed else "WARN"
+    return Step("latest maintenance", status, "\n".join(details))
 
 
 def git_status_step() -> Step:

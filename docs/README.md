@@ -19,8 +19,8 @@ current operating plan.
   import/search design, and context-window caveats.
 - [CHAT_PERSONALITY_RESEARCH.md](CHAT_PERSONALITY_RESEARCH.md) - research notes
   for embeddings, axes, emotes, social maps, and persona evaluation.
-- [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md) - generation commands
-  and the planned resident persona control layer.
+- [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md) - generation commands,
+  live resident persona controls, and remaining volition/queue work.
 - [FINE_TUNING.md](FINE_TUNING.md) - LoRA/export/runbook notes. Current
   priority is still eval/RAG/memory before another blind training run.
 - [IDEA_BANK.md](IDEA_BANK.md) - parked ideas that are not part of the immediate

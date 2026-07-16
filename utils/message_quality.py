@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
+import hashlib
+import math
 from collections import Counter
 
 import config
@@ -27,6 +29,22 @@ BOT_TEXT_RE = re.compile(
     re.I,
 )
 PASTED_LOG_RE = re.compile(r"(?:^|\s)\d{1,2}:\d{2}\s+[A-Za-z0-9_]{2,25}:")
+MODEL_REQUEST_RE = re.compile(
+    r"(?:^|\s)(?:<gemini\d*|<groq|<gpt|[$!^](?:gpt|llm|askai)\b)",
+    re.I,
+)
+MODEL_PROSE_RE = re.compile(
+    r"\b(?:there is no publicly available|based on (?:the |available )?"
+    r"(?:evidence|information|context)|as of \w+ \d{1,2},? \d{4}|"
+    r"the provided (?:evidence|information|context))\b",
+    re.I,
+)
+SELECTION_VERSION = 1
+_INFORMATION_TERMS = re.compile(
+    r"\b(because|therefore|although|however|unless|assuming|implies|evidence|"
+    r"reason|cause|effect|tradeoff|compared|relative|means|depends|why|how|what if)\b",
+    re.I,
+)
 
 
 def _pc():
@@ -143,6 +161,40 @@ def command_like(text: str) -> bool:
     return command_count >= 2 or (raw_tokens and command_count / len(raw_tokens) > 0.12)
 
 
+def model_request_like(text: str) -> bool:
+    """Whether a chat line invokes a model-backed public command."""
+    return bool(MODEL_REQUEST_RE.search(text or ""))
+
+
+def generated_response_candidate(text: str) -> bool:
+    """Cheap high-recall gate before checking a line's preceding context."""
+    words = WORD_RE.findall(text or "")
+    return (
+        len(text or "") >= 80
+        and len(words) >= 12
+        and (bool(MODEL_PROSE_RE.search(text or "")) or bool(re.search(r"[.!?](?:\s|$)", text or "")))
+    )
+
+
+def likely_pasted_prose(text: str) -> bool:
+    """Conservative detector for long formal single-message quotations.
+
+    This is used only for cognitive scoring, where crediting a pasted article,
+    model answer, or copypasta as the chatter's syntax is worse than omitting an
+    unusually polished line. Persona/style systems intentionally keep these
+    messages because quoting things can still be part of someone's voice.
+    """
+    text = (text or "").strip()
+    words = WORD_RE.findall(text)
+    if MODEL_PROSE_RE.search(text) and len(words) >= 18:
+        return True
+    if len(text) < 160 or len(words) < 24:
+        return False
+    sentences = re.findall(r"(?:^|[.!?]\s+)[\"'([]*[A-Z]", text)
+    endings = re.findall(r"[.!?](?:[\"')\]]*)?(?:\s|$)", text)
+    return len(endings) >= 3 or (len(endings) >= 2 and len(sentences) >= 2)
+
+
 def repeated_token_spam(words) -> bool:
     norm_words = [
         re.sub(r"[^\w]+", " ", (word or "").casefold()).strip()
@@ -241,3 +293,94 @@ def semantic_text(message: str, *, min_words: int = 4, max_words: int = 60) -> s
     if not (min_words <= len(clean.split()) <= max_words):
         return None
     return clean
+
+
+def _semantic_key(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text or "").casefold()
+    text = re.sub(r"[^\w']+", " ", text, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def semantic_information_score(text: str) -> float:
+    """Generic retrieval value, independent of any person or trait label."""
+    words = tokens(text)
+    if not words:
+        return 0.0
+    n = len(words)
+    diversity = len(set(words)) / n
+    structure = min(3, len(_INFORMATION_TERMS.findall(text or ""))) / 3
+    question = 1.0 if "?" in (text or "") else 0.0
+    # Length saturates quickly so verbose pasted prose does not dominate.
+    length = min(1.0, math.log1p(n) / math.log(25))
+    return (0.45 * length) + (0.30 * diversity) + (0.20 * structure) + (0.05 * question)
+
+
+def _stable_rank(label: str, key: str) -> int:
+    raw = f"{label}\0{key}".encode("utf-8", errors="replace")
+    return int.from_bytes(hashlib.blake2b(raw, digest_size=8).digest(), "big")
+
+
+def select_semantic_units(
+    messages,
+    *,
+    cap: int,
+    label: str,
+    min_words: int = 4,
+    max_words: int = 70,
+    coverage_share: float = 0.80,
+) -> tuple[list[dict], dict]:
+    """Select a deterministic coverage lane plus a high-information tail.
+
+    Exact normalized repeats are collapsed first. The coverage lane preserves
+    an unbiased view for person/topic averages; the smaller high-information
+    lane improves RAG and peak-style analyses without distorting those means.
+    """
+    candidates = []
+    seen = set()
+    source_count = 0
+    for original in messages:
+        source_count += 1
+        cleaned = semantic_text(original, min_words=min_words, max_words=max_words)
+        if not cleaned:
+            continue
+        key = _semantic_key(cleaned)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        candidates.append({
+            "text": original,
+            "clean": cleaned,
+            "key": key,
+            "information": semantic_information_score(cleaned),
+        })
+
+    cap = max(0, int(cap))
+    if not cap or len(candidates) <= cap:
+        selected = sorted(candidates, key=lambda row: _stable_rank(label, row["key"]))
+        for row in selected:
+            row["kind"] = "coverage"
+    else:
+        coverage_n = max(1, min(cap, int(round(cap * coverage_share))))
+        by_coverage = sorted(candidates, key=lambda row: _stable_rank(label, row["key"]))
+        coverage = by_coverage[:coverage_n]
+        coverage_keys = {row["key"] for row in coverage}
+        remaining = [row for row in candidates if row["key"] not in coverage_keys]
+        remaining.sort(
+            key=lambda row: (-row["information"], _stable_rank(label + ":peak", row["key"]))
+        )
+        peak = remaining[:cap - coverage_n]
+        for row in coverage:
+            row["kind"] = "coverage"
+        for row in peak:
+            row["kind"] = "high_signal"
+        selected = coverage + peak
+
+    meta = {
+        "version": SELECTION_VERSION,
+        "source_count": source_count,
+        "usable_unique": len(candidates),
+        "selected": len(selected),
+        "coverage": sum(row["kind"] == "coverage" for row in selected),
+        "high_signal": sum(row["kind"] == "high_signal" for row in selected),
+    }
+    return selected, meta

@@ -22,34 +22,89 @@ import config
 from utils import chat_archive
 
 DIR = os.path.join("data", "unsynced", "msg_index")
-_CACHE = OrderedDict()  # author -> (vectors fp32, texts)
+_CACHE = OrderedDict()  # author -> (mtime_ns, size, vectors fp32, texts)
 _CACHE_MAX = 8
-_burst_cache = {}  # axis_name -> {author: percentile_score}
-_contra_cache = {}  # axis_name -> {author: contradiction_z}
+_validity_cache = {}  # path -> (mtime_ns, size, is_current)
+_burst_cache = {}  # axis_name -> (directory signature, scores)
+_contra_cache = {}  # axis_name -> (directory signature, scores)
 
 
 def _path(author):
     return os.path.join(DIR, f"{chat_archive.normalize_author(author)}.npz")
 
 
+def _metadata_current(data) -> bool:
+    try:
+        return (
+            str(data["unit"].item()) == "utterance"
+            and str(data["model"].item()) == config.LLM_EMBED_MODEL
+            and str(data["alias_signature"].item()) == chat_archive.alias_signature()
+            and int(data["utterance_version"].item()) == chat_archive.UTTERANCE_VERSION
+        )
+    except Exception:
+        return False
+
+
+def _path_current(path: str) -> bool:
+    if not os.path.exists(path):
+        return False
+    stat = os.stat(path)
+    cached = _validity_cache.get(path)
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    if cached and cached[:2] == stamp:
+        return cached[2]
+    try:
+        import numpy as np
+        with np.load(path, allow_pickle=True) as data:
+            current = _metadata_current(data)
+    except Exception:
+        current = False
+    _validity_cache[path] = (*stamp, current)
+    return current
+
+
+def _index_signature():
+    try:
+        return tuple(sorted(
+            (name, os.stat(os.path.join(DIR, name)).st_mtime_ns,
+             os.stat(os.path.join(DIR, name)).st_size)
+            for name in os.listdir(DIR) if name.endswith(".npz")
+        ))
+    except OSError:
+        return ()
+
+
 def available(author=None) -> bool:
     if author is None:
-        return os.path.isdir(DIR) and any(f.endswith(".npz") for f in os.listdir(DIR))
-    return os.path.exists(_path(author))
+        if not os.path.isdir(DIR):
+            return False
+        return any(
+            _path_current(os.path.join(DIR, name))
+            for name in os.listdir(DIR) if name.endswith(".npz")
+        )
+    return _path_current(_path(author))
 
 
 def _load(author):
     import numpy as np
     canon = chat_archive.normalize_author(author)
-    if canon in _CACHE:
+    path = _path(canon)
+    if not _path_current(path):
+        raise ValueError(f"stale or incompatible message index for {canon}")
+    stat = os.stat(path)
+    cached = _CACHE.get(canon)
+    if cached and cached[:2] == (stat.st_mtime_ns, stat.st_size):
         _CACHE.move_to_end(canon)
-        return _CACHE[canon]
-    d = np.load(_path(canon), allow_pickle=True)
-    pair = (d["vectors"].astype("float32"), list(d["texts"]))
-    _CACHE[canon] = pair
+        return cached[2], cached[3]
+    with np.load(path, allow_pickle=True) as data:
+        vectors = data["vectors"].astype("float32")
+        texts = list(data["texts"])
+    _CACHE[canon] = (stat.st_mtime_ns, stat.st_size, vectors, texts)
+    _burst_cache.clear()
+    _contra_cache.clear()
     if len(_CACHE) > _CACHE_MAX:
         _CACHE.popitem(last=False)
-    return pair
+    return vectors, texts
 
 
 def _embed_one(text):
@@ -80,8 +135,10 @@ def burst_scores(axis_name, pct=90):
     author's per-message projections on the axis — 'how strong are their
     strongest moments', immune to dilution by neutral filler."""
     import numpy as np
-    if axis_name in _burst_cache:
-        return _burst_cache[axis_name]
+    signature = _index_signature()
+    cached = _burst_cache.get(axis_name)
+    if cached and cached[0] == signature:
+        return cached[1]
     # same decorrelated dial as axis_scores/traits_for: built-ins use the Löwdin
     # ortho directions, custom axes project on their own raw direction.
     from utils.persona_axes import _ortho_builtin, _all_axis_vectors
@@ -92,6 +149,8 @@ def burst_scores(axis_name, pct=90):
         if not f.endswith(".npz"):
             continue
         author = f[:-4]
+        if not available(author):
+            continue
         V, _texts = _load(author)
         raw[author] = float(np.percentile(V @ av, pct))
     if not raw:
@@ -99,7 +158,7 @@ def burst_scores(axis_name, pct=90):
     vals = np.array(list(raw.values()))
     z = (vals - vals.mean()) / (vals.std() or 1.0)
     out = dict(zip(raw.keys(), z))
-    _burst_cache[axis_name] = out
+    _burst_cache[axis_name] = (signature, out)
     return out
 
 
@@ -114,8 +173,10 @@ def contradiction_scores(axis_name, lo_pct=10, hi_pct=90):
     mean-pool throws away. A high score means the person's CHARGED-axis mean is
     unreliable — they perform both ends. Same axis selection as burst_scores."""
     import numpy as np
-    if axis_name in _contra_cache:
-        return _contra_cache[axis_name]
+    signature = _index_signature()
+    cached = _contra_cache.get(axis_name)
+    if cached and cached[0] == signature:
+        return cached[1]
     from utils.persona_axes import _ortho_builtin, _all_axis_vectors
     ortho = _ortho_builtin()
     av = ortho[axis_name] if axis_name in ortho else _all_axis_vectors()[axis_name][0]
@@ -124,6 +185,8 @@ def contradiction_scores(axis_name, lo_pct=10, hi_pct=90):
         if not f.endswith(".npz"):
             continue
         author = f[:-4]
+        if not available(author):
+            continue
         V, _texts = _load(author)
         proj[author] = np.asarray(V @ av, dtype="float32")
     if not proj:
@@ -134,5 +197,5 @@ def contradiction_scores(axis_name, lo_pct=10, hi_pct=90):
     vals = np.array(list(raw.values()))
     z = (vals - vals.mean()) / (vals.std() or 1.0)
     out = dict(zip(raw.keys(), z))
-    _contra_cache[axis_name] = out
+    _contra_cache[axis_name] = (signature, out)
     return out

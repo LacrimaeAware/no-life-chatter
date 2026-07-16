@@ -127,6 +127,11 @@ def _axis_vectors():
 _ORTHO_VECS = None
 
 
+def axes_ready() -> bool:
+    """Whether built-in poles can be scored without another embedding call."""
+    return _AXIS_VECS is not None
+
+
 def ortho_axis_vectors():
     """The SCORING directions: the five built-in axes symmetrically
     orthogonalized (Löwdin, A_orth = (A Aᵀ)^{-1/2} A) so that a person's five

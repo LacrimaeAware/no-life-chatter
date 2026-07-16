@@ -104,15 +104,15 @@ Commands are auto-discovered: drop a `commands/foo.py` with a
 ## Commands
 
 The full live command list is maintained in
-[docs/COMMANDS.md](docs/COMMANDS.md). In chat, `~help` shows grouped pages and
-`~help <command>` shows details for a single command.
+[docs/COMMANDS.md](docs/COMMANDS.md). In chat, `~help` shows grouped pages,
+`~help <category>` filters a group, and `~help <command>` shows details.
 
 The table below is a project overview, not the audited source of truth.
 `scripts/audit_commands.py` checks `docs/COMMANDS.md` against `commands/*.py`.
 
 | Command | Who | Description |
 | --- | --- | --- |
-| `~help [page|command]` | anyone | List grouped command pages, or details for one command. |
+| `~help [page|category|command]` | anyone | List grouped pages, browse a category, or show one command. |
 | `~admin` | anyone | List the admin / super-admin commands (kept out of public `~help`). |
 | `~experimental` | anyone | List prototype/evidence commands and their raw/receipts modes. |
 | `~ping` | anyone | Latency + host stats. |
@@ -132,14 +132,16 @@ The table below is a project overview, not the audited source of truth.
 | `~firstseen <user>` | anyone | A user's first archived message. |
 | `~chatstats <user> [chat=ch]` | anyone | Archive stats: count, first/last seen, busiest hour. |
 | `~regulars [channel] [min] [n]` | anyone | Top chatters of a channel above a message floor, bots excluded. |
-| `~askchat [raw] [user=<name>\|<name>] [chat=ch] <question>` | anyone | Evidence-backed archive/lore QA; normal mode uses local LLM synthesis, `raw` shows receipts. |
+| `~askchat [raw] [user=<name>\|<name>] [chat=ch] <question>` | anyone | Evidence-backed archive/lore QA with keyword+dense retrieval and chronological context; `raw` shows receipts. |
 | `~whosaid <sentence>` | anyone | Stylometry: which chatter most likely said a line (novel sentences work). Ranks people active in this chat; `anyone` ranks the whole archive. |
 | `~markers <user> [chat=] [year=]` | anyone | A chatter's voice profile — favorite words + word-pairs vs the average chatter. Scoped to the current chat by default. |
 | `~like <user> [chat=] [year=]` | anyone | Who shares their distinctive voice, with the shared markers as evidence — also a decent alt-account detector. |
 | `~twin <user>` | anyone | Overall nearest match, blending vocabulary/emotes with semantic similarity. |
 | `~traits <user>` | anyone | Semantic trait readout against the room average. |
 | `~style <user>` | anyone | Behavioral read — how a chatter types (emotes, verbosity, caps, mentions, profanity) vs the room. |
-| `~funny <user>` / `~funny top\|bottom [n]` | anyone | Comedy ranking: how much more others laugh in the ~30s after you talk than before, so a chat reacting to the stream cancels out. Roster-relative index (100 = average); `breadth` = how many different people you've made laugh. Runs on the configured conversational chats. |
+| `~funny <user>` / `~funny top\|bottom [n]` | anyone | Comedy influence from new human laughers after a setup versus before it; rapid fragments are one setup and breadth is deduped across chats. |
+| `~iq <user>` / `~iq why <user> [dim]` | anyone | Roster-relative peak expressed-cognition experiment, with stored top-tail evidence receipts. |
+| `~irony [user=<name>] <message>` | anyone | Experimental intent read from surface wording, community echoes, plausibility, and confirmed history. |
 | `~top <trait> [n] [burst]` | anyone | Trait leaderboard for any word — built-in axes answer instantly, novel words build a saved axis on the fly. `burst` ranks peak moments. Add `@user` to see that user's rank + neighbours instead. |
 | `~bottom <trait> [n] [burst]` | anyone | Reverse of `~top` — who leans least toward a trait. |
 | `~axis <trait> [n]` | anyone | Inspect what a trait/custom axis is semantically closest to. |
@@ -209,7 +211,7 @@ Double-click instead of using the terminal:
 | `show-log.bat` | Live view of the background bot's log (closing it doesn't stop the bot). |
 | `stop-bot.bat` | Stop the background bot. |
 | `9-backup-unsynced-data.bat` | Zip the important local `data/unsynced` artifacts to `_private/backups`, keeping the newest 3 backups. |
-| `10-rebuild-persona-artifacts.bat` | Rebuild classifier, style profiles, semantic vectors, message indexes, IQ, and smoke output in the foreground. |
+| `10-rebuild-persona-artifacts.bat` | Rebuild classifier, style profiles, semantic vectors, message indexes, IQ, the claim receipt bank, and smoke output in the foreground. |
 | `10-rebuild-persona-artifacts-background.bat` | Start that rebuild in the background with logs in `data/unsynced`; pass `-Mode classifier` or `-Mode semantic` for smaller runs. |
 
 To auto-start at login, put a shortcut to `run-background.vbs` in your Startup

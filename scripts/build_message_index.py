@@ -10,18 +10,18 @@ vectors unlock the two things means can't do:
 Storage: data/unsynced/msg_index/<author>.npz with float16 vectors + the
 texts (aligned). ~3MB per 1000 units per author; loaded lazily.
 
-    python scripts/build_message_index.py [--per-author 1500]
+    python scripts/build_message_index.py [--per-author 3000]
 """
 
 import argparse
 import os
-import random
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import config  # noqa: E402
-from utils import chat_archive, message_quality, persona_classifier  # noqa: E402
+from utils import atomic_file, chat_archive, message_quality, persona_classifier  # noqa: E402
 from scripts.build_persona_embeddings import embed_batch  # noqa: E402
 
 OUT_DIR = os.path.join("data", "unsynced", "msg_index")
@@ -30,7 +30,7 @@ OUT_DIR = os.path.join("data", "unsynced", "msg_index")
 def main():
     import numpy as np
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--per-author", type=int, default=1500)
+    ap.add_argument("--per-author", type=int, default=3000)
     ap.add_argument("--unit", choices=("utterance", "message"), default="utterance",
                     help="semantic unit to embed; utterance merges same-author bursts")
     ap.add_argument("--force", action="store_true",
@@ -56,7 +56,6 @@ def main():
             os.remove(os.path.join(OUT_DIR, name))
         if stale:
             print(f"pruned {len(stale)} stale message-index files", flush=True)
-    rng = random.Random(11)
     for i, a in enumerate(roster, 1):
         out = os.path.join(OUT_DIR, f"{a}.npz")
         if os.path.exists(out) and not args.force:
@@ -64,32 +63,49 @@ def main():
             continue
         if os.path.exists(out):
             print(f"  ({i}/{len(roster)}) {a}: rebuilding", flush=True)
-        msgs = []
         source = (
             chat_archive.utterances_for(a)
             if args.unit == "utterance"
             else chat_archive.messages_for(a)
         )
-        for m in source:
-            cleaned = message_quality.semantic_text(m, min_words=4, max_words=70)
-            if cleaned:
-                msgs.append((cleaned, m))
-        if len(msgs) < 30:
+        rows, selection = message_quality.select_semantic_units(
+            source,
+            cap=args.per_author,
+            label=f"{a}:{args.unit}:semantic-index",
+            min_words=4,
+            max_words=70,
+        )
+        if len(rows) < 30:
             print(f"  ({i}/{len(roster)}) {a}: too few {args.unit}s, skipped", flush=True)
             continue
-        rng.shuffle(msgs)
-        msgs = msgs[:args.per_author]
         vecs = []
-        for j in range(0, len(msgs), 64):
-            vecs.extend(embed_batch([c for c, _ in msgs[j:j + 64]]))
+        for j in range(0, len(rows), 64):
+            vecs.extend(embed_batch([row["clean"] for row in rows[j:j + 64]]))
         V = np.asarray(vecs, dtype="float32")
         V /= (np.linalg.norm(V, axis=1, keepdims=True) + 1e-9)
-        tmp = out + ".tmp.npz"
-        np.savez_compressed(tmp, vectors=V.astype("float16"),
-                            texts=np.array([orig for _, orig in msgs], dtype=object),
-                            unit=np.array(args.unit, dtype=object))
-        os.replace(tmp, out)
-        print(f"  ({i}/{len(roster)}) {a}: {len(msgs)} {args.unit}s indexed", flush=True)
+        with atomic_file.open_atomic(out, "wb") as handle:
+            np.savez_compressed(
+                handle,
+                vectors=V.astype("float16"),
+                texts=np.array([row["text"] for row in rows], dtype=object),
+                kinds=np.array([row["kind"] for row in rows], dtype=object),
+                unit=np.array(args.unit, dtype=object),
+                utterance_version=np.array(
+                    chat_archive.UTTERANCE_VERSION if args.unit == "utterance" else 0
+                ),
+                model=np.array(config.LLM_EMBED_MODEL, dtype=object),
+                alias_signature=np.array(chat_archive.alias_signature(), dtype=object),
+                selection_version=np.array(message_quality.SELECTION_VERSION),
+                source_count=np.array(selection["source_count"]),
+                usable_unique=np.array(selection["usable_unique"]),
+                built_at=np.array(time.strftime("%Y-%m-%d %H:%M:%S"), dtype=object),
+            )
+        print(
+            f"  ({i}/{len(roster)}) {a}: {len(rows)} {args.unit}s indexed "
+            f"({selection['coverage']} coverage + {selection['high_signal']} high-signal; "
+            f"{selection['usable_unique']} usable unique)",
+            flush=True,
+        )
     print(f"done -> {OUT_DIR}")
 
 

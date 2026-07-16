@@ -12,20 +12,49 @@ _reg = None
 _sem = None
 _centered = None
 _names = None
+_sem_stamp = None
 
 
 def registry():
     global _reg
     if _reg is None:
-        _reg = json.load(open(REG_PATH, encoding="utf-8")) if os.path.exists(REG_PATH) else {}
+        if os.path.exists(REG_PATH):
+            with open(REG_PATH, encoding="utf-8") as handle:
+                _reg = json.load(handle)
+        else:
+            _reg = {}
     return _reg
 
 
 def semantics():
-    global _sem
-    if _sem is None:
-        _sem = pickle.load(open(SEM_PATH, "rb")) if os.path.exists(SEM_PATH) else {}
+    global _sem, _centered, _names, _sem_stamp
+    if not os.path.exists(SEM_PATH):
+        return {}
+    stat = os.stat(SEM_PATH)
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    if _sem is None or stamp != _sem_stamp:
+        with open(SEM_PATH, "rb") as handle:
+            payload = pickle.load(handle)
+        _sem = (
+            payload.get("emotes") or {}
+            if isinstance(payload, dict) and "emotes" in payload
+            else payload if isinstance(payload, dict) else {}
+        )
+        _centered = None
+        _names = None
+        _sem_stamp = stamp
     return _sem
+
+
+def semantics_metadata():
+    if not os.path.exists(SEM_PATH):
+        return {}
+    try:
+        with open(SEM_PATH, "rb") as handle:
+            payload = pickle.load(handle)
+        return (payload.get("__meta__") or {}) if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
 
 
 def _center(d):
@@ -55,7 +84,8 @@ def _centered_space():
         U = _center({e: d["vector"] for e, d in sem.items()})
         T = {}
         if os.path.exists(TAG_PATH):
-            T = _center(pickle.load(open(TAG_PATH, "rb")))
+            with open(TAG_PATH, "rb") as handle:
+                T = _center(pickle.load(handle))
         _names = sorted(set(U) | set(T))
         out = {}
         for e in _names:

@@ -4,10 +4,12 @@ Default pipeline:
 
 1. Train the authorship classifier.
 2. Rebuild lexical voice profiles in the classifier pickle.
-3. Rebuild semantic person vectors through the configured local embedding model.
-4. Rebuild the per-message semantic index used by burst leaderboards and RAG.
-5. Rebuild the v2 `~iq` text-IQ ensemble cache.
-6. Smoke-check trait axes/leaderboards.
+3. Rebuild the shared per-utterance semantic index used by RAG and analysis.
+4. Pool semantic person vectors from that index without re-embedding the corpus.
+5. Rebuild the current `~iq` text-IQ ensemble cache.
+6. Rebuild the deep-history regex claim receipt bank.
+7. Optionally rebuild verified profile v5 for an active roster.
+8. Smoke-check trait axes/leaderboards.
 
 Use --dry-run to print the commands without running them. Use --skip-embeddings
 when LM Studio's embedding endpoint is not running; that also skips the message
@@ -52,14 +54,14 @@ def main() -> int:
     parser.add_argument("--skip-classifier", action="store_true")
     parser.add_argument("--authors", default="",
                         help="comma-separated classifier roster; default = top non-bot authors")
-    parser.add_argument("--max-authors", type=int, default=31)
+    parser.add_argument("--max-authors", type=int, default=40)
     parser.add_argument("--per-author", type=int, default=4000)
     parser.add_argument("--min-messages", type=int, default=300)
     parser.add_argument("--vocab-size", type=int, default=20000)
 
     parser.add_argument("--skip-style-profiles", action="store_true")
     parser.add_argument("--style-min-messages", type=int, default=2000)
-    parser.add_argument("--style-max-roster", type=int, default=80)
+    parser.add_argument("--style-max-roster", type=int, default=40)
     parser.add_argument("--style-words-top", type=int, default=300)
     parser.add_argument("--style-phrases-top", type=int, default=150)
     parser.add_argument("--style-bg-cap", type=int, default=120000)
@@ -68,20 +70,29 @@ def main() -> int:
     parser.add_argument("--semantic-unit", choices=("utterance", "message"),
                         default="utterance",
                         help="unit for semantic embeddings/index; utterance merges same-author bursts")
-    parser.add_argument("--embedding-per-author", type=int, default=1000)
+    parser.add_argument("--embedding-per-author", type=int, default=3000)
     parser.add_argument("--embedding-report", action="store_true")
 
     parser.add_argument("--skip-message-index", action="store_true")
-    parser.add_argument("--message-index-per-author", type=int, default=1500)
+    parser.add_argument("--message-index-per-author", type=int, default=3000)
     parser.add_argument("--no-message-index-force", action="store_true",
                         help="leave existing per-author message index files in place")
 
     parser.add_argument("--skip-iq", action="store_true")
-    parser.add_argument("--iq-max-utterances", type=int, default=600)
+    parser.add_argument("--iq-max-utterances", type=int, default=3000)
     parser.add_argument("--iq-min-utterances", type=int, default=80)
     parser.add_argument("--iq-author-cap", type=int, default=15000)
     parser.add_argument("--iq-judge", action="store_true",
                         help="also run the optional local-LLM judge layer")
+
+    parser.add_argument("--skip-fact-bank", action="store_true")
+    parser.add_argument("--fact-max-authors", type=int, default=40)
+    parser.add_argument("--fact-max-utterances", type=int, default=20000)
+
+    parser.add_argument("--profile-roster", type=int, default=0,
+                        help="also rebuild verified profile v5 for the top N authors")
+    parser.add_argument("--profile-cap", type=int, default=30)
+    parser.add_argument("--profile-batch-size", type=int, default=6)
 
     parser.add_argument("--skip-trait-smoke", action="store_true")
     parser.add_argument("--trait-smoke-n", type=int, default=3)
@@ -110,14 +121,6 @@ def main() -> int:
             "--bg-cap", str(args.style_bg_cap),
         ]))
 
-    if not args.skip_embeddings:
-        cmd = [py, "scripts/build_persona_embeddings.py",
-               "--per-author", str(args.embedding_per_author),
-               "--unit", args.semantic_unit]
-        if args.embedding_report:
-            cmd.append("--report")
-        steps.append(("semantic embeddings", cmd))
-
     if not args.skip_embeddings and not args.skip_message_index:
         cmd = [py, "scripts/build_message_index.py",
                "--per-author", str(args.message_index_per_author),
@@ -125,6 +128,15 @@ def main() -> int:
         if not args.no_message_index_force:
             cmd.append("--force")
         steps.append(("semantic message index", cmd))
+
+    if not args.skip_embeddings:
+        cmd = [py, "scripts/build_persona_embeddings.py",
+               "--per-author", str(args.embedding_per_author),
+               "--unit", args.semantic_unit,
+               "--from-message-index"]
+        if args.embedding_report:
+            cmd.append("--report")
+        steps.append(("semantic person vectors", cmd))
 
     if not args.skip_iq:
         cmd = [py, "scripts/build_iq_v2.py",
@@ -136,7 +148,22 @@ def main() -> int:
             cmd.append("--no-embeddings")
         if args.iq_judge:
             cmd.append("--judge")
-        steps.append(("text-IQ v2", cmd))
+        steps.append(("text-IQ", cmd))
+
+    if not args.skip_fact_bank:
+        steps.append(("claim receipt bank", [
+            py, "scripts/build_fact_bank.py",
+            "--max-authors", str(args.fact_max_authors),
+            "--max-utterances", str(args.fact_max_utterances),
+        ]))
+
+    if args.profile_roster:
+        steps.append(("verified profile v5", [
+            py, "scripts/build_user_profiles.py",
+            "--roster", str(args.profile_roster),
+            "--cap", str(args.profile_cap),
+            "--batch-size", str(args.profile_batch_size),
+        ]))
 
     if not args.skip_trait_smoke:
         steps.append(("trait axis smoke", [

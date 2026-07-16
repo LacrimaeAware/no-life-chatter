@@ -30,7 +30,13 @@ API = "https://logs.zonian.dev/api/{channel}/{user}?jsonBasic=1"
 def ensure_table(conn):
     conn.execute(
         "CREATE TABLE IF NOT EXISTS author_ids ("
-        " author TEXT PRIMARY KEY, twitch_id TEXT, checked_at TEXT)")
+        " author TEXT PRIMARY KEY, twitch_id TEXT, checked_at TEXT, "
+        " display TEXT, last_seen_live TEXT)")
+    for column in ("display", "last_seen_live"):
+        try:
+            conn.execute(f"ALTER TABLE author_ids ADD COLUMN {column} TEXT")
+        except Exception:
+            pass
     conn.commit()
 
 
@@ -66,8 +72,12 @@ def main():
             "SELECT channel FROM messages WHERE author=? GROUP BY channel "
             "ORDER BY COUNT(*) DESC LIMIT 1", (a,)).fetchone()[0]
         tid = resolve(ch, a)
-        conn.execute("INSERT OR REPLACE INTO author_ids VALUES (?,?,?)",
-                     (a, tid, time.strftime("%Y-%m-%d %H:%M:%S")))
+        conn.execute(
+            "INSERT INTO author_ids (author, twitch_id, checked_at) VALUES (?,?,?) "
+            "ON CONFLICT(author) DO UPDATE SET "
+            "twitch_id=excluded.twitch_id, checked_at=excluded.checked_at",
+            (a, tid, time.strftime("%Y-%m-%d %H:%M:%S")),
+        )
         conn.commit()
         print(f"  ({i}/{len(todo)}) {a}: {tid or 'UNRESOLVED (dead/renamed login)'}",
               flush=True)

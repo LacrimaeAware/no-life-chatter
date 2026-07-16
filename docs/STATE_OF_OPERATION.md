@@ -1,213 +1,169 @@
 # State Of Operation
 
-Last refreshed: 2026-06-14.
+Last refreshed: 2026-07-16.
 
-Read this first after a break. Then read [ROADMAP.md](ROADMAP.md) for the
-ranked next work and [COMMANDS.md](COMMANDS.md) for the live command bible.
-Older handoffs and dated audits are preserved under [archive/](archive/).
+Read this first after a break. [ROADMAP.md](ROADMAP.md) is the ranked work
+queue, [COMMANDS.md](COMMANDS.md) is the audited command bible, and dated
+investigations live under [archive/](archive/).
 
 ## Short Version
 
-NoLifeChatter is a Windows-hosted Python Twitch bot with two connected halves:
+NoLifeChatter is a Windows-hosted Python Twitch bot with four connected parts:
 
-1. Live translation and language-practice tools.
-2. A local chat archive that powers search, stats, stylometry, persona
-   generation, embeddings, trait axes, IQ experiments, lore QA, and fine-tune
-   experiments.
+1. Translation and language-practice commands.
+2. A local SQLite/FTS5 chat archive with alias-aware search and context.
+3. Persona generation, stylometry, embeddings, axes, and experimental scores.
+4. Evidence-backed lore/profile memory and autonomous resident personas.
 
-The public repo is a sanitized showcase. Real config, archive data, generated
-reports, user rosters, aliases, logs, tokens, and model outputs stay ignored in
+The public repo is sanitized. Real config, aliases, chat logs, databases,
+generated artifacts, model output, and review queues stay ignored in
 `config.toml`, `data/`, and `_private/`.
 
-## Current Runtime
+## Runtime
 
-- The bot runs through `run-background.vbs` -> `_bot-loop.bat` -> `chatbot.py`.
-- `_bot-loop.bat` restarts the bot after exits and logs to `data/bot.log`.
-- `chatbot.py` has a single-instance lock on `127.0.0.1:48917`, so manual
-  launches normally exit if the background bot is already alive.
-- To reload code/config, stop the `python.exe ... chatbot.py` worker and let
-  the loop restart it. Use `stop-bot.bat` for an intentional stop.
-- Random ambient persona reactions are currently config-driven, not chat-command
-  driven. Resident persona commands are still planned.
+- `run-background.vbs` starts `_bot-loop.bat`, which runs `chatbot.py` and
+  restarts it after an exit. Runtime logs go under `data/`.
+- `chatbot.py` holds a single-instance socket lock. To reload code/config, stop
+  only the worker and let the loop respawn it.
+- GPU-heavy live commands, resident replies, and ambient persona generation
+  share `services/model_queue.py`: one running job, visible queue positions,
+  one active job per user, duplicate-request suppression, and super-admin
+  status/clear controls.
+- The queue is process-wide. Offline maintenance scripts are not yet coordinated
+  by the live queue, so long model builds should run with the bot paused or via
+  a future cross-process worker.
+- `~botpersona`, `~botmode`, `~botcontext`, and `~botchance` are live,
+  channel-scoped, time-limited resident-persona controls. Direct messages,
+  greetings, topic affinity, idle speech, reply threading, cooldowns, and a
+  no-response streak cap are implemented.
 
-## Active Surfaces
+## Identity And Archive
 
-- `commands/`: auto-discovered chat commands. `scripts/audit_commands.py` checks
-  imports, async handlers, descriptions, and `docs/COMMANDS.md` coverage.
-- `services/`: Twitch message handling, translation, local LLM calls, emotes,
-  and ambient reaction plumbing.
-- `utils/chat_archive.py`: SQLite + FTS5 archive, live capture, imports,
-  search, regex, quotes, stats, source-aware context windows, and retrieval.
-- `utils/persona_llm.py`: many-shot local-LLM persona engine with archive
-  retrieval, recent chat context, copy checks, candidate selection, and private
-  JSONL logs.
-- `utils/persona_markov.py`: local Markov personas.
-- `utils/persona_classifier.py`: authorship classifier and lexical voice
-  profiles for `~whosaid`, `~markers`, and `~like`.
-- `utils/persona_embeddings.py`: person-level semantic vectors.
-- `utils/persona_msg_index.py`: per-message or utterance semantic vectors for
-  semantic retrieval, `~why`, and burst leaderboards.
-- `utils/persona_axes.py` / `utils/persona_traits.py`: built-in and dynamic
-  trait axes.
-- `utils/persona_generate.py`: `~generate` recipe system and saved combos.
-- `utils/archive_qa.py`: evidence-backed `~askchat` reports over fact-bank
-  rows, broad archive hits, near matches, and emotes.
-- `scripts/`: offline ingestion, rebuilds, evals, fine-tune helpers, audits,
-  fact-bank tooling, and smoke checks.
-- `index.html` + `assets/`: public GitHub Pages showcase with anonymized
-  visuals.
+- User aliases normalize transitively through one canonical map. Search,
+  context, rosters, profiles, semantic artifacts, and display names use it.
+- Live display recency is separate from offline Twitch-ID lookup time. An
+  offline resolver can no longer make an old alt become the displayed name.
+- Imported rows retain `raw_author` while their searchable `author` is
+  canonical. This preserves provenance without duplicating people at read time.
+- Generated artifacts carry an alias-map signature. `~artifacts` and
+  `scripts/artifact_status.py` warn about split identities, missing provenance,
+  or a changed alias map instead of silently serving stale rankings.
+- Chronological context windows dedupe alias-mirrored lines and refuse to
+  invent conversation around author-only source logs.
 
-## Commands
+## Data Shape
 
-The source of truth is [COMMANDS.md](COMMANDS.md). High-level groups:
+Different tasks intentionally use different evidence budgets:
 
-- Translation/language: `~autotl`, `~setlang`, `~tloutput`, `~chan_autotl`,
-  `~global_autotl`, `~practice`, `~romanize`, `~speak`.
-- Archive/search/lore: `~said`, `~saidnext`, `~regex`, `~userregex`, `~quote`,
-  `~firstseen`, `~chatstats`, `~regulars`, `~askchat`.
-- Persona/generation: `~markov`, `~mimic`, `~persona`, `~hyper`, `~generate`.
-- Analysis: `~whosaid`, `~markers`, `~like`, `~twin`, `~traits`, `~top`,
-  `~vibes`, `~distinct`, `~why`, `~emote`, `~irony`, `~iq`.
-- Moderation/utility: `~help`, `~ping`, `~artifacts`, `~banuser`,
-  `~unbanuser`, `~warnings`.
+| Surface | Current input policy |
+| --- | --- |
+| Authorship classifier | Up to 4,000 filtered, normalized-exact-deduped messages per person plus held-out evaluation |
+| Semantic message index | 3,000 deterministic, channel-bounded merged utterances per person: 80% coverage, 20% high-information |
+| Person vector | Mean of the unbiased coverage lane from that shared index |
+| Text-IQ lexical features | Deterministic filtered history, capped at 15,000 utterances per person |
+| Text-IQ semantic features | Up to 3,000 eligible indexed utterances per person |
+| Regex claim bank | Up to 20,000 message-local rows per person; weak rows remain candidates |
+| Verified profiles | Targeted deep-history retrieval by fact slot, followed by contextual model judgment |
 
-`~botmode`, `~botpersona`, `~botcontext`, and `~botchance` are documented as a
-planned resident-persona layer in [GENERATE_AND_BOT_MODES.md](GENERATE_AND_BOT_MODES.md).
-They are not live commands yet.
+The selector removes commands, repeated spam, unusable fragments, and exact
+duplicates. It does not simply take one random block. Coverage selection is
+stable across rebuilds; the high-information lane improves retrieval without
+warping person-level averages.
 
-## Current Build State
+## Current Quality Systems
 
-- `~askchat` is live as the first archive-QA/lore command.
-- `~artifacts` is live and mirrors `scripts/artifact_status.py`.
-- `scripts/audit_commands.py` is live and should be run before commits that
-  touch commands or docs.
-- `scripts/freshness_check.py` is the repo-level freshness wrapper for command
-  docs, generated artifact status, docs layout, rebuild logs, and git dirtiness.
-- The fact bank exists as candidate evidence rows (v1). It is not a truth
-  database yet.
-- Fact bank v2 (`utils/user_profiles.py`, `scripts/build_user_profiles.py`)
-  builds slot profiles (location/age/occupation/…): anchor-phrase retrieval,
-  archive-grounded copypasta rejection, an in-context LLM sincerity judge,
-  and multi-day corroboration (verbatim repeats never corroborate; conflicting
-  confirmed values become "disputed" and are not served). Confirmed facts feed
-  the persona prompt (`persona_llm`) and `~askchat`
-  (`archive_qa._profile_hits`). Coverage grows by re-running the builder
-  (incremental judged-message cache).
-- The held-out reply eval harness exists. A serious baseline run is still a
-  next-step item.
-- The full artifact rebuild should be checked before trusting rankings after
-  alias/filter/semantic-unit changes.
-- **Embedding-geometry pass (2026-06-14, see
-  [RESEARCH_TO_APPLIED.md](RESEARCH_TO_APPLIED.md)):**
-  - `scripts/eval_geometry.py` is the geometry dial — anisotropy, axis
-    collinearity, axis-score entanglement, ABTT safety guard. Run it before/after
-    any embedding-space change; it reads on-disk artifacts (embedder needed only
-    for the axis section).
-  - Trait axes are now decorrelated with **Löwdin symmetric orthogonalization**
-    in `persona_traits.ortho_axis_vectors()` (single source of truth).
-    `traits_for`, `leaderboard`, `axis_scores`, and `burst_scores` all route
-    through it, so `~traits`/`~top`/`~top burst` finally agree. Axis-score
-    entanglement dropped 0.483 -> 0.249.
-  - `persona_embeddings._centered()` applies an **ABTT-k isotropy correction**
-    (`ABTT_K = 2`, chosen empirically — the effect is non-monotonic). Every
-    cosine consumer inherits it.
-  - `archive_qa.build_report` (author path) now fuses bm25 + dense semantic
-    retrieval by **Reciprocal Rank Fusion** (`_rrf_author_hits`); bm25 stays an
-    independent lane and dense adds paraphrase recall. Safe no-op when the
-    message index or embedder is down.
-  - `scripts/irony_confound.py` measured the charged-axis irony confound: the
-    zero-shot "ironic" axis cannot detect deadpan/charged irony, so `~traits`/
-    `~top` on charged axes read words not intent, and naive irony-discounting
-    does not work (corr +0.17). Recorded as a **known limitation** in
-    `docs/GROUND_TRUTH.md`; real fix is a supervised irony detector from the
-    oracle queue (ROADMAP item 8).
-  - **Self-contradiction reliability flag (shipped).**
-    `persona_msg_index.contradiction_scores(axis)` measures both-pole occupancy
-    from the per-message clouds (the no-oracle "performative person" signal), and
-    `~traits` now marks a charged-axis lean ⚡ when the chatter also lives at the
-    opposite pole. Diagnostic: `scripts/contradiction.py`. First slice of the
-    distributional person model.
-  - **Data-driven axis discovery (research finding, not yet a command).**
-    `scripts/discover_axes.py` (unsupervised PCA/ICA over person vectors) showed
-    the embedding space is dominated by TOPIC and LANGUAGE, not personality — the
-    ceiling on embedding-based personas. `scripts/behavior_axes.py` discovers
-    personality axes from topic-free BEHAVIORAL features (caps/emote/length/
-    mentions/profanity/doubling rates); the behavioral axes are ~0.22 correlated
-    with the topic axes (mostly independent) and match human reads. This is the
-    foundation for the "better axes" direction. `scripts/person_cards.py` renders
-    per-person cards (readout + real messages) for labeling; labels in
-    `_private/PERSON_LABELS.md`. See `docs/RESEARCH_TO_APPLIED.md` §7.
-  - **`~style` command (shipped) + the core conclusion.** The behavioral axes are
-    now live as `~style <user>` (`utils/behavior_profile.py`): how a chatter types
-    vs the room, the structural-personality read. The whole investigation's
-    conclusion (`docs/INVESTIGATION_LOG.md`, `docs/PERSONALITY_SYSTEM_DESIGN.md`):
-    traits split into STRUCTURAL (measurable, → `~style`) and INTENT/disposition
-    (irony/hostility/sincerity — NOT recoverable from surface features; parked
-    behind subject-attribution + labeled messages). The 34 person-labels are an
-    answer key / association source, too few to train. Emote detection in `~style`
-    is an approximate lower bound (see GROUND_TRUTH known limitations).
+- Persona RAG uses keyword and semantic evidence, merged utterances, recent
+  conversation, source-aware context, copy checks, and output validation.
+- Two valid persona candidates are reranked without another model call using
+  target-authorship probability, distinctive markers, nonlinear prompt fit,
+  target length distribution, and copy margin. Private-history replay removed
+  first-candidate score ties and improved both target probability and prompt fit.
+- `~askchat` fuses BM25 and dense author retrieval, keeps strong paraphrases,
+  adds safe chronological context to receipts, and lets the local model
+  synthesize only from labeled evidence. `raw`/`noai` remains receipts-only.
+- The old regex fact bank is evidence storage, not truth. Exact repeats count
+  once; confirmation requires independent days and fresh phrasings, while
+  contradiction or cross-user echo blocks promotion. Its sidecar records the
+  build budget and alias signature; stale rows fail closed.
+- Verified profile memory uses contextual model judgment, archive-grounded
+  copypasta rejection, plausibility labels, multi-day corroboration, and
+  disputes. Profile v5 gates vague/non-self candidates before model work and
+  normalizes accepted outputs through slot-specific schemas. Candidate judgment
+  is batched, cached, and individually retried when a batch response omits an
+  item. Slot-level atomic checkpoints make long builds resumable after interruption.
+- `~irony` combines surface wording with community repetition, unusual literal
+  claims, and confirmed-profile agreement/conflict. It remains experimental;
+  zero-shot embeddings alone do not reliably recover intent.
+- Text-IQ uses the median of each person's top 10% rather than ordinary-message
+  averages. Reasoning combines semantic moves with direct clause/reasoning and
+  question structure, rather than relying only on embeddings. It rejects long
+  exact cross-user copypasta and stores auditable per-dimension receipts for
+  `~iq why <user> [dimension]`.
+- `~funny` uses before/after new-laugh deltas, excludes self/bot/noise reactions,
+  collapses rapid same-author bursts, dedupes laughers across chats, and
+  invalidates its cache as the archive grows.
 
-## Artifact Rule
+## Maintenance
 
-After changing aliases, message filters, embedding model, roster thresholds, or
-semantic units, rebuild generated artifacts before trusting analysis commands:
+After aliases, filters, semantic units, or embedding models change, run:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\rebuild_persona_artifacts.py --semantic-unit utterance --continue-on-error
+python scripts/rebuild_persona_artifacts.py --semantic-unit utterance --continue-on-error
 ```
 
-For a background run:
+The rebuild creates the 3,000-utterance message index first, then derives person
+vectors and IQ semantic features from it so the same messages are not embedded
+three times. Restart the worker afterward so process caches reload.
+
+The same pipeline rebuilds the 20,000-row/person claim receipt bank. Verified
+profile v5 is opt-in because it uses the chat model: add `--profile-roster 40`
+during a model-idle maintenance window. A July 16 one-user benchmark judged 55
+candidates in 4m14s, implying roughly 2h50m for 40 similarly dense users.
+
+Utterance artifacts carry a chunking-version field. Version 3 groups each
+person's short bursts independently per channel and collapses duplicate source
+components while retaining their message IDs. Simultaneous posts in two
+channels can no longer become one synthetic sentence.
+
+Live `~iq` is cache-only. Missing or provenance-stale IQ data reports that a
+maintenance rebuild is needed; it never starts the expensive offline builder
+from a chat command.
+
+Before a commit:
 
 ```powershell
-.\scripts\start_rebuild_background.ps1 -SemanticUnit utterance
-```
-
-Then restart the bot worker so cached artifacts are reloaded.
-
-## Next Work
-
-The active ranking is in [ROADMAP.md](ROADMAP.md). Current top items:
-
-1. Finish/verify the utterance-unit artifact rebuild.
-2. Run a held-out reply baseline.
-3. Improve archive-QA/lore ranking and contradiction handling.
-4. Build a persona output reranker.
-5. Build fact-bank v2.
-6. Add IQ receipts.
-7. Implement resident persona controls.
-
-## Privacy / Public Boundary
-
-Never stage or publish:
-
-- `.env`
-- `config.toml`
-- `_private/`
-- `data/`
-- `*.db`
-- token files
-- raw logs
-- private model outputs
-- private blocklists
-
-Before committing, check staged files and staged added lines:
-
-```powershell
+python scripts/freshness_check.py
+python -m unittest discover -s tests -v
 git diff --cached --name-only
 git diff --cached --unified=0
 ```
 
-Public docs should stay architecture/product oriented and anonymized. Do not
-publish raw chat evidence, exact private aliases, private queues, tokens, or
-user-identifying generated reports.
+Never stage `.env`, `config.toml`, `_private/`, `data/`, databases, raw logs,
+tokens, private aliases, or user-identifying generated reports.
 
-## Return Checklist
+## Known Limits
 
-```powershell
-.\.venv\Scripts\python.exe scripts\freshness_check.py
-.\.venv\Scripts\python.exe -m unittest tests.test_pure_functions
-```
+- A full profile v5 roster still needs a scheduled/dead-hours build. The live
+  stale profile shell fails closed until that roughly three-hour pass completes.
+- Emote semantics are versioned and crash-safe, but most long-tail emotes still
+  have only 30 contexts. Targeted examples now use up to 160 without duplicate
+  padding; the broader top-up remains an offline maintenance job.
+- Message embeddings mostly measure topic/register. Reasoning and intent axes
+  are weak signals and must stay receipt-auditable.
+- Exact cross-user copypasta is filtered from IQ, but near-copy and unique
+  pasted prose still need a stronger quotation/novelty detector.
+- Archive QA can summarize evidence, but it cannot infer a stable belief from a
+  few mentions. Opinion and culture claims need repeated, contextual evidence.
+- Resident personas still use probabilistic heuristics rather than a trained
+  response-volition model.
+- IQ v5, fact v4, classifier/style, person vectors, and message indexes are
+  rebuilt with the current identity signature. IQ depth remains a weak
+  specificity proxy and should not gain weight without a reasoning benchmark.
 
-If the freshness check reports stale artifacts, inspect `~artifacts`, latest
-`data/unsynced/rebuild_persona_artifacts_*.log`, or run
-`scripts/artifact_status.py` directly.
+## Next Work
+
+The authoritative ranking is in [ROADMAP.md](ROADMAP.md). In brief: freeze and
+review the held-out persona benchmark, validate the new reranker, schedule the
+profile v5 and emote top-up builds, then improve archive QA and supervised
+intent work. More LoRA training comes after those evaluation and data-shape
+steps, not before them.

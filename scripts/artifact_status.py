@@ -22,8 +22,9 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
-    print(artifact_status.format_table())
-    return 0
+    rows = artifact_status.status_rows()
+    print(artifact_status.format_table(rows))
+    return 1 if any(row["status"] != "ok" for row in rows) else 0
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Build the v2 `~iq` cache.
+"""Build the current `~iq` cache (v5; filename retained for compatibility).
 
 This is intentionally offline. The chat command only reads the cache when it is
 fresh; this script is where embedding and optional judge work should happen.
@@ -21,7 +21,7 @@ from utils import persona_iq  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--force", action="store_true",
-                        help="rebuild even if a v2 cache already exists")
+                        help="rebuild even if a current cache already exists")
     parser.add_argument("--no-embeddings", action="store_true",
                         help="skip embedding axes and build lexical/syntax only")
     parser.add_argument("--judge", action="store_true",
@@ -52,10 +52,11 @@ def main() -> int:
         sample_word_freq=args.sample_word_freq,
         max_authors=args.max_authors,
         judge_items=args.judge_items,
+        require_complete=True,
     )
     meta = persona_iq.cache_info()
     print(
-        f"built {len(scores)} v2 text-IQ rows -> {persona_iq.CACHE}\n"
+        f"built {len(scores)} v{persona_iq.VERSION} text-IQ rows -> {persona_iq.CACHE}\n"
         f"meta: {meta}",
         flush=True,
     )

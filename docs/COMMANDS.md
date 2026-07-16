@@ -4,7 +4,7 @@ This is the public, source-of-truth command map for the live bot. Commands are
 auto-discovered from `commands/*.py`: if a file defines `handle_name`, then
 the matching prefixed chat command exists.
 
-For compact chat help, use `~help` or `~help <command>`.
+For compact chat help, use `~help`, `~help <category>`, or `~help <command>`.
 
 ## Quick Index
 
@@ -38,7 +38,7 @@ For compact chat help, use `~help` or `~help <command>`.
 | `~firstseen <user>` | anyone | Show a user's first archived message. |
 | `~chatstats <user> [chat=<channel>]` | anyone | Show message count, first/last seen, average length, and busiest hour. |
 | `~regulars [channel] [min_messages] [limit]` | anyone | Top regulars in a channel, ignoring obvious bots by default. |
-| `~askchat [raw] [user=<name>\|<name>] [chat=<channel>] <question>` | anyone | Evidence-backed archive/lore QA. Normal mode retrieves receipts and asks the local LLM for a cautious cited answer; `raw` returns receipts only. |
+| `~askchat [raw] [user=<name>\|<name>] [chat=<channel>] <question>` | anyone | Evidence-backed archive/lore QA. Normal mode fuses keyword/dense retrieval, adds safe chronological context, and asks the local LLM for a cautious cited answer; `raw` returns receipts only. |
 
 ### Persona And Generation
 
@@ -65,9 +65,10 @@ super-admin-only.
 
 Local-model-heavy commands share one global queue across channels. Commands
 such as `~persona`, `~hyper`, LLM `~generate`, dynamic `~top`/`~bottom`,
-`~axis`, uncached/`words`-mode `~why`, `~traits`, `~distinct`, `~irony`,
-normal `~askchat`, and normal emote explainers answer one at a time;
-raw/receipts-only and cached-axis variants stay fast.
+`~axis`, uncached/`words`-mode `~why`, `~irony`, normal `~askchat`, and normal
+emote explainers answer one at a time. The first cold use of built-in
+`~traits`/`~distinct` also queues while its axes load; warm and cached-axis
+variants stay fast, as do raw/receipts-only paths.
 
 ### Stylometry, Similarity, Traits
 
@@ -88,11 +89,12 @@ raw/receipts-only and cached-axis variants stay fast.
 | `~axis <trait> [n]` | anyone | Inspect a trait/custom axis by showing nearest neighboring axes. |
 | `~emote <emote> [raw]` | anyone | Explain what the bot thinks an emote means in one readable sentence; `raw` shows registry, sampled usage-vector contexts, neighbors, and cached axis scores. |
 | `~explain emote <emote> [raw]` | anyone | Same emote meaning explainer, routed through the general `~explain` command. |
-| `~irony <message> [context=...]` | anyone | Experimental irony/sincerity read using sarcasm and content-extremity axes. |
+| `~irony [user=<name>] [chat=here\|all] <message>` | anyone | Experimental intent read combining surface wording, community repetition, unusual literal claims, and confirmed user-history agreement/conflict. |
 | `~iq <user>` | anyone | Roster-relative text-IQ style score: peak expressed cognition in chat, not actual IQ. |
 | `~iq top [n]` / `~iq bottom [n]` | anyone | Highest or lowest text-IQ style scores in the current cache. |
-| `~iq how [dim]` | anyone | Compact derivation tags per dimension ([emb] = embedding register-read, marked ε; [count] = transparent counting); with a dimension name, one honest line for that dimension. |
-| `~funny <user>` | anyone | Comedy-influence score: how much more OTHER people laugh in the ~30s after you talk than the ~30s before (before/after delta cancels stream-wide reactions). Roster-relative index (100 = average chatter); `breadth` = distinct people you've made laugh. Self-laughs excluded; bot/command lines excluded. Default chats are the configured conversational ones; `chat=` overrides. |
+| `~iq how [dim]` | anyone | Compact derivation tags per dimension ([mix] = embeddings plus direct structure, [emb] = embedding register-read marked ε, [count] = transparent counting); with a dimension name, one honest line for that dimension. |
+| `~iq why <user> [dim]` | anyone | Show stored top-tail lines that drove the overall score or one dimension. Receipts are produced by the same median-of-top-10% build, not searched ad hoc. |
+| `~funny <user>` | anyone | Comedy-influence score from new laughers in the ~30s after a setup versus before it. Rapid same-author fragments are one setup; self/bot/noise reactions are excluded; cross-chat breadth counts each laugher once. |
 | `~funny top [n]` / `~funny bottom [n]` | anyone | Funniest / least-funny chatters by comedy influence across the configured chats. |
 
 The analysis commands are exploratory. They are useful for debugging and fun
@@ -102,7 +104,7 @@ comparisons, not clinical or total-person labels.
 
 | Command | Access | What it does |
 | --- | --- | --- |
-| `~help [page|command]` | anyone | List commands or show details for one command. `~mimic`/`~markov` work but are unlisted; admin commands are listed only via `~admin`. |
+| `~help [page\|archive\|personas\|analysis\|translation\|utility\|command]` | anyone | List grouped pages, browse one category, or show one command. `~mimic`/`~markov` work but are unlisted; admin commands are listed only via `~admin`. |
 | `~admin` | anyone | List the admin / super-admin commands (kept out of the public `~help`; the commands still enforce their own permissions). |
 | `~experimental` | anyone | List prototype/evidence commands such as `~askchat`, `~emote`, `~why emote`, `~irony`, and `~iq`, with hints for raw receipts mode. |
 | `~ping` | anyone | Latency and host stats. |
@@ -114,7 +116,7 @@ comparisons, not clinical or total-person labels.
 | `~modelqueue [status\|clear]` | super admin | Inspect or clear pending local-model work. The running command is allowed to finish. |
 | `~axismerge <canonical> <dup> [flip]` | super admin | Fold a duplicate dynamic trait axis into another (`flip` when `<dup>` is the opposite pole); `~axismerge list` inspects saved axes. Dedup is manual on purpose — embedding cosine can't reliably tell synonyms from distinct concepts. |
 
-## Planned But Not Live
+## Resident Scope
 
 The current resident layer supports one real chatter persona per channel, topic
 affinity boosting from archive hits, rare idle messages, and Twitch reply-thread
@@ -133,6 +135,7 @@ Some commands read live SQLite tables only; others need offline artifacts:
 | `data/unsynced/msg_index/` | `scripts/build_message_index.py` | `~why`, burst `~top`, semantic persona retrieval |
 | `data/unsynced/iq_scores.pkl` | `scripts/build_iq_v2.py` | `~iq` |
 | `data/unsynced/fact_bank.jsonl` | `scripts/build_fact_bank.py` | `~askchat`, offline archive/lore QA |
+| `data/unsynced/user_profiles.json` | `scripts/build_user_profiles.py` | confirmed persona facts, `~askchat`, irony history checks |
 | `data/unsynced/emote_semantics.pkl` + `data/unsynced/emote_tag_vecs.pkl` | `scripts/build_emote_semantics.py` + emote tag-vector tooling | `~emote`, `~explain emote`, `~why emote` |
 
 Use `~artifacts` or `python scripts/artifact_status.py` to check whether these

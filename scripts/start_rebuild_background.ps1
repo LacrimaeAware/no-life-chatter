@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("full", "classifier", "semantic")]
+    [ValidateSet("full", "classifier", "semantic", "iq", "profiles", "emotes")]
     [string]$Mode = "full",
     [switch]$NoPrompt
 )
@@ -13,9 +13,12 @@ Set-Location $Root
 if (-not $NoPrompt) {
     Write-Host "NoLifeChatter artifact rebuild ($Mode mode)"
     Write-Host ""
-    Write-Host "full       = classifier, style profiles, semantic vectors, message index, IQ, smoke"
+    Write-Host "full       = classifier, style profiles, semantic vectors, message index, IQ, claims, smoke"
     Write-Host "classifier = classifier + style profiles only"
     Write-Host "semantic   = semantic vectors + message index only"
+    Write-Host "iq         = complete 3,000-utterance IQ v5 with embeddings + judge"
+    Write-Host "profiles   = verified profile v5 for the top 40 active authors"
+    Write-Host "emotes     = top-up 2,000 emotes toward 160 usage contexts"
     Write-Host ""
     Write-Host "This starts in the background and writes logs to data\unsynced."
     $answer = Read-Host "Type YES to start, or anything else to cancel"
@@ -39,16 +42,45 @@ $Stderr = Join-Path $LogDir "rebuild_persona_artifacts_${Mode}_${Stamp}.err.log"
 $PidFile = Join-Path $LogDir "rebuild_persona_artifacts_${Mode}_${Stamp}.pid"
 $Runner = Join-Path $LogDir "rebuild_persona_artifacts_${Mode}_${Stamp}.cmd"
 
-$ScriptArgs = @(
-    "scripts\rebuild_persona_artifacts.py",
-    "--semantic-unit", "utterance",
-    "--continue-on-error"
-)
-
-if ($Mode -eq "classifier") {
-    $ScriptArgs += @("--skip-embeddings", "--skip-iq", "--skip-trait-smoke")
-} elseif ($Mode -eq "semantic") {
-    $ScriptArgs += @("--skip-classifier", "--skip-style-profiles", "--skip-iq")
+$ScriptArgs = switch ($Mode) {
+    "iq" {
+        @(
+            "scripts\build_iq_v2.py", "--force", "--judge",
+            "--max-utterances", "3000", "--min-utterances", "80",
+            "--author-cap", "15000"
+        )
+    }
+    "profiles" {
+        @(
+            "scripts\build_user_profiles.py", "--roster", "40",
+            "--cap", "12", "--batch-size", "12"
+        )
+    }
+    "emotes" {
+        @(
+            "scripts\build_emote_semantics.py", "--top", "2000",
+            "--contexts", "160"
+        )
+    }
+    default {
+        $ArgsForPipeline = @(
+            "scripts\rebuild_persona_artifacts.py",
+            "--semantic-unit", "utterance",
+            "--continue-on-error"
+        )
+        if ($Mode -eq "classifier") {
+            $ArgsForPipeline += @(
+                "--skip-embeddings", "--skip-iq", "--skip-fact-bank",
+                "--skip-trait-smoke"
+            )
+        } elseif ($Mode -eq "semantic") {
+            $ArgsForPipeline += @(
+                "--skip-classifier", "--skip-style-profiles", "--skip-iq",
+                "--skip-fact-bank"
+            )
+        }
+        $ArgsForPipeline
+    }
 }
 
 $Header = @(

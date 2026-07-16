@@ -6,6 +6,8 @@ locally — no API. See docs/CHAT_ARCHIVE.md for the design and the verified
 Chatterino log-format spec this parser implements.
 """
 
+import hashlib
+import json
 import logging
 import os
 import random
@@ -40,7 +42,8 @@ CREATE TABLE IF NOT EXISTS messages (
     sent_at  TEXT NOT NULL,            -- 'YYYY-MM-DD HH:MM:SS' local time
     content  TEXT NOT NULL,
     source   TEXT NOT NULL DEFAULT 'chatterino',
-    src_path TEXT                      -- originating log file (NULL for live)
+    src_path TEXT,                     -- originating log file (NULL for live)
+    raw_author TEXT                    -- login before alias normalization
 );
 CREATE INDEX IF NOT EXISTS idx_msg_src ON messages(src_path);
 CREATE INDEX IF NOT EXISTS idx_msg_author  ON messages(author, sent_at);
@@ -67,10 +70,19 @@ CREATE TABLE IF NOT EXISTS ingested_files (
     mtime REAL NOT NULL,
     rows  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS author_ids (
+    author         TEXT PRIMARY KEY,
+    twitch_id      TEXT,
+    checked_at     TEXT,
+    display        TEXT,
+    last_seen_live TEXT
+);
 """
 
 _conn = None
 _thread_state = threading.local()
+UTTERANCE_VERSION = 3
 
 
 def _base_name(name: str) -> str:
@@ -103,6 +115,19 @@ def normalize_channel(name: str) -> str:
     return _resolve_alias(name, CHANNEL_ALIASES)
 
 
+def alias_signature() -> str:
+    """Stable fingerprint for identity-sensitive generated artifacts."""
+    payload = json.dumps(
+        {
+            "users": sorted(USER_ALIASES.items()),
+            "channels": sorted(CHANNEL_ALIASES.items()),
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.blake2b(payload, digest_size=10).hexdigest()
+
+
 def author_keys(author: str) -> list[str]:
     """All stored author keys that should count as this person.
 
@@ -128,22 +153,20 @@ _display_cache: dict = {}
 _DISPLAY_TTL = 600.0
 
 
-def _pick_display(canonical: str, keys, checked: dict, sent: dict) -> str:
-    """Argmax-by-recency over an alias group.
+def _pick_display(canonical: str, keys, seen_live: dict, sent: dict) -> str:
+    """Choose the most recently active raw login in an alias group.
 
-    `checked` = author_ids.checked_at per raw name (live truth), `sent` =
-    MAX(messages.sent_at) per stored name. The canonical key's message recency
-    is only trusted when author_ids has no row for it: live capture stores
-    rows under the canonical name (_record_one), so its MAX(sent_at) is
-    always "now" regardless of which account actually typed.
+    `last_seen_live` is written only when that login actually talks to the bot.
+    Offline Twitch-ID resolution uses `checked_at` instead and must never decide
+    display recency. Historical message timestamps are the fallback; ties keep
+    the explicit canonical name.
     """
-    best_key, best_ts = canonical, ""
+    best_key = canonical
+    best = (seen_live.get(canonical) or "", sent.get(canonical) or "", 1)
     for key in keys:
-        ts = checked.get(key) or ""
-        if key != canonical or key not in checked:
-            ts = max(ts, sent.get(key) or "")
-        if ts > best_ts:
-            best_key, best_ts = key, ts
+        candidate = (seen_live.get(key) or "", sent.get(key) or "", int(key == canonical))
+        if candidate > best:
+            best_key, best = key, candidate
     return best_key
 
 
@@ -154,9 +177,8 @@ def display_name(author: str) -> str:
     Storage, artifacts, and lookups key a person by their lowercase canonical
     alias ([archive.user_aliases]), which is often a retired account name;
     output should call people what they go by now, capitalized the way chat
-    knows them. Timestamps mix UTC (author_ids) and local (messages), which
-    is fine at the day granularity this decides. Never raises; falls back to
-    the canonical name.
+    knows them. Live activity is preferred over historical archive activity.
+    Never raises; falls back to the canonical name.
     """
     canonical = normalize_author(author)
     keys = author_keys(canonical)
@@ -169,17 +191,18 @@ def display_name(author: str) -> str:
     try:
         conn = connect()
         placeholders, params = _in_clause(keys)
-        checked = dict(conn.execute(
-            f"SELECT author, checked_at FROM author_ids "
+        seen_live = dict(conn.execute(
+            f"SELECT author, last_seen_live FROM author_ids "
             f"WHERE author IN ({placeholders})", params).fetchall())
         sent = dict(conn.execute(
-            f"SELECT author, MAX(sent_at) FROM messages "
-            f"WHERE author IN ({placeholders}) GROUP BY author",
-            params).fetchall())
+            f"SELECT COALESCE(raw_author, author), MAX(sent_at) FROM messages "
+            f"WHERE author IN ({placeholders}) OR raw_author IN ({placeholders}) "
+            f"GROUP BY COALESCE(raw_author, author)",
+            [*params, *params]).fetchall())
     except Exception as e:
         logging.debug(f"display_name({author!r}) failed: {e}")
         return canonical
-    best = _pick_display(canonical, keys, checked, sent)
+    best = _pick_display(canonical, keys, seen_live, sent)
     _display_cache[canonical] = (best, now + _DISPLAY_TTL)
     return _display_casing(best)
 
@@ -352,6 +375,60 @@ def line_similarity(left: str, right: str) -> float:
     return score
 
 
+def community_echo_stats(
+    text: str,
+    *,
+    author: str | None = None,
+    channel: str | None = None,
+    min_similarity: float = 0.90,
+    scan_limit: int = 300,
+) -> dict:
+    """Near-copy frequency across distinct people, for meme/quote detection."""
+    query = _fts_query(text)
+    key = line_match_key(text)
+    if not query or len(key.split()) < 3:
+        return {"matches": 0, "authors": 0, "days": 0, "exact": 0}
+    channel = normalize_channel(channel) if channel else None
+    chan_sql, chan_params = _channel_filter(channel)
+    try:
+        rows = connect().execute(
+            "SELECT m.author, m.sent_at, m.content FROM messages_fts f "
+            "JOIN messages m ON m.id=f.rowid "
+            f"WHERE f.messages_fts MATCH ? {chan_sql} "
+            "ORDER BY bm25(messages_fts) LIMIT ?",
+            [query, *chan_params, scan_limit],
+        ).fetchall()
+    except Exception:
+        return {"matches": 0, "authors": 0, "days": 0, "exact": 0}
+    target = normalize_author(author) if author else None
+    authors = set()
+    days = set()
+    seen = set()
+    matches = exact = 0
+    for row_author, sent_at, content in rows:
+        if not content or content.lstrip()[:1] in ("~", "!", "$", "<", "/"):
+            continue
+        similarity = line_similarity(text, content)
+        if similarity < min_similarity:
+            continue
+        canon = normalize_author(row_author)
+        event = (canon, (sent_at or "")[:10], line_match_key(content))
+        if event in seen:
+            continue
+        seen.add(event)
+        matches += 1
+        exact += int(line_match_key(content) == key)
+        if not target or canon != target:
+            authors.add(canon)
+        days.add((sent_at or "")[:10])
+    return {
+        "matches": matches,
+        "authors": len(authors),
+        "days": len(days),
+        "exact": exact,
+    }
+
+
 def connect() -> sqlite3.Connection:
     global _conn
     conn = getattr(_thread_state, "conn", None)
@@ -364,10 +441,38 @@ def connect() -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.executescript(_SCHEMA)
+        # Existing private archives predate raw-login and live-seen provenance.
+        # Keep migrations additive so a checkout can open an old DB in place.
+        for table, column, kind in (
+            ("messages", "raw_author", "TEXT"),
+            ("author_ids", "display", "TEXT"),
+            ("author_ids", "last_seen_live", "TEXT"),
+        ):
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
+            except sqlite3.OperationalError:
+                pass
         _thread_state.conn = conn
         if _conn is None:
             _conn = conn
     return conn
+
+
+def close_thread_connection() -> None:
+    """Close this thread's archive handle (primarily for workers and tests)."""
+    global _conn
+    conn = getattr(_thread_state, "conn", None)
+    if conn is None:
+        return
+    try:
+        conn.close()
+    finally:
+        try:
+            delattr(_thread_state, "conn")
+        except AttributeError:
+            pass
+        if _conn is conn:
+            _conn = None
 
 
 # ----------------------- Chatterino log parsing -----------------------
@@ -437,7 +542,7 @@ def ingest_file(path: str, channel: str, date: str) -> dict:
             counts[kind] += 1
             if kind == "chat":
                 batch.append((channel, normalize_author(author), f"{date} {t}", content,
-                              "chatterino", key))
+                              "chatterino", key, _base_name(author)))
 
     with conn:
         if row:
@@ -446,8 +551,9 @@ def ingest_file(path: str, channel: str, date: str) -> dict:
             # channel+date — keeps alias-merged sibling directories intact.
             conn.execute("DELETE FROM messages WHERE src_path = ?", (key,))
         conn.executemany(
-            "INSERT INTO messages (channel, author, sent_at, content, source, src_path) "
-            "VALUES (?,?,?,?,?,?)",
+            "INSERT INTO messages "
+            "(channel, author, sent_at, content, source, src_path, raw_author) "
+            "VALUES (?,?,?,?,?,?,?)",
             batch,
         )
         conn.execute(
@@ -465,9 +571,9 @@ _seen_ids = set()
 
 def record_author_id(author: str, twitch_id, display: str = None) -> None:
     """Names change, ids don't — keep an author->twitch_id table current from
-    live chat (message.author.id), once per author per day (checked_at doubles
-    as a last-seen-live stamp for display_name, so it must stay fresh across
-    long-lived workers). `display` is the Twitch display name — stored only
+    live chat (message.author.id), once per author per day. `last_seen_live` is
+    separate from offline ID-resolution time so maintenance jobs cannot change
+    which alias is displayed. `display` is the Twitch display name — stored only
     when it's a pure CASING variant of the login (localized display names are
     a different string, not a casing). Future identity merging is id-dominant
     for anyone the bot has ever seen."""
@@ -482,15 +588,15 @@ def record_author_id(author: str, twitch_id, display: str = None) -> None:
     try:
         conn = connect()
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS author_ids ("
-            " author TEXT PRIMARY KEY, twitch_id TEXT, checked_at TEXT)")
-        try:
-            conn.execute("ALTER TABLE author_ids ADD COLUMN display TEXT")
-        except sqlite3.OperationalError:
-            pass  # column already exists
-        conn.execute(
-            "INSERT OR REPLACE INTO author_ids VALUES (?,?,datetime('now'),?)",
-            (author.lower(), str(twitch_id), disp))
+            "INSERT INTO author_ids "
+            "(author, twitch_id, checked_at, display, last_seen_live) "
+            "VALUES (?, ?, datetime('now'), ?, datetime('now')) "
+            "ON CONFLICT(author) DO UPDATE SET "
+            "twitch_id=excluded.twitch_id, checked_at=excluded.checked_at, "
+            "display=COALESCE(excluded.display, author_ids.display), "
+            "last_seen_live=excluded.last_seen_live",
+            (author.lower(), str(twitch_id), disp),
+        )
         conn.commit()
         _seen_ids.add(key)
     except Exception as e:
@@ -525,8 +631,11 @@ def record_live(channel: str, author: str, content: str, sent_at: str) -> None:
 
 def _record_one(conn, channel: str, author: str, content: str, sent_at: str) -> None:
     conn.execute(
-        "INSERT INTO messages (channel, author, sent_at, content, source) VALUES (?,?,?,?, 'live')",
-        (normalize_channel(channel), normalize_author(author), sent_at, content),
+        "INSERT INTO messages "
+        "(channel, author, sent_at, content, source, raw_author) "
+        "VALUES (?,?,?,?, 'live', ?)",
+        (normalize_channel(channel), normalize_author(author), sent_at, content,
+         _base_name(author)),
     )
 
 
@@ -1084,6 +1193,48 @@ def _is_noise_author(author: str) -> bool:
     )
 
 
+def canonical_author_counts(
+    *,
+    min_messages: int = 0,
+    limit: int | None = None,
+    include_bots: bool = False,
+) -> list[tuple[str, int]]:
+    """Archive activity ranked after alias normalization.
+
+    Artifact builders must aggregate retired/current account rows before
+    applying their roster cutoff. Collapsing aliases after a raw SQL ``LIMIT``
+    can both under-rank a merged person and leave fewer than the requested
+    number of canonical people.
+    """
+    counts = Counter()
+    for author, count in connect().execute(
+        "SELECT author, COUNT(*) FROM messages GROUP BY author"
+    ):
+        canon = normalize_author(author)
+        if not include_bots and _is_noise_author(canon):
+            continue
+        counts[canon] += int(count)
+    rows = [item for item in counts.most_common() if item[1] >= min_messages]
+    return rows[:limit] if limit and limit > 0 else rows
+
+
+def canonical_author_roster(
+    limit: int,
+    *,
+    min_messages: int = 0,
+    include_bots: bool = False,
+) -> list[str]:
+    """Canonical author names from :func:`canonical_author_counts`."""
+    return [
+        author
+        for author, _count in canonical_author_counts(
+            min_messages=min_messages,
+            limit=limit,
+            include_bots=include_bots,
+        )
+    ]
+
+
 def channel_regulars(channel: str, min_messages: int = 5000, limit: int = 20,
                      include_bots: bool = False):
     """Top non-bot authors in a channel, alias-collapsed.
@@ -1210,13 +1361,113 @@ def merge_utterances(rows, gap_seconds: int = 45):
     return out
 
 
-def utterances_for(author: str, channel: str = None, year: int = None,
-                   gap_seconds: int = 45):
-    """The author's messages merged into utterances (see merge_utterances)."""
+def merge_channel_utterances(rows, gap_seconds: int = 45):
+    """Merge ``(time, channel, author, text)`` rows within each channel."""
+    import datetime
+
+    def parse(value):
+        try:
+            return datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+
+    # One active burst per channel is enough because rows arrive in global
+    # chronological order. This avoids materializing another full-history list.
+    active = {}
+    component_keys = []
+    merged = []
+    for sent_at, channel, author, content in rows:
+        current = parse(sent_at)
+        previous = active.get(channel)
+        if previous:
+            index, started, previous_author = previous
+            if (
+                previous_author == author
+                and started
+                and current
+                and (current - started).total_seconds() <= gap_seconds
+            ):
+                old = merged[index]
+                key = line_match_key(content)
+                if not key or key not in component_keys[index]:
+                    merged[index] = (
+                        old[0], channel, author, old[3] + " " + (content or "")
+                    )
+                    if key:
+                        component_keys[index].add(key)
+                continue
+        merged.append((sent_at, channel, author, content or ""))
+        key = line_match_key(content)
+        component_keys.append({key} if key else set())
+        active[channel] = (len(merged) - 1, current, author)
+    merged.sort(key=lambda row: row[0])
+    return merged
+
+
+def merge_channel_utterance_records(rows, gap_seconds: int = 45):
+    """Merge rows while retaining the database IDs behind each utterance."""
+    import datetime
+
+    def parse(value):
+        try:
+            return datetime.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+
+    active = {}
+    merged = []
+    for row_id, sent_at, channel, author, content in rows:
+        current = parse(sent_at)
+        previous = active.get(channel)
+        if previous:
+            index, started, previous_author = previous
+            if (
+                previous_author == author
+                and started
+                and current
+                and (current - started).total_seconds() <= gap_seconds
+            ):
+                item = merged[index]
+                item["last_id"] = int(row_id)
+                item["last_seen"] = sent_at
+                item["message_ids"].append(int(row_id))
+                item["parts"].append((int(row_id), content or ""))
+                key = line_match_key(content)
+                if not key or key not in item["_component_keys"]:
+                    item["text"] += " " + (content or "")
+                    if key:
+                        item["_component_keys"].add(key)
+                continue
+        key = line_match_key(content)
+        merged.append({
+            "id": int(row_id),
+            "last_id": int(row_id),
+            "sent_at": sent_at,
+            "last_seen": sent_at,
+            "channel": channel,
+            "author": author,
+            "text": content or "",
+            "message_ids": [int(row_id)],
+            "parts": [(int(row_id), content or "")],
+            "_component_keys": {key} if key else set(),
+        })
+        active[channel] = (len(merged) - 1, current, author)
+    for item in merged:
+        item.pop("_component_keys", None)
+    merged.sort(key=lambda item: (item["sent_at"], item["id"]))
+    return merged
+
+
+def utterance_records_for(author: str, channel: str = None, year: int = None,
+                          gap_seconds: int = 45):
+    """Channel-bounded utterances with timestamps and component message IDs."""
     conn = connect()
     keys = author_keys(author)
-    ph, params = _in_clause(keys)
-    sql = f"SELECT sent_at, author, content FROM messages WHERE author IN ({ph})"
+    placeholders, params = _in_clause(keys)
+    sql = (
+        f"SELECT id, sent_at, channel, author, content "
+        f"FROM messages WHERE author IN ({placeholders})"
+    )
     params = list(params)
     if channel:
         sql += " AND channel = ?"
@@ -1224,8 +1475,47 @@ def utterances_for(author: str, channel: str = None, year: int = None,
     if year:
         sql += " AND sent_at >= ? AND sent_at < ?"
         params += [f"{int(year)}-01-01", f"{int(year) + 1}-01-01"]
-    rows = conn.execute(sql + " ORDER BY sent_at, id", params).fetchall()
-    return [c for _s, _a, c in merge_utterances(rows, gap_seconds)]
+    rows = conn.execute(sql + " ORDER BY sent_at, id", params)
+    normalized = (
+        (row_id, sent_at, row_channel, normalize_author(row_author), content)
+        for row_id, sent_at, row_channel, row_author, content in rows
+    )
+    return merge_channel_utterance_records(normalized, gap_seconds)
+
+
+def utterances_for(author: str, channel: str = None, year: int = None,
+                   gap_seconds: int = 45):
+    """The author's same-channel bursts merged into utterances.
+
+    Archive timestamps from different channels share one clock. Grouping only
+    by author can therefore splice two unrelated chats together when a person
+    posts in both within ``gap_seconds``. Merge each channel independently,
+    then restore chronological order for callers that care about sequence.
+    """
+    conn = connect()
+    keys = author_keys(author)
+    placeholders, params = _in_clause(keys)
+    sql = (
+        f"SELECT sent_at, channel, author, content "
+        f"FROM messages WHERE author IN ({placeholders})"
+    )
+    params = list(params)
+    if channel:
+        sql += " AND channel = ?"
+        params.append(normalize_channel(channel))
+    if year:
+        sql += " AND sent_at >= ? AND sent_at < ?"
+        params += [f"{int(year)}-01-01", f"{int(year) + 1}-01-01"]
+    rows = conn.execute(sql + " ORDER BY sent_at, id", params)
+    normalized = (
+        (sent_at, row_channel, normalize_author(row_author), content)
+        for sent_at, row_channel, row_author, content in rows
+    )
+    return [
+        content
+        for _sent_at, _channel, _author, content
+        in merge_channel_utterances(normalized, gap_seconds)
+    ]
 
 
 def _search_all_legacy(phrase: str, limit: int = 10):

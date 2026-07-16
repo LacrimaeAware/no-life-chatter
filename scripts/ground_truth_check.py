@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EXPECTED = {
     "abtt_k": (2, 0, False,
                "utils/persona_embeddings.py ABTT_K constant"),
-    "person_count": (34, None, False,
+    "person_count": (40, None, False,
                      "count of vectors in data/unsynced/persona_embeddings.pkl (grows with rebuilds; informational)"),
     "person_anisotropy": (0.149, 0.03, False,
                           "mean |off-diagonal cosine| of production persona_embeddings._centered() (centered + ABTT-2)"),

@@ -20,7 +20,6 @@ from utils import chat_archive, emote_meaning, fact_bank, message_quality
 _SEM_FLOOR = float(getattr(config, "LLM_SEMANTIC_MIN_SCORE", 0.50))
 _SEM_FLOOR_UNANCHORED = float(getattr(config, "LLM_SEMANTIC_UNANCHORED_MIN_SCORE", 0.62))
 
-CHAT_FACT_MIN_SUPPORT = 2
 QUERY_INTENT_TERMS = {
     "love", "loves", "loved", "like", "likes", "liked", "enjoy", "enjoys",
     "enjoyed", "hate", "hates", "hated", "prefer", "prefers", "preferred",
@@ -244,6 +243,28 @@ def _recover_author_meta(author: str, texts: list[str], *, channel: str | None =
         if key and key not in out:
             out[key] = {"id": row_id, "sent_at": sent_at, "channel": row_channel,
                         "author": chat_archive.normalize_author(author), "text": content}
+
+    # Dense indexes contain merged utterances. They have no exact `content`
+    # row, so reproduce the same channel-bounded chunking and retain all source
+    # IDs for context rendering. This keeps dense paraphrases from disappearing
+    # merely because the person split one thought across two chat messages.
+    wanted = {chat_archive.line_match_key(text) for text in texts} - set(out)
+    if wanted:
+        for utterance in chat_archive.utterance_records_for(author, channel=channel):
+            key = chat_archive.line_match_key(utterance.get("text", ""))
+            if key not in wanted:
+                continue
+            out[key] = {
+                "id": utterance["id"],
+                "sent_at": utterance["sent_at"],
+                "channel": utterance["channel"],
+                "author": chat_archive.normalize_author(author),
+                "text": utterance["text"],
+                "message_ids": utterance["message_ids"],
+            }
+            wanted.remove(key)
+            if not wanted:
+                break
     return out
 
 
@@ -295,7 +316,7 @@ def _rrf_author_hits(author: str, query: str, *, channel: str | None = None,
         key = chat_archive.line_match_key(text)
         if key and key not in seen_keys:
             seen_keys.add(key)
-            dense_ranked.append((key, text))
+            dense_ranked.append((key, text, float(score)))
 
     # recover metadata (sent_at/channel) for dense lines bm25 didn't surface.
     # NOTE: exact-content recovery works for single-message utterances; a MERGED
@@ -304,7 +325,7 @@ def _rrf_author_hits(author: str, query: str, *, channel: str | None = None,
     # the dense lane adds single-message paraphrase recall, not merged-utterance.
     bm25_by_key = {chat_archive.line_match_key(h["text"]): h for h in bm25}
     bm25_by_key.pop(None, None)
-    missing = [t for k, t in dense_ranked if k not in bm25_by_key]
+    missing = [text for key, text, _score in dense_ranked if key not in bm25_by_key]
     recovered = _recover_author_meta(author, missing, channel=channel)
 
     scores: dict[str, float] = {}
@@ -319,19 +340,23 @@ def _rrf_author_hits(author: str, query: str, *, channel: str | None = None,
         items.setdefault(key, hit)
         lanes.setdefault(key, set()).add("bm25")
 
-    for rank, (key, text) in enumerate(dense_ranked):
+    dense_scores = {}
+    for rank, (key, text, dense_score) in enumerate(dense_ranked):
         meta = bm25_by_key.get(key) or recovered.get(key)
         if not meta:
             continue   # dense-only paraphrase whose row we couldn't recover
         scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + rank)
         items.setdefault(key, meta)
         lanes.setdefault(key, set()).add("dense")
+        dense_scores[key] = max(dense_scores.get(key, -1.0), dense_score)
 
     ordered = sorted(scores, key=lambda k: -scores[k])
     out = []
     for key in ordered[:limit]:
         item = dict(items[key])
         item["lanes"] = sorted(lanes[key])
+        if key in dense_scores:
+            item["dense_score"] = dense_scores[key]
         out.append(item)
     return out
 
@@ -342,8 +367,10 @@ def _chatworthy_fact(fact: dict) -> bool:
     # disputed), so a labeled lead beats a blank "not mentioned".
     if str(fact.get("kind", "")).startswith("profile:"):
         return True
-    support = int(fact.get("support_count") or 0)
-    return support >= CHAT_FACT_MIN_SUPPORT
+    return (
+        fact.get("status") == "corroborated_claim"
+        and float(fact.get("evidence_confidence") or 0.0) >= 0.55
+    )
 
 
 def _scope(report: dict) -> str:
@@ -391,8 +418,20 @@ _SLOT_INTENTS = [
 ]
 
 
+def _profile_entries(data: dict) -> list[dict]:
+    if "values" in data:
+        entries = list(data.get("values") or [])
+    else:
+        entries = [data, *(data.get("alternatives") or [])]
+    established = [
+        entry for entry in entries
+        if entry.get("status") in {"confirmed", "disputed"}
+    ]
+    return established or entries
+
+
 def _profile_hits(author: str | None, query: str, limit: int = 3) -> list[dict]:
-    """Slot-profile facts (fact bank v2) for the scoped author.
+    """Slot-profile facts (verified profile v5) for the scoped author.
 
     Slots whose question-intent matches the query are served at ANY status —
     ~askchat is an explicit lookup, so a labeled candidate with a receipt
@@ -410,11 +449,10 @@ def _profile_hits(author: str | None, query: str, limit: int = 3) -> list[dict]:
     terms = {t.casefold() for t in chat_archive.query_terms(query)}
     out = []
     for slot, data in prof.items():
-        entries = data["values"] if "values" in data else [data]
-        # once a slot has a confirmed answer, its candidates are noise —
-        # "pets: dog (4 days)" must not drag "pets: panda [unconfirmed]" along
-        if any(e.get("status") == "confirmed" for e in entries):
-            entries = [e for e in entries if e.get("status") == "confirmed"]
+        # Once a slot has established evidence, candidates are noise. For a
+        # disputed single-value slot, preserve both the primary and its
+        # independently supported alternatives.
+        entries = _profile_entries(data)
         for entry in entries:
             status = entry.get("status", "candidate")
             if slot in asked_slots:
@@ -447,6 +485,15 @@ def _profile_hits(author: str | None, query: str, limit: int = 3) -> list[dict]:
     return out[:limit]
 
 
+def _query_mentions_author(query: str, author: str) -> bool:
+    """Whether an unscoped natural-language question names this fact owner."""
+    target = chat_archive.normalize_author(author)
+    return any(
+        chat_archive.normalize_author(token) == target
+        for token in re.findall(r"[A-Za-z0-9_]{2,40}", query or "")
+    )
+
+
 def _fact_hits(author: str | None, query: str, limit: int = 4) -> list[dict]:
     rows = fact_bank.load_jsonl()
     out = _profile_hits(author, query, limit=max(2, limit - 1))
@@ -458,6 +505,13 @@ def _fact_hits(author: str | None, query: str, limit: int = 4) -> list[dict]:
         return out
     terms = chat_archive.query_terms(query)
     for row in fact_bank.search(rows, author=author, query=query, limit=limit * 4):
+        # Fact-bank rows are first-person claims owned by `row.author`. For an
+        # unscoped question, matching only the predicate ("dead", "married")
+        # can otherwise answer about a completely different person. Require the
+        # question to name the fact owner; broad archive receipts still handle
+        # general "who said ..." searches.
+        if not author and not _query_mentions_author(query, row.get("author", "")):
+            continue
         if terms:
             hay = f"{row.get('kind', '')} {row.get('claim', '')}".casefold()
             if not any(term.casefold() in hay for term in terms):
@@ -469,6 +523,12 @@ def _fact_hits(author: str | None, query: str, limit: int = 4) -> list[dict]:
             "claim": row.get("claim"),
             "support_count": row.get("support_count", 0),
             "confidence": row.get("confidence", 0.0),
+            "evidence_confidence": row.get("evidence_confidence", 0.0),
+            "support_days": row.get("support_days", 0),
+            "unique_phrasings": row.get("unique_phrasings", 0),
+            "echo_author_count": row.get("echo_author_count", 1),
+            "contradicted": row.get("contradicted", False),
+            "status": row.get("status", "candidate"),
             "sent_at": ev.get("sent_at"),
             "channel": ev.get("channel"),
             "evidence": ev.get("clean_text") or ev.get("text") or "",
@@ -509,6 +569,50 @@ def _emote_hits(query: str, limit: int = 2) -> list[dict]:
     return out
 
 
+def _attach_context(hits: list[dict]) -> list[dict]:
+    """Attach safe chronological context to retrieved archive receipts.
+
+    `chat_archive.context_window` already refuses invented conversation for
+    author-only sources and dedupes alias-mirrored rows. Commands and utility
+    bots are omitted here so the answer model sees the human exchange.
+    """
+    out = []
+    for original in hits:
+        hit = dict(original)
+        row_id = hit.get("id")
+        if row_id is None:
+            out.append(hit)
+            continue
+        try:
+            window = chat_archive.context_window(
+                int(row_id), hit.get("channel", ""), before=2, after=2
+            )
+        except Exception:
+            window = []
+        context = []
+        component_ids = {
+            int(value) for value in (hit.get("message_ids") or [])
+        }
+        for mid, author, content in window:
+            if component_ids and int(mid) in component_ids and int(mid) != int(row_id):
+                continue
+            canon = chat_archive.normalize_author(author)
+            if mid != row_id and (
+                chat_archive._is_noise_author(canon)
+                or message_quality.command_like(content or "")
+            ):
+                continue
+            context.append({
+                "author": canon,
+                "text": hit.get("text", "") if int(mid) == int(row_id) else (content or ""),
+                "hit": int(mid) == int(row_id),
+            })
+        if len(context) > 1:
+            hit["context"] = context
+        out.append(hit)
+    return out
+
+
 def build_report(query: str, *, author: str | None = None,
                  channel: str | None = None, limit: int = 5) -> dict:
     query = query.strip()
@@ -519,6 +623,7 @@ def build_report(query: str, *, author: str | None = None,
     archive = _rrf_author_hits(author, query, channel=channel, limit=limit) if author else (
         _search_all_hits(query, channel=channel, limit=limit)
     )
+    archive = _attach_context(archive)
     near = [] if archive or not author else _near_author(author, query, channel=channel)
     emotes = _emote_hits(query)
     terms = chat_archive.query_terms(query)
@@ -561,8 +666,8 @@ def _fact_phrase(fact: dict, claim_len: int = 150) -> str:
         rep = f" (stated on {days} days)" if days > 1 else ""
         return f"{who}'s {slot}: {clip(fact['claim'], claim_len)}{tag}{rep}"
     verb = _KIND_PHRASE.get(kind, "said")
-    count = fact.get("support_count", 1) or 1
-    rep = f" ({count}x)" if count > 1 else ""
+    days = int(fact.get("support_days") or 1)
+    rep = f" (said on {days} days)" if days > 1 else ""
     return f"{who} {verb} \"{clip(fact['claim'], claim_len)}\"{rep}"
 
 
@@ -577,7 +682,14 @@ def _focused_archive_hits(report: dict) -> list[dict]:
     focus = _focus_terms(report.get("query", ""), report.get("author"))
     if not focus:
         return hits
-    return [hit for hit in hits if _matches_focus(hit.get("text", ""), focus)]
+    return [
+        hit for hit in hits
+        if _matches_focus(hit.get("text", ""), focus)
+        or (
+            "dense" in (hit.get("lanes") or [])
+            and float(hit.get("dense_score") or 0.0) >= _SEM_FLOOR_UNANCHORED
+        )
+    ]
 
 
 def evidence_items(report: dict, max_items: int = 6) -> list[dict]:
@@ -588,12 +700,24 @@ def evidence_items(report: dict, max_items: int = 6) -> list[dict]:
     """
     items = []
     for hit in _focused_archive_hits(report)[:4]:
-        items.append({
-            "label": f"A{len([i for i in items if i['label'].startswith('A')]) + 1}",
-            "text": (
+        if hit.get("context"):
+            rendered = " > ".join(
+                f"{'>>' if row.get('hit') else ''}{row['author']}: "
+                f"{clip(row.get('text', ''), 95)}"
+                for row in hit["context"]
+            )
+            receipt = (
+                f"#{hit['channel']} {hit['sent_at'][:10]} context: "
+                f"{clip(rendered, 330)}"
+            )
+        else:
+            receipt = (
                 f"{hit['author']}#{hit['channel']} {hit['sent_at'][:10]}: "
                 f"\"{clip(hit['text'], 180)}\""
-            ),
+            )
+        items.append({
+            "label": f"A{len([i for i in items if i['label'].startswith('A')]) + 1}",
+            "text": receipt,
         })
     for hit in report.get("near", [])[:1]:
         items.append({
@@ -630,13 +754,14 @@ def answer_messages(report: dict) -> list[dict]:
     evidence = evidence_items(report)
     evidence_text = "\n".join(f"[{item['label']}] {item['text']}" for item in evidence)
     system = (
-        "You answer Twitch chat archive questions using only the provided evidence. "
+        "You answer Twitch chat archive questions from the provided evidence. "
         "Be cautious: a quote is evidence that someone said a line, not proof a broad "
         "claim is true. If evidence is weak, say that. If the question asks whether "
         "someone likes/loves/hates/prefers something, only call it a preference when "
         "a receipt directly says that; otherwise say the evidence only shows mentions "
-        "or behavior. Do not invent facts, do not use outside knowledge, and cite "
-        "receipt labels like [A1]. Keep it under 360 chars."
+        "or behavior. You may use ordinary commonsense to judge whether a literal "
+        "reading is plausible, exaggerated, or likely a bit, but never use model memory "
+        "to invent a person's biography. Cite receipt labels like [A1]. Keep it under 360 chars."
     )
     user = (
         f"Scope: {_scope(report)}\n"
@@ -688,9 +813,7 @@ def format_chat(report: dict, max_chars: int = 470) -> str:
             parts.append(f"emote {emote['name']}: " + "; ".join(bits))
 
     if len(parts) == 1:
-        terms = ", ".join(report.get("terms") or [])
-        suffix = f" terms={terms}" if terms else ""
-        return f"No clear archive receipts for '{clip(report.get('query', ''), 90)}'.{suffix}"
+        return f"No clear archive receipts for '{clip(report.get('query', ''), 90)}'."
 
     out = " | ".join(parts)
     return clip(out, max_chars)

@@ -1,8 +1,7 @@
-# ~generate, saved combos, and bot modes — design
+# ~generate, Saved Combos, And Bot Modes
 
-User-requested feature family, 2026-06-11. Part 1 (~generate + saved combos)
-is implemented; bot modes and queue-depth feedback are still specced here for
-implementation. Ban/cooldown controls now exist.
+Originally specified 2026-06-11; refreshed 2026-07-15. Generation recipes,
+resident personas, queue-depth feedback, and ban/cooldown controls are live.
 
 ## 1. ~generate — tag-driven example generation (IMPLEMENTED)
 
@@ -45,7 +44,7 @@ the persona pipeline's rules.
 Stored per Twitch user in the settings DB (gen_combos table); combos expand
 one level (a combo may not reference another combo).
 
-## 3. Bot modes (PARTLY IMPLEMENTED)
+## 3. Bot Modes (IMPLEMENTED)
 
 Super-admin only. The bot can now get a channel-scoped "resident persona"
 using one real chatter voice. Full `~generate` recipes and saved combos as
@@ -74,21 +73,23 @@ public repository config. Triggered resident replies use Twitch reply tags when
 the incoming message has an ID and the installed TwitchIO websocket exposes the
 low-level reply method; otherwise they fall back to normal channel send.
 
-## 4. Admin & abuse controls (PARTLY IMPLEMENTED)
+## 4. Admin And Abuse Controls (IMPLEMENTED)
 
 - `~banuser <name>` / `~unbanuser <name>` is implemented. Super-admin only;
   banned users' commands are ignored entirely by `command_processor`.
 - Escalating anti-spam cooldowns are implemented for command stacking while a
   previous command is still pending. Recent offenses are reviewable with
   `~warnings`.
-- **Still missing:** explicit LLM queue-depth feedback. Today `services.llm`
-  serializes calls, but users do not get a "queue full / N ahead" response.
+- GPU-heavy commands, resident replies, and ambient generation share
+  `services/model_queue.py`. It announces start/queue position, allows one
+  active request per user, suppresses duplicate signatures, distinguishes a
+  busy model from an offline server, and exposes super-admin status/clear.
 
-## Remaining implementation notes
+## Remaining Work
 
-- The queue belongs around services/llm.chat's _chat_lock (it already
-  serializes; add a counter + reject/notify at depth >= 3).
 - Current resident mode state is `data/unsynced/resident_personas.json`.
+- The live queue is process-wide, not cross-process. Offline maintenance scripts
+  should run with the bot paused until a shared worker/lease exists.
 - A future richer volition gate could use a cheap "reply or STAY SILENT"
   classifier before generation. The current live path uses probability,
   direct/greeting heuristics, curved FTS topic-affinity boost, cooldown,

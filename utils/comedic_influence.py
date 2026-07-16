@@ -39,6 +39,7 @@ out of OTHER people when they talk.
 """
 
 import re
+import time
 from collections import defaultdict, deque
 from datetime import date
 
@@ -49,8 +50,10 @@ from utils import chat_archive
 # Falls back to all joined channels if unset.
 DEFAULT_CHANNELS = tuple(config.COMEDY_CHANNELS) or tuple(config.CHANNELS)
 WINDOW_SECS = 30        # look this many seconds before / after a setup
+BURST_SECS = 12         # same-author fragments this close are one setup
 FWD_MSG_CAP = 80        # safety bound on the forward scan inside a burst
 AFTER_CAP = 8           # max distinct laughers collected per window (cost bound)
+CACHE_TTL_SECS = 300    # also invalidated immediately by a newer live message
 MIN_SETUPS = 200        # per-chat floor to enter a chat's baseline pool
 MIN_REGULAR = 1000      # combined setups to be RANKED — a real regular, not a visitor
 MIN_EFF_LAUGHERS = 3.0  # effective (clique-robust) distinct laughers to be ranked
@@ -76,7 +79,7 @@ _BOT_OUTPUT = re.compile(
     re.IGNORECASE,
 )
 
-_cache = {}  # channel -> result dict
+_cache = {}  # channel -> {cached_at, watermark, result}
 
 
 def _secs(s, _ord={}):
@@ -115,10 +118,19 @@ def compute_channel(channel):
     {'authors': {a: {influence, setups, breadth, neff, best_net, best_text}},
      'mean': float, 'sd': float, 'n': int}. Cached per channel for the process."""
     channel = chat_archive.normalize_channel(channel)
-    if channel in _cache:
-        return _cache[channel]
-
     conn = chat_archive.connect()
+    newest = conn.execute(
+        "SELECT sent_at, id FROM messages WHERE channel=? "
+        "ORDER BY sent_at DESC, id DESC LIMIT 1",
+        (channel,),
+    ).fetchone()
+    watermark = tuple(newest) if newest else None
+    now = time.monotonic()
+    cached = _cache.get(channel)
+    if (cached and cached["watermark"] == watermark
+            and now - cached["cached_at"] < CACHE_TTL_SECS):
+        return cached["result"]
+
     rows = conn.execute(
         "SELECT sent_at, author, content FROM messages WHERE channel=? ORDER BY sent_at, id",
         (channel,),
@@ -129,7 +141,6 @@ def compute_channel(channel):
     auth = [""] * n
     laugh = [False] * n
     _norm = {}
-    _noise = {}
     bot_hits = defaultdict(int)
     msg_count = defaultdict(int)
     for i, (sent_at, a, content) in enumerate(rows):
@@ -147,6 +158,23 @@ def compute_channel(channel):
     # chatters — drop them up front (a heuristic on top of the manual block list).
     botlike = {a for a, c in msg_count.items()
                if c >= BOT_MIN_MSGS and bot_hits[a] / c >= BOT_OUTPUT_RATIO}
+    human = {
+        a for a in msg_count
+        if a not in botlike and not chat_archive._is_noise_author(a)
+    }
+
+    # Twitch users commonly split one thought across several rapid messages. Keep
+    # only the final eligible fragment as the setup so one reaction cannot reward
+    # every line in the burst.
+    next_setup = [-1] * n
+    latest_setup = {}
+    for i in range(n - 1, -1, -1):
+        ai = auth[i]
+        content_i = rows[i][2]
+        eligible = ai in human and not laugh[i] and not _is_command(content_i)
+        if eligible:
+            next_setup[i] = latest_setup.get(ai, -1)
+            latest_setup[ai] = i
 
     spark = defaultdict(lambda: defaultdict(int))  # A -> {B: # setups B sparked}
     setups = defaultdict(int)
@@ -162,17 +190,16 @@ def compute_channel(channel):
 
         ai = auth[i]
         content_i = rows[i][2]
-        is_noise = _noise.get(ai)
-        if is_noise is None:
-            is_noise = _noise[ai] = chat_archive._is_noise_author(ai)
-        if not laugh[i] and not _is_command(content_i) and not is_noise and ai not in botlike:
+        later = next_setup[i]
+        superseded = later >= 0 and times[later] - ti <= BURST_SECS
+        if ai in human and not laugh[i] and not _is_command(content_i) and not superseded:
             after = set()
             others_present = False
             cnt = 0
             j = i + 1
             while j < n and times[j] <= ti + WINDOW_SECS and cnt < FWD_MSG_CAP:
                 aj = auth[j]
-                if aj != ai:
+                if aj != ai and aj in human:
                     others_present = True
                     if laugh[j]:
                         after.add(aj)
@@ -192,7 +219,7 @@ def compute_channel(channel):
                     best_net[ai] = len(net)
                     best_text[ai] = content_i
 
-        if laugh[i]:
+        if laugh[i] and ai in human:
             dq.append((ti, ai))
 
     authors = {}
@@ -200,6 +227,7 @@ def compute_channel(channel):
         s = _stats_from_spark(spark.get(a, {}), ns)
         s["best_net"] = best_net.get(a, 0)
         s["best_text"] = best_text.get(a, "")
+        s["spark"] = dict(spark.get(a, {}))
         authors[a] = s
 
     rankable = [s["influence"] for s in authors.values() if s["setups"] >= MIN_SETUPS]
@@ -210,7 +238,11 @@ def compute_channel(channel):
         mean, sd = 0.0, 0.0
 
     result = {"authors": authors, "mean": mean, "sd": sd, "n": n}
-    _cache[channel] = result
+    _cache[channel] = {
+        "cached_at": now,
+        "watermark": watermark,
+        "result": result,
+    }
     return result
 
 
@@ -230,7 +262,8 @@ def _index(zc, total_setups):
 def _combine(canon, channels):
     """Setup-weighted combine of one author's per-chat z. Returns the aggregate
     dict (pre-gate) or None if they appear in no qualifying chat."""
-    zw = w = neff_w = breadth = 0.0
+    zw = w = 0.0
+    combined_spark = defaultdict(int)
     best_net, best_text = -1, ""
     chats_used = []
     for ch in channels:
@@ -239,21 +272,23 @@ def _combine(canon, channels):
         if not s or s["setups"] < MIN_SETUPS:
             continue
         zw += _z(s, res) * s["setups"]
-        neff_w += s["neff"] * s["setups"]
         w += s["setups"]
-        breadth += s["breadth"]
+        for laugher, count in s.get("spark", {}).items():
+            combined_spark[laugher] += count
         chats_used.append(chat_archive.normalize_channel(ch))
         if s["best_net"] > best_net:
             best_net, best_text = s["best_net"], s["best_text"]
     if not w:
         return None
     zc = zw / w
+    raw = sum(combined_spark.values())
+    eff = sum(count ** 0.5 for count in combined_spark.values())
     return {
         "index": _index(zc, w),
         "z": zc,
         "setups": int(w),
-        "breadth": int(breadth),
-        "neff": neff_w / w,            # effective (clique-robust) laughers
+        "breadth": len(combined_spark),
+        "neff": (eff * eff / raw) if raw else 0.0,
         "best_net": best_net,
         "best_text": best_text,
         "chats": chats_used,
@@ -283,3 +318,8 @@ def leaderboard(channels=DEFAULT_CHANNELS, n=5, bottom=False):
            for agg in [_combine(a, channels)] if _rankable(agg)]
     out.sort(key=lambda kv: kv[1]["index"], reverse=not bottom)
     return out[:n]
+
+
+def clear_cache():
+    """Drop process-local results after maintenance or test fixture changes."""
+    _cache.clear()

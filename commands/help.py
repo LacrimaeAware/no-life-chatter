@@ -1,8 +1,8 @@
 from importlib import import_module
 
 description = (
-    'List commands, or show details for one. ~admin lists the gated commands.\n'
-    '  ~help [page|command]'
+    'List commands, browse a category, or show one command. ~admin lists gated commands.\n'
+    '  ~help [page|archive|personas|analysis|translation|utility|command]'
 )
 
 # Commands that work but are intentionally NOT listed by ~help (still reachable
@@ -47,7 +47,7 @@ CATEGORIES = [
 
 GROUPS_PER_PAGE = 2
 
-# Rough/prototype commands get an ε marker in the listing (legend appended
+# Rough/prototype commands get a * marker in the listing (legend appended
 # when any are shown; full notes via ~experimental). Top-level names only —
 # subroutes like "explain emote" are covered by their parent.
 EXPERIMENTAL_MARK = {"askchat", "emote", "irony", "iq"}
@@ -79,11 +79,11 @@ def _format_command_list(prefix: str, page: int, pages) -> str:
     marked = False
     for title, names in pages[page - 1]:
         rendered = " ".join(
-            f"{prefix}{name}{'ε' if name in EXPERIMENTAL_MARK else ''}"
+            f"{prefix}{name}{'*' if name in EXPERIMENTAL_MARK else ''}"
             for name in names)
         marked = marked or any(name in EXPERIMENTAL_MARK for name in names)
         chunks.append(f"{title}: {rendered}")
-    legend = f" | ε=experimental ({prefix}experimental)" if marked else ""
+    legend = f" | *=experimental ({prefix}experimental)" if marked else ""
     return (
         f"Commands {page}/{total}: " + " | ".join(chunks) +
         f" | {prefix}help <command> for details{legend}"
@@ -121,6 +121,30 @@ async def handle_help(bot, message, params):
     if command in {"experimental", "experiments"}:
         module = import_module("commands.experimental")
         await message.channel.send(module.format_experimental_list(bot.prefix))
+        return
+    category_aliases = {
+        "language": "translation",
+        "languages": "translation",
+        "persona": "personas",
+        "stats": "archive",
+        "search": "archive",
+        "tools": "utility",
+    }
+    wanted = category_aliases.get(command, command)
+    for title, names in CATEGORIES:
+        if wanted != title:
+            continue
+        present = [name for name in names if name in command_handlers]
+        rendered = " ".join(
+            f"{bot.prefix}{name}{'*' if name in EXPERIMENTAL_MARK else ''}"
+            for name in present
+        )
+        legend = f" | *=experimental ({bot.prefix}experimental)" if any(
+            name in EXPERIMENTAL_MARK for name in present
+        ) else ""
+        await message.channel.send(
+            f"{title}: {rendered} | {bot.prefix}help <command> for details{legend}"
+        )
         return
     if command.isdigit():
         pages = _known_command_pages(command_handlers.keys())

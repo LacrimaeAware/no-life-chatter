@@ -8,14 +8,18 @@ review can stay grounded in receipts.
 from __future__ import annotations
 
 import json
+import hashlib
 import re
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
 import config
-from utils import chat_archive, message_quality
+from utils import atomic_file, chat_archive, message_quality
 
 DEFAULT_OUT = Path("data/unsynced/fact_bank.jsonl")
+VERSION = 4
+_LOAD_CACHE = {}
 CLAIM_PATTERNS: list[tuple[str, float, re.Pattern]] = [
     ("self_identity", 0.72, re.compile(r"\b(?:i am|i'm|im)\s+(?!not\b)([^.?!]{3,120})", re.I)),
     ("self_negative_identity", 0.65, re.compile(r"\b(?:i am not|i'm not|im not)\s+([^.?!]{3,120})", re.I)),
@@ -43,12 +47,13 @@ def _norm_spaces(text: str) -> str:
 def _clean_tail(text: str) -> str:
     text = _norm_spaces(text)
     text = re.split(
-        r"\s+(?:but|though|because|unless|while|and i)\s+",
+        r"\s+(?:but|though|because|unless|while|and i|so|when|if|which|who|where)\s+",
         text,
         maxsplit=1,
         flags=re.I,
     )[0]
     text = TAIL_STOP_RE.sub("", text)
+    text = re.sub(r"(?:\s+@[A-Za-z0-9_]+)+\s*$", "", text)
     return text.strip(" \t\r\n,;:-_'\"")
 
 
@@ -70,6 +75,22 @@ def _valid_tail(tail: str) -> bool:
     if message_quality.repeated_token_spam(tail.split()):
         return False
     return True
+
+
+def _valid_possession_value(value: str) -> bool:
+    """Keep possession rows value-shaped, not predicates or arguments."""
+    words = re.findall(r"[A-Za-z][A-Za-z']+", value)
+    if not (1 <= len(words) <= 8):
+        return False
+    if re.search(
+        r"\b(?:you|your|yours|he|she|they|them|their|we|our|people|someone)\b",
+        value,
+        re.I,
+    ):
+        return False
+    if re.search(r"\b(?:better|worse|more|less|same)\s+than\b", value, re.I):
+        return False
+    return _valid_tail(value)
 
 
 def extract_claims(author: str, text: str) -> list[dict]:
@@ -104,7 +125,10 @@ def extract_claims(author: str, text: str) -> list[dict]:
                     or any(word in BAD_POSSESSION_ATTRS for word in attr_words)
                 ):
                     continue
-                tail = _clean_tail(f"{attr} = {match.group(2)}")
+                value = _clean_tail(match.group(2))
+                if not _valid_possession_value(value):
+                    continue
+                tail = f"{attr} = {value}"
             else:
                 tail = _clean_tail(match.group(1))
             if not _valid_tail(tail):
@@ -121,16 +145,10 @@ def extract_claims(author: str, text: str) -> list[dict]:
 
 
 def _author_roster(limit: int, min_messages: int) -> list[str]:
-    excluded = {chat_archive.normalize_author(u) for u in getattr(config, "EXCLUDE_USERS", set())}
-    conn = chat_archive.connect()
-    counts = Counter()
-    for author, count in conn.execute(
-        "SELECT author, COUNT(*) FROM messages GROUP BY author"
-    ).fetchall():
-        canon = chat_archive.normalize_author(author)
-        if canon not in excluded:
-            counts[canon] += int(count)
-    return [a for a, c in counts.most_common() if c >= min_messages][:limit]
+    return chat_archive.canonical_author_roster(
+        limit,
+        min_messages=min_messages,
+    )
 
 
 def _author_utterance_rows(author: str, max_utterances: int, gap_seconds: int = 45) -> list[dict]:
@@ -162,7 +180,8 @@ def _author_utterance_rows(author: str, max_utterances: int, gap_seconds: int = 
             prev = out[-1]
             t0, t1 = parse_ts(prev["last_seen"]), parse_ts(sent_at)
             if (
-                prev["author"] == canon
+                gap_seconds > 0
+                and prev["author"] == canon
                 and prev["channel"] == chat_archive.normalize_channel(channel)
                 and t0 and t1
                 and (t1 - t0).total_seconds() <= gap_seconds
@@ -185,7 +204,7 @@ def build_fact_bank(
     *,
     max_authors: int = 40,
     min_messages: int = 500,
-    max_utterances: int = 2000,
+    max_utterances: int = 20000,
     evidence_limit: int = 5,
 ) -> list[dict]:
     if not authors:
@@ -195,10 +214,19 @@ def build_fact_bank(
 
     grouped: dict[tuple[str, str], dict] = {}
     channel_counts: dict[tuple[str, str], Counter] = defaultdict(Counter)
+    line_authors: dict[str, set[str]] = defaultdict(set)
     for author in authors:
-        for row in _author_utterance_rows(author, max_utterances=max_utterances):
+        # Regex claim extraction stays message-local. Merging bursts helps
+        # semantic reasoning, but without boundary markers it makes a claim's
+        # tail swallow the person's next two unrelated messages.
+        for row in _author_utterance_rows(
+            author, max_utterances=max_utterances, gap_seconds=0
+        ):
             for claim in extract_claims(author, row["text"]):
                 key = (claim["author"], claim["claim_key"])
+                evidence_key = chat_archive.line_match_key(row["text"])
+                if evidence_key:
+                    line_authors[evidence_key].add(claim["author"])
                 item = grouped.setdefault(key, {
                     "author": claim["author"],
                     "kind": claim["kind"],
@@ -206,16 +234,24 @@ def build_fact_bank(
                     "claim_key": claim["claim_key"],
                     "support_count": 0,
                     "confidence": claim["confidence"],
+                    "extraction_confidence": claim["confidence"],
                     "first_seen": row["first_seen"],
                     "last_seen": row["last_seen"],
                     "channels": [],
                     "evidence": [],
+                    "_evidence_keys": set(),
+                    "_support_days": set(),
                 })
-                item["support_count"] += 1
-                item["confidence"] = min(0.95, max(item["confidence"], claim["confidence"])
-                                         + min(0.20, 0.03 * (item["support_count"] - 1)))
-                item["first_seen"] = min(item["first_seen"], row["first_seen"])
                 item["last_seen"] = max(item["last_seen"], row["last_seen"])
+                if evidence_key and evidence_key in item["_evidence_keys"]:
+                    continue
+                if evidence_key:
+                    item["_evidence_keys"].add(evidence_key)
+                item["support_count"] += 1
+                item["_support_days"].add(row["first_seen"][:10])
+                item["confidence"] = max(item["confidence"], claim["confidence"])
+                item["extraction_confidence"] = item["confidence"]
+                item["first_seen"] = min(item["first_seen"], row["first_seen"])
                 channel_counts[key][row["channel"]] += 1
                 if len(item["evidence"]) < evidence_limit:
                     item["evidence"].append({
@@ -227,27 +263,146 @@ def build_fact_bank(
                         ),
                     })
 
+    # Positive and negative forms of the same normalized tail cannot both be
+    # silently promoted. They remain receipts with an explicit contradiction.
+    opposite = {
+        "self_identity": "self_negative_identity",
+        "self_negative_identity": "self_identity",
+        "preference_positive": "preference_negative",
+        "preference_negative": "preference_positive",
+    }
+    kinds_by_tail: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for item in grouped.values():
+        tail = item["claim_key"].split(":", 1)[-1]
+        kinds_by_tail[(item["author"], tail)].add(item["kind"])
+
     out = list(grouped.values())
     for item in out:
         counts = channel_counts[(item["author"], item["claim_key"])]
         item["channels"] = [name for name, _count in counts.most_common(5)]
+        evidence_keys = item.pop("_evidence_keys")
+        support_days = item.pop("_support_days")
+        item["support_days"] = len(support_days)
+        item["unique_phrasings"] = len(evidence_keys)
+        item["echo_author_count"] = max(
+            (len(line_authors[key]) for key in evidence_keys), default=1
+        )
+        tail = item["claim_key"].split(":", 1)[-1]
+        kinds = kinds_by_tail[(item["author"], tail)]
+        item["contradicted"] = opposite.get(item["kind"]) in kinds
+        evidence_confidence = (
+            0.20
+            + 0.12 * min(item["support_days"], 3)
+            + 0.08 * min(item["unique_phrasings"], 3)
+        )
+        if item["echo_author_count"] > 1:
+            evidence_confidence -= 0.25
+        if item["contradicted"]:
+            evidence_confidence -= 0.25
+        item["evidence_confidence"] = round(max(0.05, min(0.75, evidence_confidence)), 3)
+        item["status"] = (
+            "corroborated_claim"
+            if item["support_days"] >= 2
+            and item["unique_phrasings"] >= 2
+            and item["echo_author_count"] == 1
+            and not item["contradicted"]
+            else "candidate"
+        )
         item["confidence"] = round(item["confidence"], 3)
-    out.sort(key=lambda x: (-x["support_count"], -x["confidence"], x["author"], x["claim_key"]))
+    out.sort(key=lambda x: (
+        x["status"] != "corroborated_claim",
+        -x["evidence_confidence"],
+        -x["support_days"],
+        x["author"],
+        x["claim_key"],
+    ))
     return out
 
 
-def write_jsonl(rows: list[dict], path: Path = DEFAULT_OUT) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as fh:
+def metadata_path(path: Path = DEFAULT_OUT) -> Path:
+    return path.with_name(path.name + ".meta.json")
+
+
+def metadata_current(meta: dict | None) -> bool:
+    return bool(
+        isinstance(meta, dict)
+        and meta.get("version") == VERSION
+        and meta.get("alias_signature") == chat_archive.alias_signature()
+        and bool(meta.get("content_sha256"))
+    )
+
+
+def load_metadata(path: Path = DEFAULT_OUT) -> dict:
+    try:
+        return json.loads(metadata_path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def content_current(path: Path = DEFAULT_OUT, meta: dict | None = None) -> bool:
+    meta = load_metadata(path) if meta is None else meta
+    if not metadata_current(meta):
+        return False
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest() == meta["content_sha256"]
+    except Exception:
+        return False
+
+
+def write_jsonl(rows: list[dict], path: Path = DEFAULT_OUT,
+                metadata: dict | None = None) -> None:
+    with atomic_file.open_atomic(path, "w", encoding="utf-8") as fh:
         for row in rows:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    content_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    meta = {
+        **(metadata or {}),
+        "version": VERSION,
+        "alias_signature": chat_archive.alias_signature(),
+        "built_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "claims": len(rows),
+        "content_sha256": content_sha256,
+    }
+    with atomic_file.open_atomic(metadata_path(path), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(meta, ensure_ascii=True, indent=2))
+    _LOAD_CACHE.pop(str(path.resolve()), None)
 
 
 def load_jsonl(path: Path = DEFAULT_OUT) -> list[dict]:
-    if not path.exists():
+    meta_file = metadata_path(path)
+    try:
+        data_stat = path.stat()
+        meta_stat = meta_file.stat()
+    except OSError:
         return []
-    with path.open("r", encoding="utf-8") as fh:
-        return [json.loads(line) for line in fh if line.strip()]
+    stamp = (
+        data_stat.st_mtime_ns,
+        data_stat.st_size,
+        meta_stat.st_mtime_ns,
+        meta_stat.st_size,
+    )
+    cache_key = str(path.resolve())
+    cached = _LOAD_CACHE.get(cache_key)
+    if cached and cached[0] == stamp:
+        return cached[1]
+    before = load_metadata(path)
+    if not path.exists() or not metadata_current(before):
+        return []
+    try:
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != before.get("content_sha256"):
+            return []
+        rows = [
+            json.loads(line)
+            for line in raw.decode("utf-8").splitlines()
+            if line.strip()
+        ]
+    except Exception:
+        return []
+    if before != load_metadata(path):
+        return []
+    _LOAD_CACHE[cache_key] = (stamp, rows)
+    return rows
 
 
 def search(rows: list[dict], *, author: str | None = None, query: str = "", limit: int = 12) -> list[dict]:
@@ -258,7 +413,11 @@ def search(rows: list[dict], *, author: str | None = None, query: str = "", limi
         if canon and row.get("author") != canon:
             continue
         hay = f"{row.get('kind', '')} {row.get('claim', '')}".casefold()
-        score = row.get("support_count", 0) + row.get("confidence", 0.0)
+        score = (
+            row.get("support_days", 0) * 2
+            + row.get("unique_phrasings", row.get("support_count", 0))
+            + row.get("evidence_confidence", 0.0)
+        )
         if terms:
             hits = sum(1 for term in terms if term in hay)
             if not hits:

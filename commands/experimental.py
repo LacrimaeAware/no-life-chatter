@@ -8,8 +8,8 @@ EXPERIMENTAL_COMMANDS = [
     ("emote", "learned emote-meaning guess; use raw for vector/archive signals"),
     ("explain emote", "same emote explainer through the general explain route"),
     ("why emote", "emote evidence through the why command"),
-    ("irony", "rough irony/sincerity read"),
-    ("iq", "roster-relative text-cognition toy score"),
+    ("irony", "intent evidence from wording, echoes, plausibility, and history"),
+    ("iq", "peak text-cognition score; use ~iq why <user> for receipts"),
 ]
 
 

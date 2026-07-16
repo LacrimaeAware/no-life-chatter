@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 
 import config
-from utils import chat_archive, persona_embeddings
+from utils import atomic_file, chat_archive, persona_embeddings
 from utils.persona_traits import AXES, _axis_vectors, _embed, pole_map
 
 CUSTOM_FILE = os.path.join("data", "unsynced", "custom_axes.pkl")
@@ -99,8 +99,13 @@ def _load_custom():
 
 
 def _save_custom():
-    with open(CUSTOM_FILE, "wb") as fh:
+    with atomic_file.open_atomic(CUSTOM_FILE, "wb") as fh:
         pickle.dump(_custom, fh)
+
+
+def _clean_json_trailing_commas(blob: str) -> str:
+    """Remove commas immediately before a JSON closing bracket/brace."""
+    return re.sub(r",\s*([\]}])", r"\1", blob)
 
 
 def _chat_sync(prompt, max_tokens=400, model=None):
@@ -163,7 +168,7 @@ def _generate_poles(term):
                 logging.warning(f"axis gen for {term!r}: no JSON in output (attempt {attempt + 1})")
                 continue
             # persona-tuned models love trailing commas; json.loads doesn't
-            blob = re.sub(r",\s*([\]}])", r"", m.group(0))
+            blob = _clean_json_trailing_commas(m.group(0))
             d = json.loads(blob)
             pos = [x for x in d.get("trait_examples", []) if isinstance(x, str)][:6]
             neg = [x for x in d.get("opposite_examples", []) if isinstance(x, str)][:6]

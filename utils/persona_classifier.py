@@ -23,14 +23,30 @@ import re
 import time
 
 import config
-from utils import chat_archive, message_quality
+from utils import atomic_file, chat_archive, message_quality
 
 _MODEL = None
+_MODEL_STAMP = None
 _WORD_RE = re.compile(r"[\w']+", re.UNICODE)
 
 
 def _usable(msg):
     return message_quality.usable_for_persona_exemplar(msg, max_chars=500)
+
+
+def _unique_usable_messages(messages):
+    """Keep one copy of each normalized line before train/test splitting."""
+    out = []
+    seen = set()
+    for message in messages:
+        if not _usable(message):
+            continue
+        key = chat_archive.line_match_key(message)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(message)
+    return out
 
 
 def _dedupe_canonical(names, max_authors=None):
@@ -52,12 +68,10 @@ def _dedupe_canonical(names, max_authors=None):
 def _pick_authors(conn, authors, min_messages, max_authors):
     if authors:
         return _dedupe_canonical(authors)
-    exclude = {u.lower() for u in getattr(config, "EXCLUDE_USERS", set())}
-    rows = conn.execute(
-        "SELECT author, COUNT(*) c FROM messages GROUP BY author "
-        "HAVING c >= ? ORDER BY c DESC", (min_messages,)
-    ).fetchall()
-    return _dedupe_canonical((a for a, _ in rows if a not in exclude), max_authors)
+    return chat_archive.canonical_author_roster(
+        max_authors,
+        min_messages=min_messages,
+    )
 
 
 def _build_pipeline(char_max=200000, word_max=60000, verbose=False):
@@ -88,7 +102,7 @@ def train(authors=None, per_author=3000, test_frac=0.1, seed=1337,
     t0 = time.time()
     tr_X, tr_y, te_X, te_y = [], [], [], []
     for i, a in enumerate(authors, 1):
-        all_msgs = [m for m in chat_archive.messages_for(a) if _usable(m)]
+        all_msgs = _unique_usable_messages(chat_archive.messages_for(a))
         rng.shuffle(all_msgs)
         msgs = all_msgs[:per_author]
         cut = int(len(msgs) * (1 - test_frac))
@@ -120,7 +134,7 @@ def train(authors=None, per_author=3000, test_frac=0.1, seed=1337,
     # same pickle.
     try:
         model = load()
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):
         model = {}
     model.update({"pipe": pipe, "authors": list(pipe.classes_)})
     meta = dict(model.get("__meta__") or {})
@@ -132,14 +146,16 @@ def train(authors=None, per_author=3000, test_frac=0.1, seed=1337,
         "max_authors": max_authors,
         "test_frac": test_frac,
         "seed": seed,
-        "quality_filter": "message_quality.usable_for_persona_exemplar",
+        "quality_filter": "usable_for_persona_exemplar+normalized_exact_dedupe",
     }
+    meta["alias_signature"] = chat_archive.alias_signature()
     model["__meta__"] = meta
-    os.makedirs(os.path.dirname(config.CLASSIFIER_FILE), exist_ok=True)
-    with open(config.CLASSIFIER_FILE, "wb") as fh:
+    with atomic_file.open_atomic(config.CLASSIFIER_FILE, "wb") as fh:
         pickle.dump(model, fh)
-    global _MODEL
+    global _MODEL, _MODEL_STAMP
     _MODEL = model
+    stat = os.stat(config.CLASSIFIER_FILE)
+    _MODEL_STAMP = (stat.st_mtime_ns, stat.st_size)
 
     return {
         "n_authors": len(authors),
@@ -156,10 +172,19 @@ def train(authors=None, per_author=3000, test_frac=0.1, seed=1337,
 
 
 def load():
-    global _MODEL
-    if _MODEL is None:
+    global _MODEL, _MODEL_STAMP
+    stat = os.stat(config.CLASSIFIER_FILE)
+    stamp = (stat.st_mtime_ns, stat.st_size)
+    if _MODEL is None or stamp != _MODEL_STAMP:
         with open(config.CLASSIFIER_FILE, "rb") as fh:
-            _MODEL = pickle.load(fh)
+            candidate = pickle.load(fh)
+        meta = candidate.get("__meta__") or {}
+        if meta.get("alias_signature") != chat_archive.alias_signature():
+            _MODEL = None
+            _MODEL_STAMP = None
+            raise ValueError("stale classifier/style identity provenance")
+        _MODEL = candidate
+        _MODEL_STAMP = stamp
     return _MODEL
 
 
@@ -391,11 +416,10 @@ def build_style_profiles(roster=None, words_top=300, phrases_top=150,
     from collections import Counter
     conn = chat_archive.connect()
     if roster is None:
-        exclude = {u.lower() for u in getattr(config, "EXCLUDE_USERS", set())}
-        rows = conn.execute(
-            "SELECT author, COUNT(*) c FROM messages GROUP BY author "
-            "HAVING c >= ? ORDER BY c DESC LIMIT ?", (min_messages, max_roster * 2)).fetchall()
-        roster = [a for a, _ in rows if a not in exclude and "bot" not in a][:max_roster]
+        roster = chat_archive.canonical_author_roster(
+            max_roster,
+            min_messages=min_messages,
+        )
     roster = _dedupe_canonical(roster)
     bg = _bg_counts(bg_cap)   # one shared background -> comparable scales
     stops = _stops(bg)
@@ -444,13 +468,16 @@ def build_style_profiles(roster=None, words_top=300, phrases_top=150,
         "max_roster": max_roster,
         "quality_filter": "message_quality.usable_for_persona_exemplar",
     }
+    meta["alias_signature"] = chat_archive.alias_signature()
     model["__meta__"] = meta
     model.pop("style", None)
     model.pop("centroids", None)
-    with open(config.CLASSIFIER_FILE, "wb") as fh:
+    with atomic_file.open_atomic(config.CLASSIFIER_FILE, "wb") as fh:
         pickle.dump(model, fh)
-    global _MODEL
+    global _MODEL, _MODEL_STAMP
     _MODEL = model
+    stat = os.stat(config.CLASSIFIER_FILE)
+    _MODEL_STAMP = (stat.st_mtime_ns, stat.st_size)
     return len(profiles)
 
 

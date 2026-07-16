@@ -145,12 +145,13 @@ do not echo the same evidence repeatedly in prompts.
 CREATE TABLE messages (
     id       INTEGER PRIMARY KEY,
     channel  TEXT NOT NULL,        -- lowercase channel login
-    author   TEXT NOT NULL,        -- lowercase user login
+    author   TEXT NOT NULL,        -- canonical lowercase user login
     sent_at  TEXT NOT NULL,        -- 'YYYY-MM-DD HH:MM:SS' (local time)
     content  TEXT NOT NULL,
     source   TEXT NOT NULL DEFAULT 'chatterino',  -- 'chatterino' | 'live' | 'zonian'
-    src_path TEXT  -- originating log file; re-ingest of a grown file replaces
+    src_path TEXT, -- originating log file; re-ingest of a grown file replaces
                    -- exactly its own rows (alias-merged channels stay intact)
+    raw_author TEXT -- login before alias normalization
 );
 CREATE INDEX idx_msg_author  ON messages(author, sent_at);
 CREATE INDEX idx_msg_channel ON messages(channel, sent_at);
@@ -166,7 +167,30 @@ CREATE TABLE ingested_files (
     mtime REAL NOT NULL,
     rows  INTEGER NOT NULL
 );
+
+-- ID/display cache. Offline lookup time is deliberately separate from real
+-- live activity so maintenance order cannot make an old alias the display name.
+CREATE TABLE author_ids (
+    author         TEXT PRIMARY KEY,
+    twitch_id      TEXT,
+    checked_at     TEXT,
+    display        TEXT,
+    last_seen_live TEXT
+);
 ```
+
+Schema changes are additive migrations in `chat_archive.connect()`. Alias maps
+are also fingerprinted into generated semantic/persona artifacts; changing an
+identity map makes artifact status warn until those files are rebuilt.
+
+Semantic utterance v3 merges a person's short message bursts independently in
+each channel and collapses duplicate text components inside the merged text.
+The record still retains every source message id/part for chronology and
+provenance. This matters when logs from several live channels overlap or the
+same imported event appears through an alias mirror: unrelated rooms must never
+be concatenated, and repeated storage must not become repeated semantic
+evidence. Generated message indexes, person vectors, and IQ caches record the
+utterance version so older files produce an artifact warning.
 
 Dedup between Chatterino history and live capture: the live hook only writes
 messages the bot receives in real time, and the one-time ingest covers the
